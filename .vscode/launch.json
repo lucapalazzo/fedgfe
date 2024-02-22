@@ -1,0 +1,109 @@
+{
+    // Usare IntelliSense per informazioni sui possibili attributi.
+    // Al passaggio del mouse vengono visualizzate le descrizioni degli attributi esistenti.
+    // Per altre informazioni, visitare: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debugger Python: File corrente con argomenti",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": "${command:pickArgs}"
+        },
+        {
+            "name": "FedRewind",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/ffr_federated",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["-data", "CIFAR-10",
+                     "-m", "resnet",
+                     "-algo", "FedRewind",
+                     "--global_rounds", "10",
+                     "-did", "0",
+                     "-go", "prova",
+                     "-nc", "10",
+                     "--batch_size","64",
+                     "--local_epochs", "10",
+                     "-lr", "0.01",
+                     "-lam", "0.1",
+                     "--rewind_epochs", "2",
+                     "--rewind_interval", "5",
+//                    , "-go", "${inputs:experimentName"
+                ],
+
+        },
+        {
+            "name": "Local",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/ffr_federated",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["-data", "CIFAR-10",
+                     "-m", "resnet",
+                     "-algo", "Local",
+                     "--global_rounds", "10",
+                     "-did", "0",
+                     "-go", "Local",
+                     "-nc", "10",
+                     "--batch_size","64",
+                     "--local_epochs", "10",
+                     "-lr", "0.01",
+                     "-lam", "0.1",
+                    //  "--rewind_epochs", "2",
+                    //  "--rewind_interval", "5",
+//                    , "-go", "${inputs:experimentName"
+                ],
+
+        },
+        {
+            "name": "FedAvg",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/ffr_federated",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["-data", "CIFAR-10",
+                     "-m", "resnet",
+                     "-algo", "FedAvg",
+                     "--global_rounds", "10",
+                     "-did", "0",
+                     "-go", "Local",
+                     "-nc", "10",
+                     "--batch_size","64",
+                     "--local_epochs", "10",
+                     "-lr", "0.01",
+                     "-lam", "0.1",
+                    //  "--rewind_epochs", "2",
+                    //  "--rewind_interval", "5",
+//                    , "-go", "${inputs:experimentName"
+                ],
+
+        },
+        {
+            "name": "FedRewind DS Generate",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/ffr_federated",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["-data", "CIFAR-10",
+                     "-m", "resnet",
+                     "-algo", "FedRewind",
+                     "-nc", "10",
+                     "--dataset_generate",
+                     "-dsbalance"
+                    // "--dataset_niid"
+                     //                    , "-go", "${inputs:experimentName"
+                ],
+
+        }
+}
