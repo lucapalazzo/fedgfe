@@ -22,6 +22,7 @@ import h5py
 import copy
 import time
 import random
+import wandb
 from utils.data_utils import read_client_data
 from utils.dlg import DLG
 
@@ -220,6 +221,7 @@ class Server(object):
             tot_correct.append(ct*1.0)
             tot_auc.append(auc*ns)
             num_samples.append(ns)
+            wandb.log({f'test_acc_{c.id}': ct*1.0/ns})
 
         ids = [c.id for c in self.clients]
 
@@ -235,6 +237,7 @@ class Server(object):
             cl, ns = c.train_metrics()
             num_samples.append(ns)
             losses.append(cl*1.0)
+            wandb.log({f'train_loss_{c.id}': cl*1.0/ns})
 
         ids = [c.id for c in self.clients]
 

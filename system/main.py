@@ -16,6 +16,7 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 #!/usr/bin/env python
+import wandb
 import copy
 import torch
 import argparse
@@ -61,6 +62,8 @@ from flcore.servers.servergpfl import GPFL
 from flcore.servers.serverntd import FedNTD
 from flcore.servers.servergh import FedGH
 from flcore.servers.serveravgDBE import FedAvgDBE
+from flcore.servers.serverZIO import FedZio
+from flcore.servers.serverrewind import FedRewind
 
 from flcore.trainmodel.models import *
 
@@ -69,6 +72,9 @@ from flcore.trainmodel.resnet import *
 from flcore.trainmodel.alexnet import *
 from flcore.trainmodel.mobilenet_v2 import *
 from flcore.trainmodel.transformer import *
+
+from datautils.generate_cifar10 import generate_cifar10
+from datautils.generate_mnist import generate_mnist
 
 from utils.result_utils import average_data
 from utils.mem_utils import MemReporter
@@ -86,9 +92,13 @@ emb_dim=32
 
 def run(args):
 
+    wandb.init(project="fedRewind", entity="ngslung", config=args)
+
     time_list = []
     reporter = MemReporter()
     model_str = args.model
+    strong_model_pretrain = args.strong_model_pretrain
+    weak_model_pretrain = args.weak_model_pretrain
 
     for i in range(args.prev, args.times):
         print(f"\n============= Running time: {i}th =============")
@@ -139,6 +149,30 @@ def run(args):
         
         elif model_str == "resnet34":
             args.model = torchvision.models.resnet34(pretrained=False, num_classes=args.num_classes).to(args.device)
+            
+        elif model_str == "StrongWeak":
+            args.model = None
+            #args.weak_model = resnet20().to(args.device)   #CIFAR-10 !!!
+            #args.strong_model = resnet56().to(args.device) #CIFAR-10 !!!
+            args.weak_model =torchvision.models.mobilenet_v3_small(pretrained=args.weak_model_pretrain).to(args.device)
+            # set the number of classes to 10
+            args.weak_model.classifier[3] = nn.Linear(1024, args.num_classes).to(args.device)
+            args.strong_model = torchvision.models.resnet18(pretrained=args.strong_model_pretrain).to(args.device)
+            # set the number of classes to 10
+            args.strong_model.fc = nn.Linear(512, args.num_classes).to(args.device)
+
+            # #freeze the parameters of the strong model except the last fc layer
+            # for param in args.strong_model.parameters():
+            #     param.requires_grad = False
+            # for param in args.strong_model.fc.parameters():
+            #     param.requires_grad = True
+            
+            # #freeze the parameters of the weak model except the last fc layer
+            # for param in args.weak_model.parameters():
+            #     param.requires_grad = False
+            # for param in args.weak_model.classifier.parameters():
+            #     param.requires_grad = True
+
 
         elif model_str == "alexnet":
             args.model = alexnet(pretrained=False, num_classes=args.num_classes).to(args.device)
@@ -351,7 +385,12 @@ def run(args):
             args.model.fc = nn.Identity()
             args.model = BaseHeadSplit(args.model, args.head)
             server = FedAvgDBE(args, i)
-            
+
+        elif args.algorithm == "FedRewind":
+            server = FedRewind(args, i)
+
+        elif args.algorithm == "FedZio":
+            server = FedZio(args, i)
         else:
             raise NotImplementedError
 
@@ -369,10 +408,13 @@ def run(args):
 
     reporter.report()
 
-
+available_gpus = []
 if __name__ == "__main__":
     total_start = time.time()
+    for i in range(torch.cuda.device_count()):
+        print(torch.cuda.get_device_properties(i))
 
+        print( "%d %d\n" % ( i, torch.cuda.utilization(i) ) )
     parser = argparse.ArgumentParser()
     # general
     parser.add_argument('-go', "--goal", type=str, default="test", 
@@ -396,7 +438,7 @@ if __name__ == "__main__":
                         help="Ratio of clients per round")
     parser.add_argument('-rjr', "--random_join_ratio", type=bool, default=False,
                         help="Random ratio of clients per round")
-    parser.add_argument('-nc', "--num_clients", type=int, default=20,
+    parser.add_argument('-nc', "--num_clients", type=int, default=2,
                         help="Total number of clients")
     parser.add_argument('-pv', "--prev", type=int, default=0,
                         help="Previous Running times")
@@ -414,6 +456,10 @@ if __name__ == "__main__":
     parser.add_argument('-bnpc', "--batch_num_per_client", type=int, default=2)
     parser.add_argument('-nnc', "--num_new_clients", type=int, default=0)
     parser.add_argument('-ften', "--fine_tuning_epoch_new", type=int, default=0)
+    parser.add_argument('-dsgen', "--dataset_generate", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-dsniid', "--dataset_niid", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-dspart', "--dataset_partition", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-dsbalance', "--dataset_balance", type=bool, default=False, action=argparse.BooleanOptionalAction)
     # practical
     parser.add_argument('-cdr', "--client_drop_rate", type=float, default=0.0,
                         help="Rate for clients that train but drop out")
@@ -425,11 +471,14 @@ if __name__ == "__main__":
                         help="Whether to group and select clients at each round according to time cost")
     parser.add_argument('-tth', "--time_threthold", type=float, default=10000,
                         help="The threthold for droping slow clients")
-    # pFedMe / PerAvg / FedProx / FedAMP / FedPHP / GPFL
-    parser.add_argument('-bt', "--beta", type=float, default=0.0)
+    # pFedMe / PerAvg / FedProx / FedAMP / FedPHP
+    parser.add_argument('-bt', "--beta", type=float, default=0.0,
+                        help="Average moving parameter for pFedMe, Second learning rate of Per-FedAvg, \
+                        or L1 regularization weight of FedTransfer")
     parser.add_argument('-lam', "--lamda", type=float, default=1.0,
                         help="Regularization weight")
-    parser.add_argument('-mu', "--mu", type=float, default=0.0)
+    parser.add_argument('-mu', "--mu", type=float, default=0,
+                        help="Proximal rate for FedProx")
     parser.add_argument('-K', "--K", type=int, default=5,
                         help="Number of personalized training steps for pFedMe")
     parser.add_argument('-lrp', "--p_learning_rate", type=float, default=0.01,
@@ -472,10 +521,19 @@ if __name__ == "__main__":
     parser.add_argument('-mlr', "--mentee_learning_rate", type=float, default=0.005)
     parser.add_argument('-Ts', "--T_start", type=float, default=0.95)
     parser.add_argument('-Te', "--T_end", type=float, default=0.98)
+
     # FedAvgDBE
     parser.add_argument('-mo', "--momentum", type=float, default=0.1)
     parser.add_argument('-klw', "--kl_weight", type=float, default=0.0)
 
+    #FedZio
+    parser.add_argument('-nc_strong', "--num_clients_strong", type=int, default=2)
+    parser.add_argument('-spt', "--strong_model_pretrain", type=bool, default=False)
+    parser.add_argument('-wpt', "--weak_model_pretrain", type=bool, default=False)
+
+    #FedRewind
+    parser.add_argument('-rewe', "--rewind_epochs", type=int, default=2)
+    parser.add_argument('-rewi', "--rewind_interval", type=int, default=0)
 
     args = parser.parse_args()
 
@@ -519,15 +577,17 @@ if __name__ == "__main__":
         print("DLG attack round gap: {}".format(args.dlg_gap))
     print("Total number of new clients: {}".format(args.num_new_clients))
     print("Fine tuning epoches on new clients: {}".format(args.fine_tuning_epoch_new))
+    print("Strong nodes pretrained: {}".format(args.strong_model_pretrain))
+    print("Weak nodes pretrained: {}".format(args.weak_model_pretrain))
     print("=" * 50)
 
-
-    # if args.dataset == "mnist" or args.dataset == "fmnist":
-    #     generate_mnist('../dataset/mnist/', args.num_clients, 10, args.niid)
-    # elif args.dataset == "Cifar10" or args.dataset == "Cifar100":
-    #     generate_cifar10('../dataset/Cifar10/', args.num_clients, 10, args.niid)
-    # else:
-    #     generate_synthetic('../dataset/synthetic/', args.num_clients, 10, args.niid)
+    if args.dataset_generate:
+        if args.dataset == "mnist" or args.dataset == "fmnist":
+            generate_mnist('dataset/mnist/', args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition)
+        elif args.dataset == "CIFAR-10" or args.dataset == "Cifar100":
+            generate_cifar10('dataset/CIFAR-10/', args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition)
+        # else:
+        #     generate_synthetic('dataset/synthetic/', args.num_clients, 10, args.niid)
 
     # with torch.profiler.profile(
     #     activities=[
