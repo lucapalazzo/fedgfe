@@ -80,6 +80,9 @@ class Server(object):
         self.eval_new_clients = False
         self.fine_tuning_epoch_new = args.fine_tuning_epoch_new
 
+        self.no_wandb = args.no_wandb
+        self.gpus = list(map(int, args.device_ids.split(',')))
+
     def set_clients(self, clientObj):
         for i, train_slow, send_slow in zip(range(self.num_clients), self.train_slow_clients, self.send_slow_clients):
             train_data = read_client_data(self.dataset, i, is_train=True)
@@ -221,7 +224,8 @@ class Server(object):
             tot_correct.append(ct*1.0)
             tot_auc.append(auc*ns)
             num_samples.append(ns)
-            wandb.log({f'test_acc_{c.id}': ct*1.0/ns})
+            if not self.no_wandb:
+                wandb.log({f'test_acc_{c.id}': ct*1.0/ns})
 
         ids = [c.id for c in self.clients]
 
@@ -237,7 +241,8 @@ class Server(object):
             cl, ns = c.train_metrics()
             num_samples.append(ns)
             losses.append(cl*1.0)
-            wandb.log({f'train_loss_{c.id}': cl*1.0/ns})
+            if not self.no_wandb:
+                wandb.log({f'train_loss_{c.id}': cl*1.0/ns})
 
         ids = [c.id for c in self.clients]
 
@@ -387,3 +392,7 @@ class Server(object):
         ids = [c.id for c in self.new_clients]
 
         return ids, num_samples, tot_correct, tot_auc
+    
+    def data_log(self, data):
+        if not self.no_wandb:
+            wandb.log(data)

@@ -92,13 +92,12 @@ emb_dim=32
 
 def run(args):
 
-    wandb.init(project="fedRewind", entity="ngslung", config=args)
+    if not args.no_wandb:
+        wandb.init(project="fedRewind", entity="ngslung", config=args)
 
     time_list = []
     reporter = MemReporter()
     model_str = args.model
-    strong_model_pretrain = args.strong_model_pretrain
-    weak_model_pretrain = args.weak_model_pretrain
 
     for i in range(args.prev, args.times):
         print(f"\n============= Running time: {i}th =============")
@@ -422,7 +421,10 @@ if __name__ == "__main__":
     parser.add_argument('-dev', "--device", type=str, default="cuda",
                         choices=["cpu", "cuda"])
     parser.add_argument('-did', "--device_id", type=str, default="0")
+    parser.add_argument('-dids', "--device_ids", type=str, default="0")
     parser.add_argument('-data', "--dataset", type=str, default="mnist")
+    parser.add_argument('-datapath', "--dataset_path", type=str, default="")
+
     parser.add_argument('-nb', "--num_classes", type=int, default=10)
     parser.add_argument('-m', "--model", type=str, default="cnn")
     parser.add_argument('-lbs', "--batch_size", type=int, default=10)
@@ -460,6 +462,7 @@ if __name__ == "__main__":
     parser.add_argument('-dsniid', "--dataset_niid", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-dspart', "--dataset_partition", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-dsbalance', "--dataset_balance", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-nw', "--no_wandb", type=bool, default=False, action=argparse.BooleanOptionalAction)
     # practical
     parser.add_argument('-cdr', "--client_drop_rate", type=float, default=0.0,
                         help="Rate for clients that train but drop out")
@@ -533,11 +536,14 @@ if __name__ == "__main__":
 
     #FedRewind
     parser.add_argument('-rewe', "--rewind_epochs", type=int, default=2)
+    parser.add_argument('-rewra', "--rewind_ratio", type=float, default=0)
     parser.add_argument('-rewi', "--rewind_interval", type=int, default=0)
+    parser.add_argument('-rewro', "--rewind_rotate", type=bool, default=False, action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.device_id
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
     if args.device == "cuda" and not torch.cuda.is_available():
         print("\ncuda is not avaiable.\n")
@@ -577,18 +583,28 @@ if __name__ == "__main__":
         print("DLG attack round gap: {}".format(args.dlg_gap))
     print("Total number of new clients: {}".format(args.num_new_clients))
     print("Fine tuning epoches on new clients: {}".format(args.fine_tuning_epoch_new))
-    print("Strong nodes pretrained: {}".format(args.strong_model_pretrain))
-    print("Weak nodes pretrained: {}".format(args.weak_model_pretrain))
-    print("=" * 50)
+    if args.algorithm == "FedZIO":
+        print("Number of strong clients: {}".format(args.num_clients_strong))  
+        print("Number of weak clients: {}".format(args.num_clients_weak))  
+        print("Strong nodes pretrained: {}".format(args.strong_model_pretrain))
+        print("Weak nodes pretrained: {}".format(args.weak_model_pretrain))
+        print("=" * 50)
+    if args.algorithm == "FedRewind":
+        print("Rewind epochs: {}".format(args.rewind_epochs))
+        print("Rewind ratio: {}".format(args.rewind_ratio))
+        print("Rewind interval: {}".format(args.rewind_interval))
+        print("Rewind rotate: {}".format(args.rewind_rotate))
+        print("=" * 50) 
 
     if args.dataset_generate:
         if args.dataset == "mnist" or args.dataset == "fmnist":
             generate_mnist('dataset/mnist/', args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition)
-        elif args.dataset == "CIFAR-10" or args.dataset == "Cifar100":
+        elif args.dataset == "CIFAR-10" or args.dataset == "CIFAR-100":
             generate_cifar10('dataset/CIFAR-10/', args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition)
         # else:
         #     generate_synthetic('dataset/synthetic/', args.num_clients, 10, args.niid)
 
+    
     # with torch.profiler.profile(
     #     activities=[
     #         torch.profiler.ProfilerActivity.CPU,
