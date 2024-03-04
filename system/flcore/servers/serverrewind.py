@@ -24,18 +24,12 @@ class FedRewind(Server):
         self.rewind_interval = args.rewind_interval
         self.rewind_rotate = args.rewind_rotate
         self.global_rounds = args.global_rounds
-
+        
         # select slow clients
         self.set_slow_clients()
         self.set_clients(clientRewind)
-        if not self.no_wandb:
-            wandb.define_metric("round")
-            for client in self.clients:
-                wandb.define_metric(f"train_round_loss_{client.id}", step_metric="round")
-                wandb.define_metric(f"train_round_acc_{client.id}", step_metric="round")
-                wandb.define_metric(f"test_round_loss_{client.id}", step_metric="round")
-                wandb.define_metric(f"test_round_acc_{client.id}", step_metric="round") 
-
+        self.define_metrics()
+       
         print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.num_clients}")
         print("Finished creating server and clients.")
 
@@ -64,6 +58,7 @@ class FedRewind(Server):
     def train(self):
        
         for i in range(self.global_rounds+1):
+            self.round = i
             s_t = time.time()
             # importante commentare questa riga per avere i client sempre ordinati
             #self.selected_clients = self.select_clients()
@@ -98,13 +93,16 @@ class FedRewind(Server):
                         previous_node = None
                         if ( node_previous_length > 0 ):
                             previous_node_index = client.rewind_previous_node[node_previous_length-1]
-                            previous_node = self.clients[previous_node_index]
+                            for previous_client in self.clients:
+                                if previous_client.id == previous_node_index:
+                                    previous_node = previous_client
+                                    break
                         running_threads[gpu] = self.train_thread(client, device, future, previous_node)
                         running_start_times[gpu] = time.time()
-                        running_clients[gpu] = client_index
+                        running_clients[gpu] = client
                         # running_threads[gpu] = self.train_thread (client, device)
                         client.thread = running_threads[gpu]
-                        client_index+=1
+                        client_index += 1
                         break
                 for gpu in availables_gpus:
                     if running_futures[gpu] != None:
@@ -112,27 +110,16 @@ class FedRewind(Server):
                         if running_futures[gpu].done():
                             elapsed = time.time() - running_start_times[gpu]
                             client_type = "standard"
-                            running_client_id = running_clients[gpu]
-                            running_client = self.clients[running_client_id]
+                            running_client = running_clients[gpu]
+                            running_client_id = running_client.id
                             # if self.clients[running_client_id].is_strong:
                             #     client_type = "strong"
-                            client_model_name = str(self.clients[running_client_id].model).split( "(", 1)[0]
-                            self.clients[running_client_id].model
+                            client_model_name = str(running_client.model).split( "(", 1)[0]
+                            # running_client_id.model
                             running_threads[gpu] = None
                             running_futures[gpu] = None
-                            losses, train = client.train_metrics()
-                            acc, test_num, auc = client.test_metrics()
-                            round_acc = acc/test_num
-                            round_loss = losses/train
-                            if not self.no_wandb:
-                                wandb.log({f'train_round_loss_{running_client.id}': round_loss, "round": i})
-                                wandb.log({f'test_round_acc_{running_client.id}': round_acc, "round": i})
-                            print("Trained %s node %d model %s on GPU %d in %d seconds loss %02f accuracy %02f test_num %d" % (client_type, running_clients[gpu], client_model_name, gpu, elapsed, round_loss, round_acc, test_num ))
-                            for test_client in self.clients:
-                                if ( test_client.id != running_client.id):
-                                    acc, test_num, auc = running_client.test_metrics_other(test_client)
-                                    round_acc = acc/test_num
-                                    print("Accuracy on node %d test set accuracy %02f" % (test_client.id, round_acc ))
+                            self.round_train_metrics( running_client )
+                            self.round_test_metrics( running_client )
                 time.sleep(0.1)
                 # client.train()
             
@@ -140,20 +127,32 @@ class FedRewind(Server):
             while running_futures[0] != None or running_futures[1] != None:
                 for gpu in availables_gpus:
                     if running_futures[gpu] != None:
+                        running_client = running_clients[gpu]
                         # print(running_futures[0].done())
                         if running_futures[gpu].done():
                             elapsed = time.time() - running_start_times[gpu]
                             client_type = "standard"
-                            running_client_id = running_clients[gpu]
+                            running_client_id = running_client.id
                             # if self.clients[running_client_id].is_strong:
                             #     client_type = "strong"
-                            client_model_name = str(self.clients[running_client_id].model).split( "(", 1)[0]
-                            self.clients[running_client_id].model
-                            print("Trained %s node %d model %s on GPU %d in %d seconds" % (client_type, running_clients[gpu], client_model_name, gpu, elapsed ))
-                         
-
+                            client_model_name = str(running_client.model).split( "(", 1)[0]
+                            running_client.model
                             running_threads[gpu] = None
-                            running_futures[gpu] = None     
+                            running_futures[gpu] = None
+                            self.round_train_metrics( running_client )
+                            self.round_test_metrics( running_client )
+                            # acc, test_num, auc, y_true, y_prob = client.test_metrics()
+                            # round_acc = acc/test_num
+                            # round_loss = losses/train
+                            # if not self.no_wandb:
+                            #     wandb.log({f'train_round_loss_{running_client.id}': round_loss, "round": i})
+                            #     wandb.log({f'test_round_acc_{running_client.id}': round_acc, "round": i})
+                            # print("Trained %s node %d model %s on GPU %d in %d seconds loss %02f accuracy %02f test_num %d" % (client_type, running_clients[gpu], client_model_name, gpu, elapsed, round_loss, round_acc, test_num ))
+                            # for test_client in self.clients:
+                            #     if ( test_client.id != running_client.id):
+                            #         acc, test_num, auc, y_true, y_prob = running_client.test_metrics_other(test_client)
+                            #         round_acc = acc/test_num
+                            #         print("Accuracy on node %d test set accuracy %02f" % (test_client.id, round_acc )) 
                 time.sleep(0.1)
             # threads = [Thread(target=client.train)
             #            for client in self.selected_clients]
@@ -162,15 +161,21 @@ class FedRewind(Server):
 
             #self.receive_logits()
             #self.global_logits = logit_aggregation(self.uploaded_logits)
-            self.routes = get_routes(self.num_clients)
+            self.routes = get_routes(self.num_clients, self.clients)
             for node in self.routes:
                 next_node = self.routes[node]
                 previous_node = node
-                self.clients[next_node].rewind_previous_node.append(previous_node)
-                self.clients[node].node_routes.append(next_node)
+                for next_client in self.clients:
+                    if next_node == next_client.id:
+                        break
+
+                next_client.rewind_previous_node.append(previous_node)
+                for client in self.clients:
+                    if node == client.id:
+                        client.node_routes.append(next_node)
                 if self.rewind_rotate:
-                    self.clients[next_node].train_model = self.clients[node].train_model
-                    self.clients[next_node].train_model_id = self.clients[node].id
+                    next_client.train_model = client.train_model
+                    next_client.train_model_id = next_client.id
                     print ( "Node %d model will be sent to %d and will rewind back to node %d" % (node, next_node, previous_node ) )
 
             print(self.uploaded_ids)
@@ -194,7 +199,7 @@ class FedRewind(Server):
             wandb.define_metric(f"node_acc_{test_client.id}", step_metric="node")
             for dest_client in self.clients:
                 if ( test_client.id != dest_client.id):
-                    acc, test_num, auc = test_client.test_metrics_other(dest_client)
+                    acc, test_num, auc, y_true, y_prob = test_client.test_metrics_other(dest_client)
                     round_acc = acc/test_num
                     wandb.log({f"node_acc_{test_client.id}": round_acc, "node": dest_client.id})
                     print("Accuracy of nodes %d model on node %d: %02f" % (test_client.id, dest_client.id, round_acc ))
@@ -244,27 +249,28 @@ class FedRewind(Server):
         for i, train_slow, send_slow in zip(range(self.num_clients), self.train_slow_clients, self.send_slow_clients):
             
             file_prefix = ""
-            # is_strong = False
-            # if n_strong < self.args.num_clients_strong:
-            #     is_strong = True
-            #     file_prefix = "strong-"
-            #     idx=n_strong
-            # else:
-            #     file_prefix = "weak-"
-            #     idx=n_weak
-            
-            train_data = read_client_data(self.dataset, i, is_train=True, prefix=file_prefix)
-            test_data = read_client_data(self.dataset, i, is_train=False, prefix=file_prefix)
+            # if i != 2 and i != 3:
+            # if i != 2:
+            #     continue 
+            # train_data = read_client_data(self.dataset, i, is_train=True, prefix=file_prefix)
+            # test_data = read_client_data(self.dataset, i, is_train=False, prefix=file_prefix)
+            train_data = None
+            test_data = None
+            train_data_len = -1
+            test_data_len = -1
 
             client = clientObj(self.args, 
                             id=i, 
-                            train_samples=len(train_data), 
-                            test_samples=len(test_data), 
+                            train_samples=train_data_len, 
+                            test_samples=test_data_len, 
                             train_slow=train_slow, 
                             send_slow=send_slow,
                             rewind_epochs=self.rewind_epochs,
                             rewind_interval=self.rewind_interval,
-                            rewind_ratio=self.rewind_ratio)
+                            rewind_ratio=self.rewind_ratio,
+                            train_data=train_data,
+                            test_data=test_data,
+                            dataset_limit=self.dataset_limit)
             client.prefix=file_prefix
             
             # if is_strong:
@@ -272,6 +278,20 @@ class FedRewind(Server):
             # else:
             #     n_weak += 1
             self.clients.append(client)
+
+    def define_metrics(self):
+        if not self.no_wandb:
+            for client in self.clients:
+                wandb.define_metric(f"train/client_{client.id}/round_train_loss_{client.id}", step_metric="round")
+                wandb.define_metric(f"test/client_{client.id}/round_test_acc_{client.id}", step_metric="round")
+                if self.rewind_ratio > 0 or self.rewind_epochs > 0:
+                    wandb.define_metric(f"rewind/rewind_phase_loss_{client.id}", step_metric="round")
+
+                for test_client in self.clients:
+                    if ( test_client.id != client.id):
+                        wandb.define_metric(f"train/client_{client.id}/round_train_loss_{client.id}_on_{test_client.id}", step_metric="round")
+                        wandb.define_metric(f"test/client_{client.id}/round_test_acc_{client.id}_on_{test_client.id}", step_metric="round")
+
 
     def federation_metrics(self):
         test_accs = []
@@ -285,6 +305,29 @@ class FedRewind(Server):
             train_losses.append(train_loss)
         return test_accs, train_accs, train_losses
 
+    def round_train_metrics(self, client):
+        losses, train = client.train_metrics()
+        
+        # round_acc = acc/test_num
+        round_loss = losses/train
+        if not self.no_wandb:
+            wandb.log({f'train/client_{client.id}/round_train_loss_{client.id}': round_loss, "round": self.round})
+        print("Trained node %d loss %02f" % ( client.id, round_loss ))
+
+    def round_test_metrics(self, client):
+        acc, test_num, auc, y_true, y_prob = client.test_metrics()
+        if not self.no_wandb:
+            wandb.log({f'test/client_{client.id}/round_test_acc_{client.id}': round_acc, "round": self.round})
+        print("Trained node %d accuracy %02f test_num %d" % (client.id, round_acc ))
+
+        for test_client in self.clients:
+            if ( test_client.id != client.id):
+                acc, test_num, auc, y_true, y_prob = client.test_metrics_other(test_client)
+                round_acc = acc/test_num
+                print("Node's model %d accuracy dataset %d: %02f" % (client.id, test_client.id, round_acc )) 
+                if  not self.no_wandb:
+                    wandb.log({f'test/client_{client.id}/round_test_acc_{client.id}_on_{test_client.id}': round_acc, 'round': self.round } )
+            
 # ---------------- From FedER -----------------------------
 def pairwise(iterable):
     # pairwise('ABCDEFG') --> AB BC CD DE EF FG
@@ -292,8 +335,11 @@ def pairwise(iterable):
     next(b, None)
     return zip(a, b)
 
-def get_routes(n_nodes):
-    idxs = [i for i in range(n_nodes)]
+def get_routes(n_nodes, clients = None):
+    if clients is not None:
+        idxs = [client.id for client in clients]
+    else:
+        idxs = [i for i in range(n_nodes)]
     random.shuffle(idxs)
     routes = {x[0]:x[1] for x in pairwise(idxs)}
     last_route = (idxs[-1],idxs[0])

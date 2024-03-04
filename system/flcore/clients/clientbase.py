@@ -21,8 +21,10 @@ import torch.nn as nn
 import numpy as np
 import os
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
 from sklearn.preprocessing import label_binarize
 from sklearn import metrics
+import wandb
 from utils.data_utils import read_client_data
 
 
@@ -31,13 +33,17 @@ class Client(object):
     Base class for clients in federated learning.
     """
 
-    def __init__(self, args, id, train_samples, test_samples, **kwargs):
+    def __init__(self, args, id, train_samples, test_samples, train_data = None, test_data = None, val_data = None, **kwargs):
         self.model = copy.deepcopy(args.model)
+        self.starting_model = self.model
         self.algorithm = args.algorithm
         self.dataset = args.dataset
         self.device = args.device
         self.id = id  # integer
         self.save_folder_name = args.save_folder_name
+        self.train_data = train_data
+        self.test_data = test_data
+        self.val_data = val_data
 
         self.num_classes = args.num_classes
         self.train_samples = train_samples
@@ -45,6 +51,8 @@ class Client(object):
         self.batch_size = args.batch_size
         self.learning_rate = args.local_learning_rate
         self.local_epochs = args.local_epochs
+        self.dataset_limit = args.dataset_limit
+        self.loss_weighted = args.loss_weighted
 
         # check BatchNorm
         self.has_BatchNorm = False
@@ -70,17 +78,23 @@ class Client(object):
         self.learning_rate_decay = args.learning_rate_decay
 
 
-    def load_train_data(self, batch_size=None):
+    def load_train_data(self, batch_size=None,dataset_limit=0):
         if batch_size == None:
             batch_size = self.batch_size
-        train_data = read_client_data(self.dataset, self.id, is_train=True)
-        return DataLoader(train_data, batch_size, drop_last=True, shuffle=True)
+        if self.train_data == None:
+            print("Loading train data for client %d" % self.id)
+            self.train_data = read_client_data(self.dataset, self.id, is_train=True,dataset_limit=dataset_limit)
+            self.train_samples = len(self.train_data)
+        return DataLoader(self.train_data, batch_size, drop_last=True, shuffle=True)
 
-    def load_test_data(self, batch_size=None):
+    def load_test_data(self, batch_size=None,dataset_limit=0):
         if batch_size == None:
             batch_size = self.batch_size
-        test_data = read_client_data(self.dataset, self.id, is_train=False)
-        return DataLoader(test_data, batch_size, drop_last=False, shuffle=True)
+        if self.test_data == None:
+            print("Loading test data for client %d" % self.id)
+            self.test_data = read_client_data(self.dataset, self.id, is_train=False,dataset_limit=dataset_limit)
+            self.test_samples = len(self.test_data)
+        return DataLoader(self.test_data, batch_size, drop_last=False, shuffle=True)
         
     def set_parameters(self, model):
         for new_param, old_param in zip(model.parameters(), self.model.parameters()):
@@ -103,9 +117,10 @@ class Client(object):
 
         test_acc = 0
         test_num = 0
+        y_pred = []
         y_prob = []
-        y_true = []
-        
+        y_true = []     
+
         with torch.no_grad():
             for x, y in testloaderfull:
                 if type(x) == type([]):
@@ -114,18 +129,28 @@ class Client(object):
                     x = x.to(self.device)
                 y = y.to(self.device)
                 output = self.model(x)
+                # if isinstance(output, dict):
+                #     output = output['logits']
+                
+                predictions = torch.argmax(output, dim=1)
 
-                test_acc += (torch.sum(torch.argmax(output, dim=1) == y)).item()
+                test_acc += (torch.sum(predictions == y)).item()
                 test_num += y.shape[0]
 
-                y_prob.append(output.detach().cpu().numpy())
+                if torch.isnan(output).any().item():
+                    wandb.log({f'warning/{self.id}': torch.isnan(output)})
+                    print(f'warning for client {self.id} in round {self.round}:', torch.isnan(output))
+
+                # prob = F.softmax(output, dim=1) 
+                # y_prob.append(prob.detach().cpu().numpy()) 
+                y_prob.append(output.detach().cpu().numpy()) 
                 nc = self.num_classes
                 if self.num_classes == 2:
                     nc += 1
                 lb = label_binarize(y.detach().cpu().numpy(), classes=np.arange(nc))
                 if self.num_classes == 2:
                     lb = lb[:, :2]
-                y_true.append(lb)
+                y_true.append(y.detach().cpu().numpy())
 
         # self.model.cpu()
         # self.save_model(self.model, 'model')
@@ -133,9 +158,9 @@ class Client(object):
         y_prob = np.concatenate(y_prob, axis=0)
         y_true = np.concatenate(y_true, axis=0)
 
-        auc = metrics.roc_auc_score(y_true, y_prob, average='micro')
+        auc = metrics.roc_auc_score(y_true, y_prob[:,1], average='micro')
         
-        return test_acc, test_num, auc
+        return test_acc, test_num, auc, y_true, y_prob
 
     def train_metrics(self):
         trainloader = self.load_train_data()
@@ -161,6 +186,50 @@ class Client(object):
         # self.save_model(self.model, 'model')
 
         return losses, train_num
+    
+    def test_metrics_other(self, test_client = None):
+        if ( test_client == None and test_client.id != self.id):
+            return
+        
+        testloaderfull = test_client.load_test_data()
+       
+        self.model.eval()
+
+        test_acc = 0
+        test_num = 0
+        y_prob = []
+        y_true = []
+        
+        with torch.no_grad():
+            for x, y in testloaderfull:
+                if type(x) == type([]):
+                    x[0] = x[0].to(self.device)
+                else:
+                    x = x.to(self.device)
+                y = y.to(self.device)
+                output = self.starting_model(x)
+
+                test_acc += (torch.sum(torch.argmax(output, dim=1) == y)).item()
+                test_num += y.shape[0]
+
+                y_prob.append(output.detach().cpu().numpy())
+                nc = self.num_classes
+                if self.num_classes == 2:
+                    nc += 1
+                lb = label_binarize(y.detach().cpu().numpy(), classes=np.arange(nc))
+                if self.num_classes == 2:
+                    lb = lb[:, :2]
+                y_true.append(lb)
+
+        # self.model.cpu()
+        # self.save_model(self.model, 'model')
+
+        y_prob = np.concatenate(y_prob, axis=0)
+        y_true = np.concatenate(y_true, axis=0)
+
+        auc = metrics.roc_auc_score(y_true, y_prob, average='micro')
+        
+        return test_acc, test_num, auc, y_true, y_prob
 
     # def get_next_train_batch(self):
     #     try:

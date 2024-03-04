@@ -427,6 +427,7 @@ if __name__ == "__main__":
 
     parser.add_argument('-nb', "--num_classes", type=int, default=10)
     parser.add_argument('-m', "--model", type=str, default="cnn")
+    parser.add_argument('-lw', "--loss_weighted", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-lbs', "--batch_size", type=int, default=10)
     parser.add_argument('-lr', "--local_learning_rate", type=float, default=0.005,
                         help="Local learning rate")
@@ -458,6 +459,7 @@ if __name__ == "__main__":
     parser.add_argument('-bnpc', "--batch_num_per_client", type=int, default=2)
     parser.add_argument('-nnc', "--num_new_clients", type=int, default=0)
     parser.add_argument('-ften', "--fine_tuning_epoch_new", type=int, default=0)
+    parser.add_argument('-dslim', "--dataset_limit", type=int, default=0)
     parser.add_argument('-dsgen', "--dataset_generate", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-dsniid', "--dataset_niid", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-dspart', "--dataset_partition", type=bool, default=False, action=argparse.BooleanOptionalAction)

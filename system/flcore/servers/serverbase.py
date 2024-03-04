@@ -15,6 +15,7 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+from sklearn.metrics import balanced_accuracy_score
 import torch
 import os
 import numpy as np
@@ -25,6 +26,7 @@ import random
 import wandb
 from utils.data_utils import read_client_data
 from utils.dlg import DLG
+import torch.nn.functional as F
 
 
 class Server(object):
@@ -33,6 +35,7 @@ class Server(object):
         self.args = args
         self.device = args.device
         self.dataset = args.dataset
+        self.dataset_limit = args.dataset_limit
         self.num_classes = args.num_classes
         self.global_rounds = args.global_rounds
         self.local_epochs = args.local_epochs
@@ -56,6 +59,7 @@ class Server(object):
         self.selected_clients = []
         self.train_slow_clients = []
         self.send_slow_clients = []
+        self.loss_weighted = args.loss_weighted
 
         self.uploaded_weights = []
         self.uploaded_ids = []
@@ -79,6 +83,7 @@ class Server(object):
         self.new_clients = []
         self.eval_new_clients = False
         self.fine_tuning_epoch_new = args.fine_tuning_epoch_new
+        self.round = -1
 
         self.no_wandb = args.no_wandb
         self.gpus = list(map(int, args.device_ids.split(',')))
@@ -219,17 +224,26 @@ class Server(object):
         num_samples = []
         tot_correct = []
         tot_auc = []
+
+        y_t =[]
+        y_p = []
+
         for c in self.clients:
-            ct, ns, auc = c.test_metrics()
+            ct, ns, auc, y_true, y_prob = c.test_metrics()
+            # ct, ns, auc = c.test_metrics()
             tot_correct.append(ct*1.0)
             tot_auc.append(auc*ns)
             num_samples.append(ns)
+            y_t.append(y_true)
+            y_p.append(y_prob)
+
+            
             if not self.no_wandb:
                 wandb.log({f'test_acc_{c.id}': ct*1.0/ns})
 
         ids = [c.id for c in self.clients]
 
-        return ids, num_samples, tot_correct, tot_auc
+        return ids, num_samples, tot_correct, tot_auc, y_t, y_p
 
     def train_metrics(self):
         if self.eval_new_clients and self.num_new_clients > 0:
@@ -253,16 +267,35 @@ class Server(object):
         stats = self.test_metrics()
         stats_train = self.train_metrics()
 
-        test_acc = sum(stats[2])*1.0 / sum(stats[1])
-        test_auc = sum(stats[3])*1.0 / sum(stats[1])
+        fed_test_acc = sum(stats[2])*1.0 / sum(stats[1])
+        fed_test_auc = sum(stats[3])*1.0 / sum(stats[1])
+        y_true_tot = np.concatenate(stats[4])
+        y_prob_tot = np.concatenate(stats[5])
+        y_prob_tot_sm = F.softmax(torch.tensor(y_prob_tot), dim=1).numpy()
+        y_prob_tot_sm_am = np.argmax(y_prob_tot_sm, axis=1)
+
+        fed_test_acc_balanced = balanced_accuracy_score(y_true_tot, y_prob_tot_sm_am)
+
         train_loss = sum(stats_train[2])*1.0 / sum(stats_train[1])
         accs = [a / n for a, n in zip(stats[2], stats[1])]
         aucs = [a / n for a, n in zip(stats[3], stats[1])]
+
+        for idx in range(len(stats[0])):
+            if self.no_wandb != True:
+                wandb.log({f'test/client_{stats[0][idx]}/acc': accs[idx], 'Round' : self.round})
+            y_true = stats[4][idx]
+            y_prob = stats[5][idx]
+            y_prob_sm = F.softmax(torch.tensor(y_prob), dim=1).numpy()
+            y_prob_sm_am = np.argmax(y_prob_sm, axis=1)
+            test_acc_balanced = balanced_accuracy_score(y_true,  y_prob_sm_am)
+            if self.no_wandb != True:
+                wandb.log({f'test/client_{stats[0][idx]}/bal_acc': test_acc_balanced, 'Round' : self.round})
+
         
         if acc == None:
-            self.rs_test_acc.append(test_acc)
+            self.rs_test_acc.append(fed_test_acc)
         else:
-            acc.append(test_acc)
+            acc.append(fed_test_acc)
         
         if loss == None:
             self.rs_train_loss.append(train_loss)
@@ -270,11 +303,26 @@ class Server(object):
             loss.append(train_loss)
 
         print("Averaged Train Loss: {:.4f}".format(train_loss))
-        print("Averaged Test Accurancy: {:.4f}".format(test_acc))
-        print("Averaged Test AUC: {:.4f}".format(test_auc))
+        print("Averaged Test Accuracy: {:.4f}".format(fed_test_acc))
+        print("Averaged Balanced Test Accurancy : {:.4f}".format(fed_test_acc_balanced))
+        
+        if self.no_wandb != True:
+            wandb.log({"pers/Federation Test Accuracy Mean": fed_test_acc, "Round":self.round})
+            wandb.log({"pers/Federation Balanced Test Accuracy Mean": fed_test_acc_balanced, "Round":self.round})
+        
+        print("Averaged Test AUC: {:.4f}".format(fed_test_auc))
         # self.print_(test_acc, train_acc, train_loss)
-        print("Std Test Accurancy: {:.4f}".format(np.std(accs)))
+        print("Std Test Accuracy: {:.4f}".format(np.std(accs)))
         print("Std Test AUC: {:.4f}".format(np.std(aucs)))
+
+        for client in self.clients:
+            for test_client in self.clients:
+                if ( client.id != test_client.id):
+                    acc, test_num, auc, y_true, y_prob = client.test_metrics_other(test_client)
+                    round_acc = acc/test_num
+                    print("Accuracy of model from node %d on dataset from node %d test set accuracy %02f" % (client.id, test_client.id, round_acc ))
+                    if self.no_wandb != True:
+                        wandb.log({f"test/client_{client.id}/round_test_acc_{client.id}_on_{test_client.id}": round_acc, "Round":self.round})
 
     def print_(self, test_acc, test_auc, train_loss):
         print("Average Test Accurancy: {:.4f}".format(test_acc))

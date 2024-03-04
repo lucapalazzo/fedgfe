@@ -1,13 +1,18 @@
 from collections import defaultdict
 import copy
+import sys
+import sklearn
 import torch
 import torch.nn as nn
 import numpy as np
 import time
+
+import wandb
 from flcore.clients.clientbase import Client
 from sklearn.preprocessing import label_binarize
+from sklearn.metrics import balanced_accuracy_score
 from sklearn import metrics
-
+from sklearn.utils.class_weight import compute_class_weight
 
 class clientRewind(Client):
     def __init__(self, args, id, train_samples, test_samples,is_strong = False, id_by_type=-1, rewind_epochs = 0, rewind_interval = 0, rewind_ratio = 0,**kwargs):
@@ -21,41 +26,61 @@ class clientRewind(Client):
         self.id_by_type = id_by_type
         self.train_loader = None
         self.no_wandb = args.no_wandb
+        self.train_dataloader = None
+        self.test_dataloader = None
 
         self.train_model = self.model
         self.train_model_id = id
-        self.starting_learn_model = self.model
+        self.starting_model = self.model
         self.logits = None
         # self.global_logits = None # quesi non sono più qelli globali ma quelli ricevuti dall'altro client
         # self.loss_mse = nn.MSELoss()
 
         self.lamda = args.lamda
+        self.dataset = args.dataset
+        self.loss_weightes = None
 
 
     def train(self, client_device = None, rewind_train_node = None):
         node_trainloader = self.load_train_data()
-        
+        # if ( self.loss_weighted and self.loss_weightes == None ):
+        if ( self.loss_weighted and self.loss_weightes == None ):
+            classes = [y[1].item() for x, y in enumerate(self.train_data)]
+            unique = np.unique(classes)
+            loss_weights = (compute_class_weight(class_weight='balanced', classes=unique, y=classes))
+            print ( f"Node {self.id} setting loss weights to {loss_weights}")
+            self.loss_weights = torch.Tensor(loss_weights).to(self.device)
+            self.loss = nn.CrossEntropyLoss(weight=self.loss_weights)
+        # unique, counts = np.unique(self.train_data[1], return_counts=True)
+
+
         trainloader = node_trainloader
         start_time = time.time()
         device = self.device
         if (client_device != None):
             device = client_device
         # self.model.to(self.device)
-        print ( "Training model from node %d on node %d " % ( self.train_model_id, self.id ) )
+        print ( "Training model from node %d on dataset %d " % ( self.train_model_id, self.id ) )
         self.model = self.train_model
+        self.loss_weights.to(device)
         self.model.train().to(device)
 
         max_local_epochs = self.local_epochs
         if self.train_slow:
             max_local_epochs = np.random.randint(1, max_local_epochs // 2)
 
-        max_local_epochs = max_local_epochs + self.rewind_epochs
-        rewind_steps = int ( max_local_epochs * self.rewind_ratio )
+        if ( self.rewind_epochs > 0 and rewind_train_node != None ):
+            rewind_steps = self.rewind_epochs
+        else:
+            rewind_steps = int ( max_local_epochs * self.rewind_ratio )
+        max_local_epochs = max_local_epochs - rewind_steps
+        
         for step in range(max_local_epochs):
             if ( step == max_local_epochs//2 and rewind_train_node != None ):
-                rewind_train_loader = rewind_train_node.load_train_data()
+                self.rewind_metrics()
                 print ( "Halfway step: %d steps on node %d, rewinding to node %d for %d steps" % ( step, self.id, rewind_train_node.id, rewind_steps ) )
-                self.rewind_train ( rewind_steps, rewind_train_loader, device )
+                self.rewind_train ( rewind_steps, rewind_train_node, device )
+                self.rewind_metrics()
             trainloader = node_trainloader
 
             for i, (x, y) in enumerate(trainloader):
@@ -84,13 +109,15 @@ class clientRewind(Client):
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
+        self.rewind_metrics()
 
-    def rewind_train(self, rewind_epochs = None, rewind_train_loader = None, device = 0):
-        if ( rewind_epochs == None ):
+    def rewind_train(self, rewind_epochs = 0, rewind_train_node = None, device = 0):
+        if ( rewind_epochs == 0 or rewind_train_node == None):
             return
+        dataloader = rewind_train_node.load_train_data()
         start_time = time.time() 
         for step in range(rewind_epochs):
-            for i, (x, y) in enumerate(rewind_train_loader):
+            for i, (x, y) in enumerate(dataloader):
                 if type(x) == type([]):
                     x[0] = x[0].to(device)
                 else:
@@ -151,28 +178,19 @@ class clientRewind(Client):
         # self.save_model(self.model, 'model')
 
         return losses, train_num
+    
+    def rewind_metrics(self):
+        losses, train_num = self.train_metrics()
+        loss = losses / train_num
+        if not self.no_wandb:
+            wandb.log({f"rewind/rewind_phase_loss_{self.id}": loss})
 
     def test_metrics_other(self, test_client = None):
         if ( test_client == None and test_client.id != self.id):
             return
         
-        # num_samples = []
-        # tot_correct = []
-        # tot_auc = []
-        # for c in self.clients:
-        #     ct, ns, auc = c.test_metrics()
-        #     tot_correct.append(ct*1.0)
-        #     tot_auc.append(auc*ns)
-        #     num_samples.append(ns)
-        #     if not self.no_wandb:
-        #         wandb.log({f'test_acc_{c.id}': ct*1.0/ns})
-
-        # ids = [c.id for c in self.clients]
-
-        # return ids, num_samples, tot_correct, tot_auc
         testloaderfull = test_client.load_test_data()
-        # self.model = self.load_model('model')
-        # self.model.to(self.device)
+       
         self.model.eval()
 
         test_acc = 0
@@ -209,7 +227,7 @@ class clientRewind(Client):
 
         auc = metrics.roc_auc_score(y_true, y_prob, average='micro')
         
-        return test_acc, test_num, auc
+        return test_acc, test_num, auc, y_true, y_prob
 # https://github.com/yuetan031/fedlogit/blob/main/lib/utils.py#L205
 def agg_func(logits):
     """
