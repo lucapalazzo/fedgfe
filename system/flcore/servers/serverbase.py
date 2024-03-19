@@ -87,6 +87,7 @@ class Server(object):
 
         self.no_wandb = args.no_wandb
         self.gpus = list(map(int, args.device_ids.split(',')))
+        # self.define_metrics()
 
     def set_clients(self, clientObj):
         for i, train_slow, send_slow in zip(range(self.num_clients), self.train_slow_clients, self.send_slow_clients):
@@ -215,6 +216,24 @@ class Server(object):
 
     def load_item(self, item_name):
         return torch.load(os.path.join(self.save_folder_name, "server_" + item_name + ".pt"))
+    
+    def define_metrics(self):
+        if not self.no_wandb:
+            print ( "Defining common metrics for all experiments, please CUSTOMIZE HERE you metrics ")
+            wandb.define_metric(f"pers/Federation Test Accuracy Mean", step_metric="round")
+            wandb.define_metric(f"pers/Federation Balanced Test Accuracy Mean", step_metric="round")
+            # for client in self.clients:
+            #     wandb.define_metric(f"test/client_{client.id}/acc", step_metric="round")
+            #     wandb.define_metric(f"test/client_{client.id}/bal", step_metric="round")
+            #     wandb.define_metric(f"train/client_{client.id}/round_train_loss_{client.id}", step_metric="round")
+            #     wandb.define_metric(f"test/client_{client.id}/round_test_acc_{client.id}", step_metric="round")
+            #     if self.rewind_ratio > 0 or self.rewind_epochs > 0:
+            #         wandb.define_metric(f"rewind/rewind_phase_loss_{client.id}", step_metric="round")
+
+            #     for test_client in self.clients:
+            #         if ( test_client.id != client.id):
+            #             wandb.define_metric(f"train/client_{client.id}/round_train_loss_{client.id}_on_{test_client.id}", step_metric="round")
+            #             wandb.define_metric(f"test/client_{client.id}/round_test_acc_{client.id}_on_{test_client.id}", step_metric="round")
 
     def test_metrics(self):
         if self.eval_new_clients and self.num_new_clients > 0:
@@ -281,15 +300,14 @@ class Server(object):
         aucs = [a / n for a, n in zip(stats[3], stats[1])]
 
         for idx in range(len(stats[0])):
-            if self.no_wandb != True:
-                wandb.log({f'test/client_{stats[0][idx]}/acc': accs[idx], 'Round' : self.round})
+            client_id = stats[0][idx]
+            self.data_log({f'test/client_{client_id}/acc': accs[idx], 'round' : self.round})
             y_true = stats[4][idx]
             y_prob = stats[5][idx]
             y_prob_sm = F.softmax(torch.tensor(y_prob), dim=1).numpy()
             y_prob_sm_am = np.argmax(y_prob_sm, axis=1)
             test_acc_balanced = balanced_accuracy_score(y_true,  y_prob_sm_am)
-            if self.no_wandb != True:
-                wandb.log({f'test/client_{stats[0][idx]}/bal_acc': test_acc_balanced, 'Round' : self.round})
+            self.data_log({f'test/client_{client_id}/bal_acc': test_acc_balanced, 'round' : self.round})
 
         
         if acc == None:
@@ -306,9 +324,8 @@ class Server(object):
         print("Averaged Test Accuracy: {:.4f}".format(fed_test_acc))
         print("Averaged Balanced Test Accurancy : {:.4f}".format(fed_test_acc_balanced))
         
-        if self.no_wandb != True:
-            wandb.log({"pers/Federation Test Accuracy Mean": fed_test_acc, "Round":self.round})
-            wandb.log({"pers/Federation Balanced Test Accuracy Mean": fed_test_acc_balanced, "Round":self.round})
+        self.data_log({"pers/Federation Test Accuracy Mean": fed_test_acc, "round":self.round})
+        self.data_log({"pers/Federation Balanced Test Accuracy Mean": fed_test_acc_balanced, "round":self.round})
         
         print("Averaged Test AUC: {:.4f}".format(fed_test_auc))
         # self.print_(test_acc, train_acc, train_loss)
@@ -320,9 +337,8 @@ class Server(object):
                 if ( client.id != test_client.id):
                     acc, test_num, auc, y_true, y_prob = client.test_metrics_other(test_client)
                     round_acc = acc/test_num
-                    print("Accuracy of model from node %d on dataset from node %d test set accuracy %02f" % (client.id, test_client.id, round_acc ))
-                    if self.no_wandb != True:
-                        wandb.log({f"test/client_{client.id}/round_test_acc_{client.id}_on_{test_client.id}": round_acc, "Round":self.round})
+                    # print("Accuracy of model from node %d on dataset from node %d test set accuracy %02f" % (client.id, test_client.id, round_acc ))
+                    self.data_log( {f"test/client_{client.id}/round_test_acc_{client.id}_on_{test_client.id}": round_acc, "round":self.round})
 
     def print_(self, test_acc, test_auc, train_loss):
         print("Average Test Accurancy: {:.4f}".format(test_acc))

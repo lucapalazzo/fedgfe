@@ -4,6 +4,7 @@
     // Per altre informazioni, visitare: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+        
         {
             "name": "Debugger Python: File corrente con argomenti",
             "type": "debugpy",
@@ -11,6 +12,145 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "args": "${command:pickArgs}"
+        },
+        {
+            "name": "FedRewind ISICMel Rotate",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/ffr_federated",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["-data", "ISIC_mel",
+                     "-m", "resnet",
+                     "-algo", "FedRewind",
+                     "--global_rounds", "100",
+                     "-did", "0",
+                     "-go", "prova",
+                     "-nc", "6",
+                     "--batch_size","64",
+                     "--local_epochs", "10",
+                     "-lr", "0.01",
+                     "-lam", "0.1",
+                     "--rewind_epochs", "2",
+                     "--rewind_interval", "5",
+                     "--rewind_rotate"
+//                    , "-go", "${inputs:experimentName"
+                ],
+
+        },
+        {
+            "name": "FedBN ISICMel",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/ffr_federated",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["-data", "ISIC_mel",
+                     "-m", "resnet",
+                     "-algo", "FedBN",
+                     "--global_rounds", "100",
+                     "-did", "1",
+                     "-go", "prova",
+                     "-nc", "6",
+                     "--batch_size","64",
+                     "--local_epochs", "10",
+                     "-lr", "0.01",
+                     "-lam", "0.1",
+                ],
+
+        },
+        {
+            "name": "FedRewind Rotate",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/ffr_federated",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["-data", "CIFAR-10",
+                     "-m", "resnet",
+                     "-algo", "FedRewind",
+                     "--global_rounds", "1",
+                     "-did", "0",
+                     "-go", "prova",
+                     "-nc", "10",
+                     "--batch_size","64",
+                     "--local_epochs", "1",
+                     "-lr", "0.01",
+                     "-lam", "0.1",
+                     "--rewind_ratio", "0.2",
+                     "--rewind_epochs", "2",
+                     "--rewind_interval", "5",
+                     "--rewind_rotate",
+                     "--device_ids", "0"
+//                    , "-go", "${inputs:experimentName"
+                ],
+
+        },
+        {
+            "name": "FedRewind Rotate 1LE 10GR",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/ffr_federated",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["-data", "CIFAR-10",
+                     // "--dataset_path", "CIFAR-10-nIID-10C",
+                     "--dataset_path", "CIFAR-10-nIID-10C",
+                     "-m", "resnet",
+                     "-algo", "FedRewind",
+                     "--global_rounds", "100",
+                     "-did", "0",
+                     "-go", "prova",
+                     "-nc", "10",
+                     "-nb", "10",
+                     "--batch_size","64",
+                     "--local_epochs", "10",
+                     "-lr", "0.01",
+                     "-lam", "0.1",
+                     "--rewind_ratio", "0.2",
+                     "--rewind_epochs", "2",
+                     "--rewind_interval", "5",
+                     "--rewind_rotate",
+                    //  "--no_wandb",
+                    //  "--loss_weighted",
+                    //  "--rewind_donkey"
+//                    , "-go", "${inputs:experimentName"
+                ],
+        },
+        {
+            "name": "FedRewind Rotate 5LE 5GR ISIC_mel",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/ffr_federated",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["-data", "ISIC_mel",
+                     "-m", "resnet",
+                     "-algo", "FedRewind",
+                     "--global_rounds", "10",
+                     "-did", "0",
+                     "-go", "prova",
+                     "-nc", "6",
+                     "-nb", "2",
+                     "--batch_size","64",
+                     "--local_epochs", "5",
+                     "-lr", "0.01",
+                     "-lam", "0.1",
+                     "--rewind_ratio", "0.2",
+                     "--rewind_epochs", "2",
+                     "--rewind_interval", "5",
+                     "--rewind_rotate",
+                     "--rewind_donkey",
+                    //  "--no_wandb",
+                     "--dataset_limit", "10",
+                     "--loss_weighted"
+//                    , "-go", "${inputs:experimentName"
+                ],
         },
         {
             "name": "FedRewind",
@@ -31,8 +171,10 @@
                      "--local_epochs", "10",
                      "-lr", "0.01",
                      "-lam", "0.1",
+                     "--rewind_ratio", "0.2",
                      "--rewind_epochs", "2",
                      "--rewind_interval", "5",
+                    //  "--rewind_rotate"
 //                    , "-go", "${inputs:experimentName"
                 ],
 
@@ -45,7 +187,7 @@
             "program": "system/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["-data", "CIFAR-10",
+            "args": ["-data", "CIFAR-10-nIID-10C",
                      "-m", "resnet",
                      "-algo", "Local",
                      "--global_rounds", "10",
@@ -56,6 +198,7 @@
                      "--local_epochs", "10",
                      "-lr", "0.01",
                      "-lam", "0.1",
+                     "--loss_weighted"
                     //  "--rewind_epochs", "2",
                     //  "--rewind_interval", "5",
 //                    , "-go", "${inputs:experimentName"
@@ -85,7 +228,6 @@
                     //  "--rewind_interval", "5",
 //                    , "-go", "${inputs:experimentName"
                 ],
-
         },
         {
             "name": "FedRewind DS Generate",
@@ -104,6 +246,25 @@
                     // "--dataset_niid"
                      //                    , "-go", "${inputs:experimentName"
                 ],
-
+        },
+        {
+            "name": "CIFAR Generate nIID 10C",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/ffr_federated",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["-data", "CIFAR-10",
+                     "-nc", "10",
+                     "--dataset_generate",
+                    //  "-dsbalance",
+                     "--dataset_niid",
+                     "--dataset_outdir", "CIFAR-10-nIID-10C",
+                     "--dataset_partition", "dir",
+                     "--dataset_balance"
+                     //                    , "-go", "${inputs:experimentName"
+                ],
         }
+    ]
 }

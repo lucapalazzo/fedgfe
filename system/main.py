@@ -16,6 +16,7 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 #!/usr/bin/env python
+import sys
 import wandb
 import copy
 import torch
@@ -462,8 +463,9 @@ if __name__ == "__main__":
     parser.add_argument('-dslim', "--dataset_limit", type=int, default=0)
     parser.add_argument('-dsgen', "--dataset_generate", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-dsniid', "--dataset_niid", type=bool, default=False, action=argparse.BooleanOptionalAction)
-    parser.add_argument('-dspart', "--dataset_partition", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-dspart', "--dataset_partition", type=str, default='pat')
     parser.add_argument('-dsbalance', "--dataset_balance", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-dsout', "--dataset_outdir", type=str, default=None)
     parser.add_argument('-nw', "--no_wandb", type=bool, default=False, action=argparse.BooleanOptionalAction)
     # practical
     parser.add_argument('-cdr', "--client_drop_rate", type=float, default=0.0,
@@ -541,6 +543,8 @@ if __name__ == "__main__":
     parser.add_argument('-rewra', "--rewind_ratio", type=float, default=0)
     parser.add_argument('-rewi', "--rewind_interval", type=int, default=0)
     parser.add_argument('-rewro', "--rewind_rotate", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-rewdo', "--rewind_donkey", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-rewlrs', "--rewind_learning_rate_schedule", type=bool, default=False, action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
 
@@ -600,11 +604,19 @@ if __name__ == "__main__":
 
     if args.dataset_generate:
         if args.dataset == "mnist" or args.dataset == "fmnist":
+            outdir = 'dataset/mnist/'
+            if ( args.dataset_outdir != None ):
+                outdir = 'dataset/' + args.dataset_outdir + '/'
             generate_mnist('dataset/mnist/', args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition)
         elif args.dataset == "CIFAR-10" or args.dataset == "CIFAR-100":
-            generate_cifar10('dataset/CIFAR-10/', args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition)
+            outdir = 'dataset/CIFAR-10/'
+            if ( args.dataset_outdir != None ):
+                outdir = 'dataset/' + args.dataset_outdir + '/'
+            generate_cifar10( outdir, args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition)
         # else:
         #     generate_synthetic('dataset/synthetic/', args.num_clients, 10, args.niid)
+        sys.exit(0)
+        
 
     
     # with torch.profiler.profile(

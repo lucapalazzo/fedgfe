@@ -53,6 +53,9 @@ class Client(object):
         self.local_epochs = args.local_epochs
         self.dataset_limit = args.dataset_limit
         self.loss_weighted = args.loss_weighted
+        self.round = -1
+
+        self.federation_size = 0
 
         # check BatchNorm
         self.has_BatchNorm = False
@@ -119,7 +122,8 @@ class Client(object):
         test_num = 0
         y_pred = []
         y_prob = []
-        y_true = []     
+        y_true = []
+        a = []   
 
         with torch.no_grad():
             for x, y in testloaderfull:
@@ -139,9 +143,10 @@ class Client(object):
 
                 if torch.isnan(output).any().item():
                     wandb.log({f'warning/{self.id}': torch.isnan(output)})
-                    print(f'warning for client {self.id} in round {self.round}:', torch.isnan(output))
+                    # print(f'warning for client {self.id} in round {self.round}:', torch.isnan(output))
+                    print(f'warning for client {self.id} in round {self.round}:', "output contains nan")
 
-                # prob = F.softmax(output, dim=1) 
+                prob = F.softmax(output, dim=1) 
                 # y_prob.append(prob.detach().cpu().numpy()) 
                 y_prob.append(output.detach().cpu().numpy()) 
                 nc = self.num_classes
@@ -155,10 +160,15 @@ class Client(object):
         # self.model.cpu()
         # self.save_model(self.model, 'model')
 
+        # a = np.concatenate(prob, axis=0)  
         y_prob = np.concatenate(y_prob, axis=0)
         y_true = np.concatenate(y_true, axis=0)
 
-        auc = metrics.roc_auc_score(y_true, y_prob[:,1], average='micro')
+        prob = prob.detach().cpu().numpy()
+
+        # auc = metrics.roc_auc_score(y_true, y_prob[:,1], average='micro')
+        # auc = metrics.roc_auc_score(y_true, prob, average='micro')
+        auc = 0
         
         return test_acc, test_num, auc, y_true, y_prob
 

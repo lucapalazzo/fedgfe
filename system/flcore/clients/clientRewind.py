@@ -13,16 +13,20 @@ from sklearn.preprocessing import label_binarize
 from sklearn.metrics import balanced_accuracy_score
 from sklearn import metrics
 from sklearn.utils.class_weight import compute_class_weight
+from torchvision.ops.focal_loss import sigmoid_focal_loss
 
 class clientRewind(Client):
     def __init__(self, args, id, train_samples, test_samples,is_strong = False, id_by_type=-1, rewind_epochs = 0, rewind_interval = 0, rewind_ratio = 0,**kwargs):
         super().__init__(args, id, train_samples, test_samples, **kwargs)
 
         self.node_routes = []
+        self.rewind_previous_node_id = []
         self.rewind_previous_node = []
         self.rewind_epochs = rewind_epochs
         self.rewind_interval = rewind_interval
         self.rewind_ratio = rewind_ratio
+        self.rewind_donkey = args.rewind_donkey
+        self.rewind_learning_rate_schedule = args.rewind_learning_rate_schedule
         self.id_by_type = id_by_type
         self.train_loader = None
         self.no_wandb = args.no_wandb
@@ -40,14 +44,27 @@ class clientRewind(Client):
         self.dataset = args.dataset
         self.loss_weightes = None
 
+        self.rewind_step = 0
+        self.focal_loss = sigmoid_focal_loss
 
-    def train(self, client_device = None, rewind_train_node = None):
+    def train(self, client_device = None, rewind_train_node = None, ):
         node_trainloader = self.load_train_data()
         # if ( self.loss_weighted and self.loss_weightes == None ):
-        if ( self.loss_weighted and self.loss_weightes == None ):
+        if ( self.loss_weighted and self.loss_weights == None ):
+
+            loss_weights = [0] * self.num_classes
+            lbls = set([l.item() for t,l in self.train_data])
             classes = [y[1].item() for x, y in enumerate(self.train_data)]
+            
             unique = np.unique(classes)
-            loss_weights = (compute_class_weight(class_weight='balanced', classes=unique, y=classes))
+            class_count = len(unique)
+            
+
+            lw = (compute_class_weight(class_weight='balanced', classes=unique, y=classes))
+            for i in range(class_count):
+                class_index = unique[i]
+                loss_weights[class_index] = lw[i]
+
             print ( f"Node {self.id} setting loss weights to {loss_weights}")
             self.loss_weights = torch.Tensor(loss_weights).to(self.device)
             self.loss = nn.CrossEntropyLoss(weight=self.loss_weights)
@@ -62,7 +79,7 @@ class clientRewind(Client):
         # self.model.to(self.device)
         print ( "Training model from node %d on dataset %d " % ( self.train_model_id, self.id ) )
         self.model = self.train_model
-        self.loss_weights.to(device)
+        # self.loss_weights.to(device)
         self.model.train().to(device)
 
         max_local_epochs = self.local_epochs
@@ -75,11 +92,19 @@ class clientRewind(Client):
             rewind_steps = int ( max_local_epochs * self.rewind_ratio )
         max_local_epochs = max_local_epochs - rewind_steps
         
+        rewind_nodes_count = len(self.rewind_previous_node)
+
         for step in range(max_local_epochs):
-            if ( step == max_local_epochs//2 and rewind_train_node != None ):
+            if ( step == max_local_epochs//2 and rewind_nodes_count > 0 ):
                 self.rewind_metrics()
-                print ( "Halfway step: %d steps on node %d, rewinding to node %d for %d steps" % ( step, self.id, rewind_train_node.id, rewind_steps ) )
-                self.rewind_train ( rewind_steps, rewind_train_node, device )
+                if ( self.rewind_donkey ):
+                    # u = np.unique(self.rewind_previous_node);
+                    u = unique_node ( self.rewind_previous_node[::-1] )
+                    for teacher in u:
+                        if ( teacher != None and teacher.id != self.id and teacher.id != self.train_model_id):
+                            self.rewind_train ( rewind_steps, teacher, device )
+                else:
+                    self.rewind_train ( rewind_steps, self.rewind_previous_node[-1], device )
                 self.rewind_metrics()
             trainloader = node_trainloader
 
@@ -93,7 +118,8 @@ class clientRewind(Client):
                     time.sleep(0.1 * np.abs(np.random.rand()))
                 output = self.model(x).to(device)
                 loss = self.loss(output, y).to(device)
-
+                # floss = self.focal_loss(output, y, alpha=0.25, gamma=2, reduction='mean')
+                # print ( f"Step {step} Loss {loss} Focal Loss {floss}")
                 # if self.global_logits != None:
                 #     logit_new = copy.deepcopy(output.detach())
                 #     for i, yy in enumerate(y):
@@ -109,9 +135,15 @@ class clientRewind(Client):
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-        self.rewind_metrics()
+
+
+        # if self.learning_rate_scheduler != None:
+        #     self.learning_rate_scheduler.step()
+        # self.rewind_metrics()
 
     def rewind_train(self, rewind_epochs = 0, rewind_train_node = None, device = 0):
+        print ( "Halfway stepx on node %d, rewinding to node %d for %d steps" % (self.id, rewind_train_node.id, rewind_epochs ) )
+
         if ( rewind_epochs == 0 or rewind_train_node == None):
             return
         dataloader = rewind_train_node.load_train_data()
@@ -132,12 +164,11 @@ class clientRewind(Client):
                 loss.backward()
                 self.optimizer.step()
 
-        # self.logits = agg_func(logits)
-
-        if self.learning_rate_decay:
+        if self.rewind_learning_rate_schedule:
             self.learning_rate_scheduler.step()
 
-        self.train_time_cost['num_rounds'] += 1
+        # self.rewind_step += 1
+        # self.train_time_cost['num_rounds'] += 1
         self.train_time_cost['total_cost'] += time.time() - start_time
 
 
@@ -152,6 +183,7 @@ class clientRewind(Client):
 
         train_num = 0
         losses = 0
+        lsf = sigmoid_focal_loss
         self.model.to(self.device)
         with torch.no_grad():
             for x, y in trainloader:
@@ -180,10 +212,11 @@ class clientRewind(Client):
         return losses, train_num
     
     def rewind_metrics(self):
+        self.rewind_step += 1
         losses, train_num = self.train_metrics()
         loss = losses / train_num
         if not self.no_wandb:
-            wandb.log({f"rewind/rewind_phase_loss_{self.id}": loss})
+            wandb.log({f"rewind/rewind_phase_loss_{self.id}": loss, "rewind_step": self.rewind_step})
 
     def test_metrics_other(self, test_client = None):
         if ( test_client == None and test_client.id != self.id):
@@ -220,7 +253,7 @@ class clientRewind(Client):
                 y_true.append(lb)
 
         # self.model.cpu()
-        # self.save_model(self.model, 'model')
+        # self.save_model(self.model, 'mode/tral')
 
         y_prob = np.concatenate(y_prob, axis=0)
         y_true = np.concatenate(y_true, axis=0)
@@ -244,3 +277,10 @@ def agg_func(logits):
             logits[label] = logit_list[0]
 
     return logits
+
+def unique_node ( nodes ):
+    unique = []
+    for node in nodes:
+        if not node in unique:
+            unique.append(node)
+    return unique
