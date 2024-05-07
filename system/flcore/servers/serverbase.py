@@ -220,11 +220,11 @@ class Server(object):
     def define_metrics(self):
         if not self.no_wandb:
             print ( "Defining common metrics for all experiments, please CUSTOMIZE HERE you metrics ")
-            wandb.define_metric(f"pers/Federation Test Accuracy Mean", step_metric="round")
-            wandb.define_metric(f"pers/Federation Balanced Test Accuracy Mean", step_metric="round")
-            # for client in self.clients:
-            #     wandb.define_metric(f"test/client_{client.id}/acc", step_metric="round")
-            #     wandb.define_metric(f"test/client_{client.id}/bal", step_metric="round")
+            wandb.define_metric(f"federation/Federation Test Accuracy Mean", step_metric="round")
+            wandb.define_metric(f"federation/Federation Balanced Test Accuracy Mean", step_metric="round")
+            for client in self.clients:
+                wandb.define_metric(f"test/client_{client.id}/acc", step_metric="round")
+                wandb.define_metric(f"test/client_{client.id}/bal", step_metric="round")
             #     wandb.define_metric(f"train/client_{client.id}/round_train_loss_{client.id}", step_metric="round")
             #     wandb.define_metric(f"test/client_{client.id}/round_test_acc_{client.id}", step_metric="round")
             #     if self.rewind_ratio > 0 or self.rewind_epochs > 0:
@@ -324,8 +324,8 @@ class Server(object):
         print("Averaged Test Accuracy: {:.4f}".format(fed_test_acc))
         print("Averaged Balanced Test Accurancy : {:.4f}".format(fed_test_acc_balanced))
         
-        self.data_log({"pers/Federation Test Accuracy Mean": fed_test_acc, "round":self.round})
-        self.data_log({"pers/Federation Balanced Test Accuracy Mean": fed_test_acc_balanced, "round":self.round})
+        self.data_log({"federation/Federation Test Accuracy Mean": fed_test_acc, "round":self.round})
+        self.data_log({"federation/Federation Balanced Test Accuracy Mean": fed_test_acc_balanced, "round":self.round})
         
         print("Averaged Test AUC: {:.4f}".format(fed_test_auc))
         # self.print_(test_acc, train_acc, train_loss)
@@ -334,11 +334,11 @@ class Server(object):
 
         for client in self.clients:
             for test_client in self.clients:
-                if ( client.id != test_client.id):
+                if ( client.model.id != test_client.model.id):
                     acc, test_num, auc, y_true, y_prob = client.test_metrics_other(test_client)
                     round_acc = acc/test_num
                     # print("Accuracy of model from node %d on dataset from node %d test set accuracy %02f" % (client.id, test_client.id, round_acc ))
-                    self.data_log( {f"test/client_{client.id}/round_test_acc_{client.id}_on_{test_client.id}": round_acc, "round":self.round})
+                    self.data_log( {f"test/model_{client.id}/round_test_acc_{client.id}_on_{test_client.id}": round_acc, "round":self.round})
 
     def print_(self, test_acc, test_auc, train_loss):
         print("Average Test Accurancy: {:.4f}".format(test_acc))

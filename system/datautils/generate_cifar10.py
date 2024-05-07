@@ -34,7 +34,7 @@ dir_path = "Cifar10/"
 
 
 # Allocate data to users
-def generate_cifar10(dir_path, num_clients, num_classes, niid, balance, partition):
+def generate_cifar10(dir_path, num_clients, num_classes, niid, balance, partition, alpha=0.1, class_per_client = 2):
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
         
@@ -80,7 +80,7 @@ def generate_cifar10(dir_path, num_clients, num_classes, niid, balance, partitio
     #     dataset.append(dataset_image[idx])
 
     X, y, statistic = separate_data((dataset_image, dataset_label), num_clients, num_classes,  
-                                    niid, balance, partition, class_per_client=2)
+                                    niid, balance, partition, class_per_client,alpha=alpha)
     train_data, test_data = split_data(X, y)
     save_file(config_path, train_path, test_path, train_data, test_data, num_clients, num_classes, 
         statistic, niid, balance, partition)

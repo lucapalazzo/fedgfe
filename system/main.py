@@ -80,6 +80,8 @@ from datautils.generate_mnist import generate_mnist
 from utils.result_utils import average_data
 from utils.mem_utils import MemReporter
 
+from disablrandomness import set_seed
+
 logger = logging.getLogger()
 logger.setLevel(logging.ERROR)
 
@@ -426,7 +428,9 @@ if __name__ == "__main__":
     parser.add_argument('-data', "--dataset", type=str, default="mnist")
     parser.add_argument('-datapath', "--dataset_path", type=str, default="")
 
+    parser.add_argument("-seed", "--seed", type=int, default=-1)
     parser.add_argument('-nb', "--num_classes", type=int, default=10)
+    parser.add_argument('-nbc', "--num_classes_per_client", type=int, default=2)
     parser.add_argument('-m', "--model", type=str, default="cnn")
     parser.add_argument('-lw', "--loss_weighted", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-lbs', "--batch_size", type=int, default=10)
@@ -466,6 +470,7 @@ if __name__ == "__main__":
     parser.add_argument('-dspart', "--dataset_partition", type=str, default='pat')
     parser.add_argument('-dsbalance', "--dataset_balance", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-dsout', "--dataset_outdir", type=str, default=None)
+    parser.add_argument('-dsdiralpha', "--dataset_dir_alpha", type=float, default=0.1)
     parser.add_argument('-nw', "--no_wandb", type=bool, default=False, action=argparse.BooleanOptionalAction)
     # practical
     parser.add_argument('-cdr', "--client_drop_rate", type=float, default=0.0,
@@ -539,9 +544,10 @@ if __name__ == "__main__":
     parser.add_argument('-wpt', "--weak_model_pretrain", type=bool, default=False)
 
     #FedRewind
-    parser.add_argument('-rewe', "--rewind_epochs", type=int, default=2)
+    parser.add_argument('-rewe', "--rewind_epochs", type=int, default=0)
     parser.add_argument('-rewra', "--rewind_ratio", type=float, default=0)
     parser.add_argument('-rewi', "--rewind_interval", type=int, default=0)
+    parser.add_argument('-rews', "--rewind_strategy", type=str, default="none")
     parser.add_argument('-rewro', "--rewind_rotate", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-rewdo', "--rewind_donkey", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-rewlrs', "--rewind_learning_rate_schedule", type=bool, default=False, action=argparse.BooleanOptionalAction)
@@ -600,7 +606,12 @@ if __name__ == "__main__":
         print("Rewind ratio: {}".format(args.rewind_ratio))
         print("Rewind interval: {}".format(args.rewind_interval))
         print("Rewind rotate: {}".format(args.rewind_rotate))
+        print("Rewind strategy: {}".format(args.rewind_strategy))
         print("=" * 50) 
+
+    if args.seed != -1:
+        print ("Setting seed to",args.seed)
+        set_seed(args.seed)
 
     if args.dataset_generate:
         if args.dataset == "mnist" or args.dataset == "fmnist":
@@ -612,7 +623,7 @@ if __name__ == "__main__":
             outdir = 'dataset/CIFAR-10/'
             if ( args.dataset_outdir != None ):
                 outdir = 'dataset/' + args.dataset_outdir + '/'
-            generate_cifar10( outdir, args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition)
+            generate_cifar10( outdir, args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition, args.dataset_dir_alpha, class_per_client=args.num_classes_per_client)
         # else:
         #     generate_synthetic('dataset/synthetic/', args.num_clients, 10, args.niid)
         sys.exit(0)

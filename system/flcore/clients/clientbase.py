@@ -26,6 +26,8 @@ from sklearn.preprocessing import label_binarize
 from sklearn import metrics
 import wandb
 from utils.data_utils import read_client_data
+from datautils.node_dataset import NodeData
+from modelutils.modelwrapper import FLModel
 
 
 class Client(object):
@@ -34,8 +36,10 @@ class Client(object):
     """
 
     def __init__(self, args, id, train_samples, test_samples, train_data = None, test_data = None, val_data = None, **kwargs):
-        self.model = copy.deepcopy(args.model)
-        self.starting_model = self.model
+        self.model = FLModel(args, id)
+
+        # self.model = copy.deepcopy(args.model)
+        self.starting_model = self.model.inner_model
         self.algorithm = args.algorithm
         self.dataset = args.dataset
         self.device = args.device
@@ -44,6 +48,7 @@ class Client(object):
         self.train_data = train_data
         self.test_data = test_data
         self.val_data = val_data
+        self.node_data = NodeData(args, self.id, **kwargs)
 
         self.num_classes = args.num_classes
         self.train_samples = train_samples
@@ -53,6 +58,8 @@ class Client(object):
         self.local_epochs = args.local_epochs
         self.dataset_limit = args.dataset_limit
         self.loss_weighted = args.loss_weighted
+        self.loss_weights = None
+
         self.round = -1
 
         self.federation_size = 0
@@ -72,8 +79,10 @@ class Client(object):
         self.privacy = args.privacy
         self.dp_sigma = args.dp_sigma
 
-        self.loss = nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
+        self.model.loss = nn.CrossEntropyLoss()
+        self.model.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
+        self.loss = self.model.loss
+        self.optimizer = self.model.optimizer
         self.learning_rate_scheduler = torch.optim.lr_scheduler.ExponentialLR(
             optimizer=self.optimizer, 
             gamma=args.learning_rate_decay_gamma
@@ -84,6 +93,7 @@ class Client(object):
     def load_train_data(self, batch_size=None,dataset_limit=0):
         if batch_size == None:
             batch_size = self.batch_size
+        return self.node_data.load_train_data(batch_size, dataset_limit)
         if self.train_data == None:
             print("Loading train data for client %d" % self.id)
             self.train_data = read_client_data(self.dataset, self.id, is_train=True,dataset_limit=dataset_limit)
@@ -93,6 +103,7 @@ class Client(object):
     def load_test_data(self, batch_size=None,dataset_limit=0):
         if batch_size == None:
             batch_size = self.batch_size
+        return self.node_data.load_test_data(batch_size, dataset_limit)
         if self.test_data == None:
             print("Loading test data for client %d" % self.id)
             self.test_data = read_client_data(self.dataset, self.id, is_train=False,dataset_limit=dataset_limit)
@@ -112,11 +123,20 @@ class Client(object):
         for param, new_param in zip(model.parameters(), new_params):
             param.data = new_param.data.clone()
 
-    def test_metrics(self):
-        testloaderfull = self.load_test_data()
-        # self.model = self.load_model('model')
-        # self.model.to(self.device)
-        self.model.eval()
+    def test_metrics(self, test_client = None, on_train = False):
+        client = self
+        if test_client != None:
+            client = test_client
+        if on_train == True:
+            testloader = client.load_train_data()
+        else:
+            testloader = client.load_test_data()
+        
+        test_acc, test_num, auc, test_y_true, test_y_prob = self.test_metrics_data(testloader) 
+
+        return test_acc, test_num, auc, test_y_true, test_y_prob
+    
+    def test_metrics_data(self, dataloader):
 
         test_acc = 0
         test_num = 0
@@ -125,8 +145,9 @@ class Client(object):
         y_true = []
         a = []   
 
+        self.model.eval()
         with torch.no_grad():
-            for x, y in testloaderfull:
+            for x, y in dataloader:
                 if type(x) == type([]):
                     x[0] = x[0].to(self.device)
                 else:
@@ -172,8 +193,9 @@ class Client(object):
         
         return test_acc, test_num, auc, y_true, y_prob
 
-    def train_metrics(self):
-        trainloader = self.load_train_data()
+    def train_metrics(self, trainloader=None):
+        if ( trainloader == None):
+            trainloader = self.load_train_data()
         # self.model = self.load_model('model')
         # self.model.to(self.device)
         self.model.eval()
@@ -188,7 +210,7 @@ class Client(object):
                     x = x.to(self.device)
                 y = y.to(self.device)
                 output = self.model(x)
-                loss = self.loss(output, y)
+                loss = self.model.loss(output, y)
                 train_num += y.shape[0]
                 losses += loss.item() * y.shape[0]
 
@@ -196,7 +218,12 @@ class Client(object):
         # self.save_model(self.model, 'model')
 
         return losses, train_num
-    
+    def train_metrics_other(self, test_client = None):
+        if ( test_client == None and test_client.id != self.id):
+            return
+        trainloader = test_client.load_train_data()
+        return self.train_metrics(trainloader)
+
     def test_metrics_other(self, test_client = None):
         if ( test_client == None and test_client.id != self.id):
             return

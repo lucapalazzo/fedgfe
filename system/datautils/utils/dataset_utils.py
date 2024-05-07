@@ -23,7 +23,7 @@ from sklearn.model_selection import train_test_split
 
 batch_size = 10
 train_size = 0.75 # merge original training set and test set, then split it manually. 
-least_samples = 1 # guarantee that each client must have at least one samples for testing. 
+least_samples = 400 # guarantee that each client must have at least one samples for testing. 
 alpha = 0.1 # for Dirichlet distribution
 
 def check(config_path, train_path, test_path, num_clients, num_classes, niid=False, 
@@ -51,7 +51,7 @@ def check(config_path, train_path, test_path, num_clients, num_classes, niid=Fal
 
     return False
 
-def separate_data(data, num_clients, num_classes, niid=False, balance=False, partition='pat', class_per_client=None):
+def separate_data(data, num_clients, num_classes, niid=False, balance=False, partition='pat', class_per_client=None, alpha = 0.1):
     X = [[] for _ in range(num_clients)]
     y = [[] for _ in range(num_clients)]
     statistic = [[] for _ in range(num_clients)]

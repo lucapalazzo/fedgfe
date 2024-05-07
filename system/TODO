@@ -1,0 +1,18 @@
+- metrica per nodo
+- mterica per modello
+- ad ogni round calcolare l'accuratezza (sia bilanciata che non) media e deviazione standard per ogni modello su tutti i dataset e su tutti tranne il proprio plottare in grafico wandb
+
+
+Fed-rewind metriche richieste:
+Accuracy = (TP+TN)/(TP+TN+FP+FN)
+Accuracy bilanciata = (specificity+sensitivity)/2
++ a ogni fine round calcolo di accuracy del modello X su tutti dataset train
++ a ogni fine round calcolo di accuracy bilanciata del modello X su tutti dataset train
++ a ogni fine round calcolo di accuracy del modello X su tutti i dataset train tranne quello su cui è stato allenato per l'attuale round
++ a ogni fine round calcolo di accuracy bilanciata del modello X su tutti i dataset train tranne quello su cui è stato allenato per l'attuale round
++ a ogni fine round calcolo di accuracy del modello X su tutti dataset test
++ a ogni fine round calcolo di accuracy bilanciata del modello X su tutti dataset test
++ a ogni fine round calcolo di accuracy del modello X su tutti i dataset test tranne quello su cui è stato allenato per l'attuale round
++ a ogni fine round calcolo di accuracy bilanciata del modello X su tutti i dataset test tranne quello su cui è stato allenato per l'attuale round
+++ col le 8 metriche sopra calcolare mean per modello per round e plottarne il grafico (vogliamo dedere che salga)
+++ col le 8 metriche sopra calcolare std per modello per round e plottarne il grafico (vogliamo vedere che scenda)
