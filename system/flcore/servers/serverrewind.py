@@ -110,7 +110,7 @@ class FedRewind(Server):
                                 if previous_client.id == previous_node_index:
                                     previous_node = previous_client
                                     break
-                        running_threads[gpu] = self.train_thread(client, device, future, previous_node)
+                        running_threads[gpu] = self.train_thread(client, gpu, future, previous_node)
                         running_start_times[gpu] = time.time()
                         running_clients[gpu] = client
                         # running_threads[gpu] = self.train_thread (client, device)
