@@ -9,7 +9,12 @@ class FLModel(nn.Module):
         self.inner_model = copy.deepcopy(args.model)
         self.loss = None
         self.optimizer = None
-    
+
+    def to(self, device):
+        self.device = device
+        self.inner_model.to(device)
+        return self
+
     def forward(self,x):
         return self.inner_model(x)
     

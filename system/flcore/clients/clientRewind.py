@@ -178,7 +178,7 @@ class clientRewind(Client):
             loss, num = self.train_metrics()
             print ( f"{loss/num} ", end='')
             if ( self.rewind_strategy == "atend" and len(self.rewind_previous_node) > 0 ):
-                self.rewind(step, rewind_epochs, rewind_nodes_count)
+                self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
         # print("lr ", *epoch_start_lr, sep=" " )
         # print("lr ", *epoch_end_lr, sep=" " )
         # if self.learning_rate_scheduler != None:
@@ -212,7 +212,7 @@ class clientRewind(Client):
                 for teacher in rewind_nodes:
                     # if ( teacher != None and teacher.id != self.id and teacher.id != self.train_model_id):
                     if ( teacher != None ):
-                        self.rewind_train ( rewind_start_epoch, teacher, device )
+                        self.rewind_train ( rewind_epochs, teacher, device )
                 self.rewind_train_metrics(teacher)
 
     def rewind_train(self, rewind_epochs = 0, rewind_train_node = None, device = 0):
@@ -223,7 +223,9 @@ class clientRewind(Client):
             return
         
         dataloader = rewind_train_node.load_train_data()
-        start_time = time.time() 
+        start_time = time.time()
+        device = self.model.device
+        # self.model.to(device)
         for step in range(rewind_epochs):
             for i, (x, y) in enumerate(dataloader):
                 if type(x) == type([]):
@@ -339,6 +341,15 @@ class clientRewind(Client):
 
         y_prob = np.concatenate(y_prob, axis=0)
         y_true = np.concatenate(y_true, axis=0)
+
+        y_true_tensor = torch.tensor(y_true)
+        y_prob_tensor = torch.tensor(y_prob)
+        if y_true_tensor.isnan().any():
+            y_true = y_true_tensor.nan_to_num().numpy()
+            print ( "nan in y_true", y_true)
+        if y_prob_tensor.isnan().any():
+            y_prob = y_prob_tensor.nan_to_num().numpy()
+            print ( "nan in y_prob", y_prob)
 
         auc = metrics.roc_auc_score(y_true, y_prob, average='micro')
         

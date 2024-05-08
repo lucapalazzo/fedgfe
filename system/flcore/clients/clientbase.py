@@ -145,6 +145,7 @@ class Client(object):
         y_true = []
         a = []   
 
+        self.model.to(self.device)
         self.model.eval()
         with torch.no_grad():
             for x, y in dataloader:
@@ -202,6 +203,7 @@ class Client(object):
 
         train_num = 0
         losses = 0
+        self.model.to(self.device)
         with torch.no_grad():
             for x, y in trainloader:
                 if type(x) == type([]):
