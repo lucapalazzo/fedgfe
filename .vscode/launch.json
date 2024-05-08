@@ -229,7 +229,7 @@
                     //  "--rewind_epochs", "2",
                     //  "--rewind_interval", "5",
                      "--rewind_rotate",
-                     "--rewind_strategy", "atend",
+                     "--rewind_strategy", "halfway",
                      "--learning_rate_decay_gamma", "0.5",
                     //  "--no_wandb",
                     //  "--loss_weighted",

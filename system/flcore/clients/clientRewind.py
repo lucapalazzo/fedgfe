@@ -131,14 +131,14 @@ class clientRewind(Client):
             rewind_epochs = self.rewind_epochs
         else:
             rewind_epochs = int ( max_local_epochs * self.rewind_ratio )
-        max_local_epochs = max_local_epochs - rewind_epochs
+        local_epochs = max_local_epochs - rewind_epochs
         
         rewind_nodes_count = len(self.rewind_previous_node)
         epoch_start_lr = []
         epoch_end_lr = []
-        for step in range(max_local_epochs):
+        for step in range(local_epochs):
             if ( self.rewind_strategy == "halfway" and len(self.rewind_previous_node) > 0 ):
-                self.rewind(step, rewind_epochs, rewind_nodes_count)
+                self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
 
             trainloader = node_trainloader
 
@@ -216,7 +216,7 @@ class clientRewind(Client):
                 self.rewind_train_metrics(teacher)
 
     def rewind_train(self, rewind_epochs = 0, rewind_train_node = None, device = 0):
-        print ( "\nStep on node %d, rewinding to node %d for %d epochs" % (self.id, rewind_train_node.id, rewind_epochs ) )
+        print ( "\nStep on node %d, %s rewinding to node %d for %d epochs" % (self.id, self.rewind_strategy, rewind_train_node.id, rewind_epochs ) )
 
         # rewind_optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
         if ( rewind_epochs == 0 or rewind_train_node == None):
