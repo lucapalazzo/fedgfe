@@ -1,5 +1,6 @@
 from utils.data_utils import read_client_data
 from torch.utils.data import DataLoader
+import wandb
 class NodeData:
     def __init__(self, args, id = -1, **kwargs):
         self.id = id
@@ -31,6 +32,8 @@ class NodeData:
     
     def stats_get(self):
         # labels = self.labels_get()
+        self.load_train_data(1)
+
         labels = list(range(self.num_classes))
         if self.labels_count == None or self.labels_percent == None:
             self.labels_count = dict(zip(labels, [0]*len(labels)))
@@ -39,6 +42,45 @@ class NodeData:
             self.labels_percent = {k: v*100/self.train_samples for k,v in self.labels_count.items()}
 
         return self.labels_count, self.labels_percent
+    
+    def test_stats_get(self):
+        # labels = self.labels_get()
+        self.load_test_data(1)
+        labels = list(range(self.num_classes))
+        if self.labels_count == None or self.labels_percent == None:
+            self.labels_count = dict(zip(labels, [0]*len(labels)))
+            for _,l in self.test_data:
+                self.labels_count[l.item()] += 1
+            self.labels_percent = {k: v*100/self.test_samples for k,v in self.labels_count.items()}
+
+        return self.labels_count, self.labels_percent
+    
+    # def stats_wandb_define(self):
+    #     wandb.define_metric(f"dataset/client_{self.id}_train_labels", step_metric="class")
+    #     wandb.define_metric(f"dataset/client_{self.id}_test_labels", step_metric="class")
+       
+    def stats_wandb_log(self):
+        labels_count, labels_percent = self.stats_get()
+        test_labels_count, test_labels_percent = self.test_stats_get()
+        # labels = len(labels_count)
+        # data = []
+
+        # for label in range(labels):
+        #     data.append([label, labels_count[label], test_labels_count[label]])
+        data = [[label, count] for (label, count) in labels_count.items()]
+        table = wandb.Table(data=data, columns=["class", "count"])
+        wandb.log({f"dataset/client_{self.id}_train_labels" : wandb.plot.bar(table, "class",
+            "count", title=f"Client {self.id} Train class count")})
+        
+        data = [[label, count] for (label, count) in test_labels_count.items()]
+        table = wandb.Table(data=data, columns=["class", "count"])
+        wandb.log({f"dataset/client_{self.id}_test_labels" : wandb.plot.bar(table, "class",
+           "count", title=f"Client {self.id} Test class count")})
+        # for k,v in labels_count.items():
+        #     wandb.log({f"dataset/client_{self.id}_train_labels": v, "class":k})
+        # labels_count, labels_percent = self.test_stats_get()
+        # for k,v in labels_count.items():
+        #     wandb.log({f"dataset/client_{self.id}_test_labels": v, "class":k})
 
     def stats_dump(self):
         labels_count, labels_percent = self.stats_get()

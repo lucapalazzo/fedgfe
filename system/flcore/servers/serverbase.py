@@ -83,11 +83,15 @@ class Server(object):
         self.new_clients = []
         self.eval_new_clients = False
         self.fine_tuning_epoch_new = args.fine_tuning_epoch_new
-        self.round = -1
+        self.round = 0
 
         self.no_wandb = args.no_wandb
         self.gpus = list(map(int, args.device_ids.split(',')))
-        # self.define_metrics()
+
+        self.round_test_stats = self.num_clients * [None]
+        self.round_test_on_train_stats = self.num_clients * [None]
+        self.round_train_stats = self.num_clients * [None]
+
 
     def set_clients(self, clientObj):
         for i, train_slow, send_slow in zip(range(self.num_clients), self.train_slow_clients, self.send_slow_clients):
@@ -100,6 +104,7 @@ class Server(object):
                             train_slow=train_slow, 
                             send_slow=send_slow)
             self.clients.append(client)
+        self.define_metrics()
 
     # random select slow clients
     def select_slow_clients(self, slow_rate):
@@ -220,11 +225,16 @@ class Server(object):
     def define_metrics(self):
         if not self.no_wandb:
             print ( "Defining common metrics for all experiments, please CUSTOMIZE HERE you metrics ")
+            wandb.define_metric(f"federation/acc_std", step_metric="round") 
+            wandb.define_metric(f"federation/acc_std_on_train", step_metric="round") 
             wandb.define_metric(f"federation/Federation Test Accuracy Mean", step_metric="round")
             wandb.define_metric(f"federation/Federation Balanced Test Accuracy Mean", step_metric="round")
             for client in self.clients:
                 wandb.define_metric(f"test/client_{client.id}/acc", step_metric="round")
                 wandb.define_metric(f"test/client_{client.id}/bal", step_metric="round")
+                for t in range(self.num_clients):
+                    wandb.define_metric(f"test/model_{client.id}/round_test_acc_{t}", step_metric="round")
+                    wandb.define_metric(f"test/model_{client.id}/round_test_acc_on_train_{t}", step_metric="round")
             #     wandb.define_metric(f"train/client_{client.id}/round_train_loss_{client.id}", step_metric="round")
             #     wandb.define_metric(f"test/client_{client.id}/round_test_acc_{client.id}", step_metric="round")
             #     if self.rewind_ratio > 0 or self.rewind_epochs > 0:
@@ -240,29 +250,65 @@ class Server(object):
             self.fine_tuning_new_clients()
             return self.test_metrics_new_clients()
         
-        num_samples = []
-        tot_correct = []
-        tot_auc = []
+        test_num_samples = []
+        test_tot_correct = []
+        test_tot_auc = []
 
-        y_t =[]
-        y_p = []
+        test_y_t =[]
+        test_y_p = []
+
+        train_num_samples = []
+        train_tot_correct = []
+        train_tot_auc = []
+
+        train_y_t =[]
+        train_y_p = []
+        test_clients_stats = self.num_clients * [None]
+        train_clients_stats = self.num_clients * [None] 
 
         for c in self.clients:
-            ct, ns, auc, y_true, y_prob = c.test_metrics()
-            # ct, ns, auc = c.test_metrics()
-            tot_correct.append(ct*1.0)
-            tot_auc.append(auc*ns)
-            num_samples.append(ns)
-            y_t.append(y_true)
-            y_p.append(y_prob)
+            test_client_stats = []
+            train_client_stats = [] 
+            for t in self.clients:
+                test = []
+                test_ct, test_ns, test_auc, test_y_true, test_y_prob = c.test_metrics(t)
+                train_ct, train_ns, train_auc, train_y_true, train_y_prob = c.test_metrics(t, on_train=True)
+                test_tot_correct.append(test_ct*1.0)
+                test_tot_auc.append(test_auc*test_ns)
+                test_num_samples.append(test_ns)
+                test_y_t.append(test_y_true)
+                test_y_p.append(test_y_prob)
+                test.append(test_ct*1.0)
+                test.append(test_auc*test_ns)
+                test.append(test_ns)
+                test.append(test_y_true)
+                test.append(test_y_prob)
+                test_client_stats.append(test)
+                
+                train =[]
+                train_tot_correct.append(train_ct*1.0)
+                train_tot_auc.append(train_auc*train_ns)
+                train_num_samples.append(train_ns)
+                train_y_t.append(train_y_true)
+                train_y_p.append(train_y_prob)
+                train.append(train_ct*1.0)
+                train.append(train_auc*train_ns)
+                train.append(train_ns)
+                train.append(train_y_true)
+                train.append(train_y_prob)
+                train_client_stats.append(train)
+            
+            test_clients_stats[c.model.id] = test_client_stats
+            train_clients_stats[c.model.id] = train_client_stats
+            
 
             
-            if not self.no_wandb:
-                wandb.log({f'test_acc_{c.id}': ct*1.0/ns})
+            # if not self.no_wandb:
+            #     wandb.log({f'test_acc_{c.id}': ct*1.0/ns})
 
         ids = [c.id for c in self.clients]
 
-        return ids, num_samples, tot_correct, tot_auc, y_t, y_p
+        return ids, test_num_samples, test_tot_correct, test_tot_auc, test_y_t, test_y_p, test_clients_stats, train_clients_stats
 
     def train_metrics(self):
         if self.eval_new_clients and self.num_new_clients > 0:
@@ -283,8 +329,15 @@ class Server(object):
 
     # evaluate selected clients
     def evaluate(self, acc=None, loss=None):
+
         stats = self.test_metrics()
         stats_train = self.train_metrics()
+
+        round_test_stats = stats[6]
+        round_test_on_train_stats = stats[7]
+        self.round_test_stats.insert(self.round, round_test_stats)
+        self.round_test_on_train_stats.insert(self.round, round_test_on_train_stats)
+        self.round_train_stats.insert(self.round, stats_train)
 
         fed_test_acc = sum(stats[2])*1.0 / sum(stats[1])
         fed_test_auc = sum(stats[3])*1.0 / sum(stats[1])
@@ -320,6 +373,40 @@ class Server(object):
         else:
             loss.append(train_loss)
 
+        # for stats in client_stats:
+        #     for client_stats in stats:
+        #         round_acc = client_stats[0]/client_stats[2]
+        test_accuracies = []
+        for model_id in range(len(round_test_stats)):
+            model_stats = round_test_stats[model_id]
+            model_accs = []
+            for test_client_id in range(len(model_stats)):
+                round_acc = model_stats[test_client_id][0]/model_stats[test_client_id][2]
+                test_accuracies.append(round_acc)
+                model_accs.append(round_acc)
+                self.data_log({f"test/model_{model_id}/round_test_acc_{test_client_id}": round_acc, "round":self.round})
+            round_acc_std = np.std(test_accuracies)
+            self.data_log({f"test/model_{model_id}/test_std": round_acc_std, "round":self.round})
+       
+        test_accuracies_on_train = []
+        for model_id in range(len(round_test_on_train_stats)):
+            model_accs_on_train = []
+            model_stats = round_test_on_train_stats[model_id]
+            for test_client_id in range(len(model_stats)):
+                round_acc = model_stats[test_client_id][0]/model_stats[test_client_id][2]
+                test_accuracies_on_train.append(round_acc)
+                model_accs_on_train.append(round_acc)
+                self.data_log({f"test/model_{model_id}/round_test_acc_on_train_{test_client_id}": round_acc, "round":self.round})
+            round_acc_on_train_std = np.std(test_accuracies_on_train)
+            self.data_log({f"test/model_{model_id}/test_std_on_train": round_acc_on_train_std, "round":self.round})
+
+
+
+        fed_acc_std = np.std(test_accuracies)
+        fed_acc_std_on_train = np.std(test_accuracies_on_train)
+        self.data_log({"federation/acc_std": fed_acc_std, "round":self.round})
+        self.data_log({"federation/acc_std_on_train": fed_acc_std_on_train, "round":self.round})
+
         print("Averaged Train Loss: {:.4f}".format(train_loss))
         print("Averaged Test Accuracy: {:.4f}".format(fed_test_acc))
         print("Averaged Balanced Test Accurancy : {:.4f}".format(fed_test_acc_balanced))
@@ -332,13 +419,14 @@ class Server(object):
         print("Std Test Accuracy: {:.4f}".format(np.std(accs)))
         print("Std Test AUC: {:.4f}".format(np.std(aucs)))
 
-        for client in self.clients:
-            for test_client in self.clients:
-                if ( client.model.id != test_client.model.id):
-                    acc, test_num, auc, y_true, y_prob = client.test_metrics_other(test_client)
-                    round_acc = acc/test_num
-                    # print("Accuracy of model from node %d on dataset from node %d test set accuracy %02f" % (client.id, test_client.id, round_acc ))
-                    self.data_log( {f"test/model_{client.id}/round_test_acc_{client.id}_on_{test_client.id}": round_acc, "round":self.round})
+        # for client in self.clients:
+        #     for test_client in self.clients:
+        #         if ( client.model.id != test_client.model.id):
+        #             acc, test_num, auc, y_true, y_prob = client.test_metrics_other(test_client)
+        #             round_acc = acc/test_num
+        #             # print("Accuracy of model from node %d on dataset from node %d test set accuracy %02f" % (client.id, test_client.id, round_acc ))
+        #             self.data_log( {f"test/model_{client.id}/round_test_acc_{client.id}_on_{test_client.id}": round_acc, "round":self.round})
+        self.round += 1
 
     def print_(self, test_acc, test_auc, train_loss):
         print("Average Test Accurancy: {:.4f}".format(test_acc))

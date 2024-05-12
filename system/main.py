@@ -408,7 +408,8 @@ def run(args):
 
     print("All done!")
 
-    reporter.report()
+    device = args.device + ":" + args.device_id
+    reporter.report( device=device)
 
 available_gpus = []
 if __name__ == "__main__":

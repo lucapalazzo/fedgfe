@@ -70,7 +70,6 @@ class FedRewind(Server):
     def train(self):
        
         for i in range(self.global_rounds+1):
-            self.round = i
             s_t = time.time()
             # importante commentare questa riga per avere i client sempre ordinati
             #self.selected_clients = self.select_clients()
@@ -167,7 +166,7 @@ class FedRewind(Server):
             self.routes = get_routes(self.num_clients, self.clients)
             self.distribute_routes(self.routes)
             self.dump_routes(self.routes)
-            self.federation_metrics()
+            # self.federation_metrics()
 
 
             print(self.uploaded_ids)
@@ -246,7 +245,10 @@ class FedRewind(Server):
                 next_client.next_train_model = client.train_model
                 next_client.next_train_model_id = client.train_model_id
                 print ( "Node %d model will be sent to %d and will rewind back to node %d" % (node, next_node, previous_node ) )
-
+        
+        for client in self.clients:
+            client.model = client.next_train_model
+            
     def client_round_ending_hook(self, client):
 
         round_loss, previous_loss = self.round_train_metrics( client )
@@ -287,6 +289,8 @@ class FedRewind(Server):
                             dataset_limit=self.dataset_limit)
             client.prefix=file_prefix
             client.device = "cuda:"+str(next(gpus))
+            # client.node_data.stats_wandb_define()
+            client.node_data.stats_wandb_log()
             
             # if is_strong:
             #     n_strong += 1
@@ -296,8 +300,7 @@ class FedRewind(Server):
 
     def define_metrics(self):
         super().define_metrics()
-        wandb.define_metric(f"federation/acc_std", step_metric="round") 
-        wandb.define_metric(f"federation/acc_std_on_train", step_metric="round") 
+  
         for client in self.clients:
             wandb.define_metric(f"test/model_{client.id}/acc", step_metric="round")
             wandb.define_metric(f"test/model_{client.id}/bal", step_metric="round")
@@ -308,6 +311,10 @@ class FedRewind(Server):
             wandb.define_metric(f"test/model_{client.id}/test_std_on_train", step_metric="round")
             if self.rewind_ratio > 0 or self.rewind_epochs > 0:
                 wandb.define_metric(f"rewind/rewind_phase_loss_{client.id}", step_metric="rewind_step")
+                wandb.define_metric(f"train/model_{client.id}/pre_rewind_loss_on_local", step_metric="round")
+                wandb.define_metric(f"train/model_{client.id}/pre_rewind_loss_on_previous", step_metric="round")
+                wandb.define_metric(f"train/model_{client.id}/post_rewind_loss_on_local", step_metric="round")
+                wandb.define_metric(f"train/model_{client.id}/post_rewind_loss_on_previous", step_metric="round")
 
             for test_client in self.clients:
                 wandb.define_metric(f"train/model_{client.id}/round_train_loss_{client.id}_on_{test_client.id}", step_metric="round")
@@ -327,27 +334,126 @@ class FedRewind(Server):
         #                 wandb.define_metric(f"test/client_{client.id}/round_test_acc_{client.id}_on_{test_client.id}", step_metric="round")
 
 
+    def evaluate(self):
+        super().evaluate()
+
+        return
+        # clients_test_stats, clients_train_stats = self.federation_metrics()
+
+
     def federation_metrics(self):
+        num_samples = []
+        tot_correct = []
+        tot_auc = []
+
+        y_t =[]
+        y_p = []
+        clients_test_stats = []
+        clients_train_stats = []
+
+        for c in self.clients:
+            client_test_stats = []
+            for t in self.clients:
+                client_test_stat = []
+                ct, ns, auc, y_true, y_prob = c.test_metrics(t)
+                # ct, ns, auc = c.test_metrics()
+                tot_correct.append(ct*1.0)
+                tot_auc.append(auc*ns)
+                num_samples.append(ns)
+                y_t.append(y_true)
+                y_p.append(y_prob)
+                client_test_stat.append(ct*1.0/ns)
+                client_test_stat.append(auc*ns)
+                client_test_stat.append(ns)
+                client_test_stat.append(y_true)
+                client_test_stat.append(y_prob)
+                client_test_stats.append(client_test_stat)
+            clients_test_stats.insert(c.model.id, client_test_stats)
+            # clients_stats.append(client_stats)
+
+        for c in self.clients:
+            client_train_stats = []
+            for t in self.clients:
+                client_train_stat = []
+                ct, ns, auc, y_true, y_prob = c.test_metrics(t, on_train = True )
+                # ct, ns, auc = c.test_metrics()
+                tot_correct.append(ct*1.0)
+                tot_auc.append(auc*ns)
+                num_samples.append(ns)
+                y_t.append(y_true)
+                y_p.append(y_prob)
+                client_train_stat.append(ct*1.0/ns)
+                client_train_stat.append(auc*ns)
+                client_train_stat.append(ns)
+                client_train_stat.append(y_true)
+                client_train_stat.append(y_prob)
+                client_train_stats.append(client_train_stat)
+            # train_clients_stats.append(client_stats)
+            clients_train_stats.insert(c.model.id, client_train_stats)
+        # test_accs = []
+        # train_accs = []
+        # train_losses = []
+        # acc_std = []
+        # acc_std_on_train = []
+        # for client in self.clients:
+        #     test_acc, test_num, auc, test_y_true, test_y_prob = client.test_metrics()
+        #     test_accs.append(test_acc)
+        #     train_loss, train_num = client.train_metrics()
+        #     # train_accs.append(train_acc)
+        #     train_losses.append(train_loss)
+        #     acc_std.append(client.test_std)
+        #     acc_std_on_train.append(client.test_std_on_train)
+
+        acc_std_mean, acc_std_on_train_mean  = self.federation_metrics_std( clients_test_stats, clients_train_stats )
+        self.data_log({"federation/acc_std": acc_std_mean, "round":self.round})
+        self.data_log({"federation/acc_std_on_train": acc_std_on_train_mean, "round":self.round})
+        print(f"Mean standard deviation of accuracies on test sets: {acc_std_mean} {acc_std_on_train_mean}")
+
+        return clients_test_stats, clients_train_stats
+    
+    def federation_metrics_std(self, clients_test_stats = None, clients_train_stats = None ):
         test_accs = []
         train_accs = []
         train_losses = []
         acc_std = []
         acc_std_on_train = []
-        for client in self.clients:
-            test_acc, test_num, auc, test_y_true, test_y_prob = client.test_metrics()
-            test_accs.append(test_acc)
-            train_loss, train_num = client.train_metrics()
-            # train_accs.append(train_acc)
-            train_losses.append(train_loss)
-            acc_std.append(client.test_std)
-            acc_std_on_train.append(client.test_std_on_train)
+        if ( clients_test_stats == None ):
+            for client in self.clients:
+                test_acc, test_num, auc, test_y_true, test_y_prob = client.test_metrics()
+                test_accs.append(test_acc)
+                train_loss, train_num = client.train_metrics()
+                # train_accs.append(train_acc)
+                train_losses.append(train_loss)
+                acc_std.append(client.test_std)
+                acc_std_on_train.append(client.test_std_on_train)
+        else:
+            for client_stats in clients_test_stats:
+                for test_client_stats in client_stats:
+                    test_acc = test_client_stats[0]
+                    test_accs.append(test_acc)
+                    test_num = test_client_stats[2]
+                    auc = test_client_stats[1]/test_num
+                    # train_loss = test_client_stats[3]
+                    # train_losses.append(train_loss)
+                    y_true = test_client_stats[3]
+                    y_prob = test_client_stats[4]
+                    acc_std.append(self.round_test_metric_deviation( test_accs ))
+            for client_stats in clients_train_stats:
+                for test_client_stats in client_stats:
+                    test_acc = test_client_stats[0]
+                    test_accs.append(test_acc)
+                    test_num = test_client_stats[2]
+                    auc = test_client_stats[1]/test_num
+                    # train_loss = test_client_stats[3]
+                    # train_losses.append(train_loss)
+                    y_true = test_client_stats[3]
+                    y_prob = test_client_stats[4]
+                    acc_std_on_train.append(self.round_test_metric_deviation( test_accs ))
+
         acc_std_mean = np.mean(acc_std)
         acc_std_on_train_mean = np.mean(acc_std_on_train)
-        self.data_log({"federation/acc_std": acc_std_mean, "round":self.round})
-        self.data_log({"federation/acc_std_on_train": acc_std_on_train_mean, "round":self.round})
-        print(f"Mean standard deviation of accuracies on test sets: {acc_std_mean} {acc_std_on_train_mean}")
+        return acc_std_mean, acc_std_on_train_mean
 
-        return test_accs, train_accs, train_losses
 
     def round_rewind_train_metrics(self, client):
         previous_node = None
@@ -367,9 +473,8 @@ class FedRewind(Server):
         print ( "Getting train metrics on model %s loss %s " % ( hex(id(client.train_model)), hex(id(client.loss) ) ))
         previous_loss = -1
         round_loss = losses/train
-        if not self.no_wandb:
-            wandb.log({f'train/model_{client.id}/round_train_loss_{client.id}': round_loss, "round": self.round})
-            wandb.log({f'train/model_loss_{client.train_model_id}': round_loss, "round": self.round})
+        self.data_log({f'train/model_{client.id}/round_train_loss_{client.id}': round_loss, "round": self.round})
+        # self.data_log({f'train/model_loss_{client.train_model_id}': round_loss, "round": self.round})
         loss_dict = {client.train_model_id: round_loss}
         client.node_data_losses.append(loss_dict)
         # node_data_loss_string = [ f"{k}:{v:.2f}" for k,v in [ node_data_loss for node_data_loss in client.node_data_losses ] ]
@@ -384,6 +489,7 @@ class FedRewind(Server):
             previous_loss = previous_losses[-1]
             client.rewind_previous_node_loss.append(previous_loss)
             print("** Previous rewind nodes' loss %s" % ( previous_losses_log ))
+            self.data_log({f"rewind/rewind_loss_{client.model.id}": previous_loss, "round": self.round})
         # else:
         #     client.rewind_previous_node_loss.append(round_loss)
 
