@@ -27,7 +27,7 @@ import wandb
 from utils.data_utils import read_client_data
 from utils.dlg import DLG
 import torch.nn.functional as F
-from ignite.metrics import ConfusionMatrix
+# from ignite.metrics import ConfusionMatrix
 
 class Server(object):
     def __init__(self, args, times):
