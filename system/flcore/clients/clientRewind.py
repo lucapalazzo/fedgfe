@@ -28,8 +28,12 @@ class clientRewind(Client):
         self.rewind_interval = rewind_interval
         self.rewind_ratio = rewind_ratio
         self.rewind_donkey = args.rewind_donkey
+        self.rewind_donkey_count = args.rewind_donkey_count
         self.rewind_learning_rate_schedule = args.rewind_learning_rate_schedule
         self.rewind_strategy = args.rewind_strategy
+        self.rewind_learning_rate_decay = args.rewind_learning_rate_decay
+        self.rewind_learning_rate_decay_ratio = args.rewind_learning_rate_decay_ratio
+        self.rewind_learning_rate_keep = args.rewind_learning_rate_keep
         self.id_by_type = id_by_type
         self.train_loader = None
         self.no_wandb = args.no_wandb
@@ -137,8 +141,11 @@ class clientRewind(Client):
         rewind_nodes_count = len(self.rewind_previous_node)
         epoch_start_lr = []
         epoch_end_lr = []
+        original_lr = self.model.optimizer.param_groups[0]['lr']
+        print ( "\Epoch starting LR ", original_lr)
+        self.model.optimizer.param_groups[0]['lr'] = original_lr
         for step in range(local_epochs):
-            if ( self.rewind_strategy == "halfway" and len(self.rewind_previous_node) > 0 ):
+            if ( ( self.rewind_strategy == "halfway" or self.rewind_strategy == "interval" or self.rewind_strategy == "atend_pre"  ) and len(self.rewind_previous_node) > 0 ):
                 self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
 
             trainloader = node_trainloader
@@ -180,6 +187,9 @@ class clientRewind(Client):
             print ( f"{loss/num} ", end='')
         if ( self.rewind_strategy == "atend" and len(self.rewind_previous_node) > 0 ):
             self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
+        if self.learning_rate_decay == True:
+            print ( "\nRestoring LR to ", original_lr)
+            self.model.optimizer.param_groups[0]['lr'] = original_lr
         # print("lr ", *epoch_start_lr, sep=" " )
         # print("lr ", *epoch_end_lr, sep=" " )
         # if self.learning_rate_scheduler != None:
@@ -188,29 +198,26 @@ class clientRewind(Client):
         print()
 
     def rewind(self, step, max_local_epochs = 0, rewind_epochs = 0, rewind_node_count = 0, device = 0):
+
         if self.rewind_donkey:
-            rewind_nodes = unique_node ( self.rewind_previous_node[::-1] )
+            rewind_nodes = unique_node ( self.rewind_previous_node[-self.rewind_donkey_count::] )
         else:
             rewind_nodes = [self.rewind_previous_node[-1]]
         rewind_node_count = len(rewind_nodes)
 
         if rewind_epochs == 0:
             return
+        
         rewind_start_epoch = -1
-        if ( self.rewind_strategy == "halfway" ):
+        if ( self.rewind_strategy == "atend_pre" ):
+            rewind_start_epoch = max_local_epochs - rewind_epochs * 2 - 1
+        elif ( self.rewind_strategy == "halfway" ):
             rewind_start_epoch = max_local_epochs//2
+        elif ( self.rewind_strategy == "interval" ):
+            rewind_start_epoch = max_local_epochs / rewind_epochs // 2
         
         if ( step == rewind_start_epoch or self.rewind_strategy == "atend" ) and rewind_node_count > 0:
-                # if ( self.rewind_donkey ):
-                #     # u = np.unique(self.rewind_previous_node);
-                #     u = unique_node ( self.rewind_previous_node[::-1] )
-                #     for teacher in u:
-                #         if ( teacher != None and teacher.id != self.id and teacher.id != self.train_model_id):
-                #             self.rewind_train ( rewind_start_step, teacher, device )
-                # else:
-                #     self.rewind_train ( rewind_start_step, self.rewind_previous_node[-1], device )
                 for teacher in rewind_nodes:
-                    # if ( teacher != None and teacher.id != self.id and teacher.id != self.train_model_id):
                     if ( teacher != None ):
                         local_loss, rw_loss = self.rewind_train_metrics(teacher)
                         if not self.no_wandb:
@@ -236,10 +243,11 @@ class clientRewind(Client):
         device = self.model.device
         # self.model.to(device)
         original_lr = self.model.optimizer.param_groups[0]['lr']
-        rewind_lr = original_lr * 0.01
-        self.model.optimizer.param_groups[0]['lr'] = rewind_lr
-        print ( f"Original LR: {original_lr} new LR: {rewind_lr}")
-        print ( f"Rewind loss: ", end='')
+        if ( self.rewind_learning_rate_decay ):
+            rewind_lr = original_lr * self.rewind_learning_rate_decay_ratio
+            self.model.optimizer.param_groups[0]['lr'] = rewind_lr
+            print ( f"Original LR: {original_lr} new LR: {rewind_lr}")
+            print ( f"Rewind loss: ", end='')
         for step in range(rewind_epochs):
             for i, (x, y) in enumerate(dataloader):
                 if type(x) == type([]):
@@ -258,8 +266,9 @@ class clientRewind(Client):
                 # end_lr = self.optimizer.param_groups[0]['lr']
                 self.model.optimizer.step()
             print ( f" {loss} ", end='')
-        print ( "\nRestoring LR to ", original_lr)
-        self.model.optimizer.param_groups[0]['lr'] = original_lr
+        if not self.rewind_learning_rate_keep:
+            print ( "\nRestoring LR to ", original_lr)
+            self.model.optimizer.param_groups[0]['lr'] = original_lr
             
 
 
@@ -312,7 +321,7 @@ class clientRewind(Client):
         losses, train_num = self.train_metrics()
         loss = losses / train_num
        
-        print("\n** REWIND: pre-rewind loss on node's dataset: ", loss)
+        print("\n** REWIND: rewind loss on node's dataset: ", loss)
         if ( rewind_train_node != None ):
             rewind_loader = rewind_train_node.load_train_data()
             rw_losses, rw_train_num = self.train_metrics(rewind_loader)

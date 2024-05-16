@@ -27,11 +27,16 @@ class FedRewind(Server):
         self.rewind_rotate = args.rewind_rotate
         self.global_rounds = args.global_rounds
         self.rewind_donkey = args.rewind_donkey
+        self.rewind_donkey_count = args.rewind_donkey_count
+        self.rewind_learning_rate_decay = args.rewind_learning_rate_decay
+        self.rewind_learning_rate_decay_ratio = args.rewind_learning_rate_decay_ratio
+        self.rewind_learning_rate_keep = args.rewind_learning_rate_keep
         
         # select slow clients
         self.set_slow_clients()
         self.set_clients(clientRewind)
-        self.define_metrics()
+        if self.no_wandb == False:
+            self.define_metrics()
        
         print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.num_clients}")
         print("Finished creating server and clients.")
@@ -290,7 +295,8 @@ class FedRewind(Server):
             client.prefix=file_prefix
             client.device = "cuda:"+str(next(gpus))
             # client.node_data.stats_wandb_define()
-            client.node_data.stats_wandb_log()
+            if self.no_wandb == False:
+                client.node_data.stats_wandb_log()
             
             # if is_strong:
             #     n_strong += 1

@@ -551,7 +551,11 @@ if __name__ == "__main__":
     parser.add_argument('-rews', "--rewind_strategy", type=str, default="none")
     parser.add_argument('-rewro', "--rewind_rotate", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-rewdo', "--rewind_donkey", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-rewdoc', "--rewind_donkey_count", type=int, default=2)
     parser.add_argument('-rewlrs', "--rewind_learning_rate_schedule", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-rewlrd', "--rewind_learning_rate_decay", type=bool, default=False, action=argparse.BooleanOptionalAction, help="Decay the learning rate in rewind epochs")
+    parser.add_argument('-rewlrdr', "--rewind_learning_rate_decay_ratio", type=float, default=0.1, help="Decay the learning rate ratio for rewind epochs")
+    parser.add_argument('-rewlrk', "--rewind_learning_rate_keep", type=bool, default=False, action=argparse.BooleanOptionalAction, help="Keep the learning rate of the rewind epochs afterward")
 
     args = parser.parse_args()
 
@@ -608,6 +612,9 @@ if __name__ == "__main__":
         print("Rewind interval: {}".format(args.rewind_interval))
         print("Rewind rotate: {}".format(args.rewind_rotate))
         print("Rewind strategy: {}".format(args.rewind_strategy))
+        print("Rewind learning rate decay: {}".format(args.rewind_learning_rate_decay))
+        print("Rewind learning rate decay ratio: {}".format(args.rewind_learning_rate_decay_ratio))
+        print("Rewind learning rate keep: {}".format(args.rewind_learning_rate_keep))
         print("=" * 50) 
 
     if args.seed != -1:

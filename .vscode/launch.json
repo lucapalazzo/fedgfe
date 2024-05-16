@@ -167,7 +167,7 @@
                 ],
         },
         {
-            "name": "FedRewind Rotate 0.2HW 5LE 4C 10GR Unbalanced 0.95",
+            "name": "FedRewind Rotate 0.2IN 5LE 4C 10GR Unbalanced 0.95",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/ffr_federated",
@@ -187,17 +187,18 @@
                      "-nb", "10",
                      "--batch_size","64",
                      "--local_epochs", "5",
-                     "-lr", "0.01",
+                     "-lr", "0.001",
                      "-lam", "0.1",
                      "--rewind_ratio", "0.2",
                     //  "--rewind_epochs", "2",
                     //  "--rewind_interval", "5",
                      "--rewind_rotate",
-                     "--rewind_strategy", "halfway",
+                     "--rewind_strategy", "atend_pre",
                      "--learning_rate_decay_gamma", "0.5",
-                    //  "--no_wandb",
+                     "--rewind_learning_rate_decay",
+                     "--no_wandb",
                     //  "--loss_weighted",
-                    //  "--rewind_donkey"
+                     "--rewind_donkey"
 //                    , "-go", "${inputs:experimentName"
                 ],
         },

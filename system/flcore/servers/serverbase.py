@@ -27,7 +27,7 @@ import wandb
 from utils.data_utils import read_client_data
 from utils.dlg import DLG
 import torch.nn.functional as F
-
+from ignite.metrics import ConfusionMatrix
 
 class Server(object):
     def __init__(self, args, times):
@@ -266,6 +266,8 @@ class Server(object):
         test_clients_stats = self.num_clients * [None]
         train_clients_stats = self.num_clients * [None] 
 
+        # metric = ConfusionMatrix(num_classes=10)
+        # metric.attach(default_evaluator, 'cm')
         for c in self.clients:
             test_client_stats = []
             train_client_stats = [] 
