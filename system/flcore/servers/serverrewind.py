@@ -12,6 +12,8 @@ from utils.data_utils import read_client_data
 import concurrent.futures
 import torch.futures as futures
 import pandas as pd
+from sklearn.metrics import confusion_matrix
+import matplotlib.pyplot as plt
 
 import time
 from itertools import cycle
@@ -517,6 +519,7 @@ class FedRewind(Server):
         # if not self.no_wandb:
         #     wandb.log({f'test/model_{client.id}/round_test_acc_{client.id}': client_round_acc, "round": self.round})
         test_acc, test_num, auc, test_y_true, test_y_prob  = client.test_metrics()
+
         accuracy = test_acc/test_num
         accuracies = self.round_test_metrics_models(client, ignore_last=False)
         accuracies_list = [ acc['accuracy'] for acc in accuracies]

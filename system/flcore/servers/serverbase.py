@@ -27,11 +27,15 @@ import wandb
 from utils.data_utils import read_client_data
 from utils.dlg import DLG
 import torch.nn.functional as F
+import uuid
 # from ignite.metrics import ConfusionMatrix
+from sklearn.metrics import confusion_matrix,ConfusionMatrixDisplay
 
 class Server(object):
     def __init__(self, args, times):
         # Set up the main attributes
+        self.uuid = uuid.uuid4()
+
         self.args = args
         self.device = args.device
         self.dataset = args.dataset
@@ -286,7 +290,7 @@ class Server(object):
                 test.append(test_y_true)
                 test.append(test_y_prob)
                 test_client_stats.append(test)
-                
+
                 train =[]
                 train_tot_correct.append(train_ct*1.0)
                 train_tot_auc.append(train_auc*train_ns)
@@ -347,6 +351,27 @@ class Server(object):
         y_prob_tot = np.concatenate(stats[5])
         y_prob_tot_sm = F.softmax(torch.tensor(y_prob_tot), dim=1).numpy()
         y_prob_tot_sm_am = np.argmax(y_prob_tot_sm, axis=1)
+        y_trues = stats[4]
+        y_probs = stats[5]
+
+        stats_index = 0
+        for y_true, y_prob in zip(y_trues, y_probs):
+            client_index = stats_index // self.num_clients
+            test_index = stats_index % self.num_clients
+            y_prob_sm = F.softmax(torch.tensor(y_prob), dim=1).numpy()
+            y_prob_sm_am = np.argmax(y_prob_sm, axis=1)
+            cm = confusion_matrix(y_true, y_prob_sm_am)
+            # disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=np.arange(self.num_classes))
+            # disp.plot()
+            # destination_dir = str(self.uuid)
+            # if ( not os.path.exists(destination_dir)):
+            #     os.makedirs(destination_dir)
+            # disp.figure_.savefig(f'{destination_dir}/confusion_matrix_{self.round}_{client_index}_{test_index}.png')
+            print(cm)
+            print("balanced accuracy score: ", balanced_accuracy_score(y_true, y_prob_sm_am))
+            print("accuracy score: ", sum(y_true == y_prob_sm_am) / len(y_true))
+            stats_index += 1
+
 
         fed_test_acc_balanced = balanced_accuracy_score(y_true_tot, y_prob_tot_sm_am)
 

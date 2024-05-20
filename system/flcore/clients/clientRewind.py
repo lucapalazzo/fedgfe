@@ -141,9 +141,9 @@ class clientRewind(Client):
         rewind_nodes_count = len(self.rewind_previous_node)
         epoch_start_lr = []
         epoch_end_lr = []
-        original_lr = self.model.optimizer.param_groups[0]['lr']
-        print ( "\Epoch starting LR ", original_lr)
-        self.model.optimizer.param_groups[0]['lr'] = original_lr
+        starting_lr = self.local_learning_rate
+        self.model.optimizer.param_groups[0]['lr'] = self.local_learning_rate
+        print ( "Epoch starting LR ", starting_lr)
         for step in range(local_epochs):
             if ( ( self.rewind_strategy == "halfway" or self.rewind_strategy == "interval" or self.rewind_strategy == "atend_pre"  ) and len(self.rewind_previous_node) > 0 ):
                 self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
@@ -188,8 +188,8 @@ class clientRewind(Client):
         if ( self.rewind_strategy == "atend" and len(self.rewind_previous_node) > 0 ):
             self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
         if self.learning_rate_decay == True:
-            print ( "\nRestoring LR to ", original_lr)
-            self.model.optimizer.param_groups[0]['lr'] = original_lr
+            print ( "\nRestoring LR to ", starting_lr)
+            self.model.optimizer.param_groups[0]['lr'] = starting_lr
         # print("lr ", *epoch_start_lr, sep=" " )
         # print("lr ", *epoch_end_lr, sep=" " )
         # if self.learning_rate_scheduler != None:
@@ -242,11 +242,11 @@ class clientRewind(Client):
         start_time = time.time()
         device = self.model.device
         # self.model.to(device)
-        original_lr = self.model.optimizer.param_groups[0]['lr']
+        starting_lr = self.model.optimizer.param_groups[0]['lr']
         if ( self.rewind_learning_rate_decay ):
-            rewind_lr = original_lr * self.rewind_learning_rate_decay_ratio
+            rewind_lr = starting_lr * self.rewind_learning_rate_decay_ratio
             self.model.optimizer.param_groups[0]['lr'] = rewind_lr
-            print ( f"Original LR: {original_lr} new LR: {rewind_lr}")
+            print ( f"Original LR: {starting_lr} new LR: {rewind_lr}")
             print ( f"Rewind loss: ", end='')
         for step in range(rewind_epochs):
             for i, (x, y) in enumerate(dataloader):
@@ -267,8 +267,8 @@ class clientRewind(Client):
                 self.model.optimizer.step()
             print ( f" {loss} ", end='')
         if not self.rewind_learning_rate_keep:
-            print ( "\nRestoring LR to ", original_lr)
-            self.model.optimizer.param_groups[0]['lr'] = original_lr
+            print ( "\nRestoring LR to ", starting_lr)
+            self.model.optimizer.param_groups[0]['lr'] = starting_lr
             
 
 

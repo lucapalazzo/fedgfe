@@ -36,6 +36,7 @@ class Client(object):
     """
 
     def __init__(self, args, id, train_samples, test_samples, train_data = None, test_data = None, val_data = None, **kwargs):
+        self.args = args
         self.model = FLModel(args, id)
 
         # self.model = copy.deepcopy(args.model)
@@ -54,7 +55,7 @@ class Client(object):
         self.train_samples = train_samples
         self.test_samples = test_samples
         self.batch_size = args.batch_size
-        self.learning_rate = args.local_learning_rate
+        self.local_learning_rate = args.local_learning_rate
         self.local_epochs = args.local_epochs
         self.dataset_limit = args.dataset_limit
         self.loss_weighted = args.loss_weighted
@@ -80,7 +81,7 @@ class Client(object):
         self.dp_sigma = args.dp_sigma
 
         self.model.loss = nn.CrossEntropyLoss()
-        self.model.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
+        self.model.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.local_learning_rate)
         self.loss = self.model.loss
         self.optimizer = self.model.optimizer
         self.learning_rate_scheduler = torch.optim.lr_scheduler.ExponentialLR(
