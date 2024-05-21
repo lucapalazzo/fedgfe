@@ -179,6 +179,7 @@
                     //  "--dataset_path", "CIFAR-10-nIID-10C-A0.5",
                     //  "--seed", "1",
                      "-m", "resnet",
+                     "-mpt",
                      "-algo", "FedRewind",
                      "--global_rounds", "5",
                      "-did", "0",

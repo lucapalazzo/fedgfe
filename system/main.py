@@ -82,6 +82,8 @@ from utils.mem_utils import MemReporter
 
 from disablrandomness import set_seed
 
+from torchvision.models import ResNet18_Weights
+
 logger = logging.getLogger()
 logger.setLevel(logging.ERROR)
 
@@ -138,7 +140,14 @@ def run(args):
                 args.model = DNN(60, 20, num_classes=args.num_classes).to(args.device)
         
         elif model_str == "resnet":
-            args.model = torchvision.models.resnet18(pretrained=False, num_classes=args.num_classes).to(args.device)
+            weights = ResNet18_Weights.DEFAULT
+            if args.model_pretrain:
+                weights = ResNet18_Weights.IMAGENET1K_V1
+            args.model = torchvision.models.resnet18(weights=weights).to(args.device)
+            ftrs = args.model.fc.in_features
+            args.model.fc = nn.Linear(ftrs, args.num_classes).to(args.device)
+
+            # args.model = torchvision.models.resnet18(weights=weights, num_classes=args.num_classes).to(args.device)
             
             # args.model = torchvision.models.resnet18(pretrained=True).to(args.device)
             # feature_dim = list(args.model.fc.parameters())[0].shape[1]
@@ -147,7 +156,7 @@ def run(args):
             # args.model = resnet18(num_classes=args.num_classes, has_bn=True, bn_block_num=4).to(args.device)
         
         elif model_str == "resnet10":
-            args.model = resnet10(num_classes=args.num_classes).to(args.device)
+            args.model = resnet10(pretrained=args.model_pretrain,num_classes=args.num_classes).to(args.device)
         
         elif model_str == "resnet34":
             args.model = torchvision.models.resnet34(pretrained=False, num_classes=args.num_classes).to(args.device)
@@ -433,6 +442,7 @@ if __name__ == "__main__":
     parser.add_argument('-nb', "--num_classes", type=int, default=10)
     parser.add_argument('-nbc', "--num_classes_per_client", type=int, default=2)
     parser.add_argument('-m', "--model", type=str, default="cnn")
+    parser.add_argument('-mpt', "--model_pretrain", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-lw', "--loss_weighted", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-lbs', "--batch_size", type=int, default=10)
     parser.add_argument('-lr', "--local_learning_rate", type=float, default=0.005,
