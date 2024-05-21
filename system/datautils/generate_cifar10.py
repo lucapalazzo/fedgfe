@@ -48,7 +48,9 @@ def generate_cifar10(dir_path, num_clients, num_classes, niid, balance, partitio
         
     # Get Cifar10 data
     transform = transforms.Compose(
-        [transforms.Resize(image_size),transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        [transforms.ToTensor(),
+         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+         transforms.Resize(image_size)])
 
     trainset = torchvision.datasets.CIFAR10(
         root=dir_path+"rawdata", train=True, download=True, transform=transform)
