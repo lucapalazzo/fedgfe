@@ -34,7 +34,7 @@ dir_path = "Cifar10/"
 
 
 # Allocate data to users
-def generate_cifar10(dir_path, num_clients, num_classes, niid, balance, partition, alpha=0.1, class_per_client = 2):
+def generate_cifar10(dir_path, num_clients, num_classes, niid, balance, partition, alpha=0.1, class_per_client = 2, image_size=224):
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
         
@@ -48,7 +48,7 @@ def generate_cifar10(dir_path, num_clients, num_classes, niid, balance, partitio
         
     # Get Cifar10 data
     transform = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        [transforms.Resize(image_size),transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
     trainset = torchvision.datasets.CIFAR10(
         root=dir_path+"rawdata", train=True, download=True, transform=transform)
