@@ -25,8 +25,9 @@ class FLNodeDataset(Dataset):
         return len(self.data)
     
     def __getitem__(self, idx):
+        data = self.data[idx][0].to(self.device)
+        label = self.data[idx][1].to(self.device)
         if self.transform:
-            data = self.data[idx][0]
             if data.shape[2] != self.transform.transforms[1].size:
                 data = self.transform(data.to(self.device))
                 temp = list(self.data[idx])
@@ -34,9 +35,5 @@ class FLNodeDataset(Dataset):
                 self.data[idx]= tuple(temp)
             else:
                 t = 1
-            label = self.data[idx][1].to(self.device)
             data = data.to(self.device)
-            return data, label
-
-        return self.data[idx]
-    
+        return data, label

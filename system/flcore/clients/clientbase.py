@@ -50,9 +50,13 @@ class Client(object):
         self.train_data = train_data
         self.test_data = test_data
         self.val_data = val_data
-        self.transform = transforms.Compose(
-            [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-             transforms.Resize(224)])
+        self.dataset_image_size = args.dataset_image_size
+        self.transform = None
+        if args.dataset_image_size != -1:
+            self.transform = transforms.Compose(
+                [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                transforms.Resize(self.dataset_image_size)])
+       
         self.node_data = NodeData(args, self.id, transform=self.transform, **kwargs)
 
         self.num_classes = args.num_classes

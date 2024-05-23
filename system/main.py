@@ -437,6 +437,8 @@ if __name__ == "__main__":
     parser.add_argument('-dids', "--device_ids", type=str, default="0")
     parser.add_argument('-data', "--dataset", type=str, default="mnist")
     parser.add_argument('-datapath', "--dataset_path", type=str, default="")
+    parser.add_argument('-dataimgsize', "--dataset_image_size", type=int, default=-1)
+    parser.add_argument('-datatransform', "--dataset_transform", type=bool, default=False, action=argparse.BooleanOptionalAction)
 
     parser.add_argument("-seed", "--seed", type=int, default=-1)
     parser.add_argument('-nb', "--num_classes", type=int, default=10)
@@ -641,7 +643,7 @@ if __name__ == "__main__":
             outdir = 'dataset/CIFAR-10/'
             if ( args.dataset_outdir != None ):
                 outdir = 'dataset/' + args.dataset_outdir + '/'
-            generate_cifar10( outdir, args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition, args.dataset_dir_alpha, class_per_client=args.num_classes_per_client)
+            generate_cifar10( args, outdir, args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition, args.dataset_dir_alpha, class_per_client=args.num_classes_per_client)
         # else:
         #     generate_synthetic('dataset/synthetic/', args.num_clients, 10, args.niid)
         sys.exit(0)

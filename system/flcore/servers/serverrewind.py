@@ -323,6 +323,7 @@ class FedRewind(Server):
                 wandb.define_metric(f"train/model_{client.id}/pre_rewind_loss_on_previous", step_metric="round")
                 wandb.define_metric(f"train/model_{client.id}/post_rewind_loss_on_local", step_metric="round")
                 wandb.define_metric(f"train/model_{client.id}/post_rewind_loss_on_previous", step_metric="round")
+                wandb.define_metric(f"rewind/rewind_loss_{client.id}", step_metric="round")
 
             for test_client in self.clients:
                 wandb.define_metric(f"train/model_{client.id}/round_train_loss_{client.id}_on_{test_client.id}", step_metric="round")
