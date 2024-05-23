@@ -1,8 +1,10 @@
 from utils.data_utils import read_client_data
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
+from datautils.flnode_dataset import FLNodeDataset
+
 import wandb
-class NodeData:
-    def __init__(self, args, id = -1, **kwargs):
+class NodeData():
+    def __init__(self, args, id = -1, transform=None, target_transform=None, **kwargs):
         self.id = id
         self.args = args
         self.kwargs = kwargs   
@@ -15,20 +17,35 @@ class NodeData:
         self.labels = None
         self.labels_count = None
         self.labels_percent = None
+        self.transform = transform
+        self.target_transform = target_transform
+        self.train_dataset = None
+        self.test_dataset = None
+        self.device = args.device
 
+    def to(self, device):
+        self.device = device
+        if self.train_dataset != None:
+            self.train_dataset.to(device)
+        if self.test_dataset != None:
+            self.test_dataset.to(device)
+        return self
+    
     def load_train_data(self, batch_size, dataset_limit=0):
         if self.train_data == None:
             print("Loading train data for client %d" % self.id)
             self.train_data = read_client_data(self.dataset, self.id, is_train=True,dataset_limit=dataset_limit)
             self.train_samples = len(self.train_data)
-        return DataLoader(self.train_data, batch_size, drop_last=True, shuffle=True)
+        self.train_dataset = FLNodeDataset(self.train_data, transform=self.transform, target_transform=self.target_transform, device=self.device)
+        return DataLoader(self.train_dataset, batch_size, drop_last=True, shuffle=True)
    
     def load_test_data(self, batch_size, dataset_limit=0):
         if self.test_data == None:
             print("Loading test data for client %d" % self.id)
             self.test_data = read_client_data(self.dataset, self.id, is_train=False,dataset_limit=dataset_limit)
             self.test_samples = len(self.test_data)
-        return DataLoader(self.test_data, batch_size, drop_last=False, shuffle=True)
+        self.test_dataset = FLNodeDataset(self.test_data, transform=self.transform, target_transform=self.target_transform, device=self.device)
+        return DataLoader(self.test_dataset, batch_size, drop_last=False, shuffle=True)
     
     def stats_get(self):
         # labels = self.labels_get()

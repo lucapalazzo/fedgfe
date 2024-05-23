@@ -14,6 +14,7 @@ from sklearn.metrics import balanced_accuracy_score
 from sklearn import metrics
 from sklearn.utils.class_weight import compute_class_weight
 from torchvision.ops.focal_loss import sigmoid_focal_loss
+from torchvision import  transforms
 
 class clientRewind(Client):
     def __init__(self, args, id, train_samples, test_samples,is_strong = False, id_by_type=-1, rewind_epochs = 0, rewind_interval = 0, rewind_ratio = 0,**kwargs):
@@ -61,6 +62,10 @@ class clientRewind(Client):
         self.focal_loss = sigmoid_focal_loss
         self.test_std = []
         self.test_std_on_train = []
+
+        self.transform = transforms.Compose(
+            [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+             transforms.Resize(224)])
 
     def train(self, client_device = None, rewind_train_node = None, ):
         node_trainloader = self.load_train_data()
@@ -153,8 +158,10 @@ class clientRewind(Client):
             for i, (x, y) in enumerate(trainloader):
                 if type(x) == type([]):
                     x[0] = x[0].to(device)
+                    # x[0] = self.transform(x[0])
                 else:
                     x = x.to(device)
+                    # x= self.transform(x)
                 y = y.to(device)
                 if self.train_slow:
                     time.sleep(0.1 * np.abs(np.random.rand()))
@@ -252,8 +259,10 @@ class clientRewind(Client):
             for i, (x, y) in enumerate(dataloader):
                 if type(x) == type([]):
                     x[0] = x[0].to(device)
+                    self.transform(x[0])
                 else:
                     x = x.to(device)
+                    self.transform(x)
                 y = y.to(device)
                 if self.train_slow:
                     time.sleep(0.1 * np.abs(np.random.rand()))

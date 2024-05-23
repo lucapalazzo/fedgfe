@@ -28,6 +28,7 @@ import wandb
 from utils.data_utils import read_client_data
 from datautils.node_dataset import NodeData
 from modelutils.modelwrapper import FLModel
+from torchvision import transforms
 
 
 class Client(object):
@@ -49,7 +50,10 @@ class Client(object):
         self.train_data = train_data
         self.test_data = test_data
         self.val_data = val_data
-        self.node_data = NodeData(args, self.id, **kwargs)
+        self.transform = transforms.Compose(
+            [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+             transforms.Resize(224)])
+        self.node_data = NodeData(args, self.id, transform=self.transform, **kwargs)
 
         self.num_classes = args.num_classes
         self.train_samples = train_samples
@@ -148,6 +152,7 @@ class Client(object):
 
         self.model.to(self.device)
         self.model.eval()
+        self.node_data.to(self.device)
         with torch.no_grad():
             for x, y in dataloader:
                 if type(x) == type([]):
