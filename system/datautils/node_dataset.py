@@ -46,7 +46,16 @@ class NodeData():
             self.test_samples = len(self.test_data)
         self.test_dataset = FLNodeDataset(self.test_data, transform=self.transform, target_transform=self.target_transform, device=self.device)
         return DataLoader(self.test_dataset, batch_size, drop_last=False, shuffle=True)
-    
+
+
+    def unload_train_data(self):
+        self.train_data = None
+        self.train_dataset = None
+
+    def unload_test_data(self):
+        self.test_data = None
+        self.test_dataset = None
+         
     def stats_get(self):
         # labels = self.labels_get()
         self.load_train_data(1)

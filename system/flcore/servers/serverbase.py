@@ -272,9 +272,11 @@ class Server(object):
 
         # metric = ConfusionMatrix(num_classes=10)
         # metric.attach(default_evaluator, 'cm')
-        for c in self.clients:
+        for client_index,c in enumerate(self.clients):
             test_client_stats = []
-            train_client_stats = [] 
+            train_client_stats = []
+            if ( client_index < len(self.clients) - 1):
+                self.clients[client_index+1].node_data.load_test_data(self.args.batch_size)
             for t in self.clients:
                 test = []
                 test_ct, test_ns, test_auc, test_y_true, test_y_prob = c.test_metrics(t)
@@ -290,6 +292,8 @@ class Server(object):
                 test.append(test_y_true)
                 test.append(test_y_prob)
                 test_client_stats.append(test)
+                t.node_data.unload_test_data()
+                t.node_data.unload_train_data()
 
                 train =[]
                 train_tot_correct.append(train_ct*1.0)
@@ -306,6 +310,9 @@ class Server(object):
             
             test_clients_stats[c.model.id] = test_client_stats
             train_clients_stats[c.model.id] = train_client_stats
+
+            if ( client_index > 0 ):
+                c.node_data.unload_test_data()
             
 
             
