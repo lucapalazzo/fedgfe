@@ -64,6 +64,7 @@ class Client(object):
         self.test_samples = test_samples
         self.batch_size = args.batch_size
         self.local_learning_rate = args.local_learning_rate
+        self.learning_rate = args.local_learning_rate
         self.local_epochs = args.local_epochs
         self.dataset_limit = args.dataset_limit
         self.loss_weighted = args.loss_weighted
