@@ -574,11 +574,9 @@ if __name__ == "__main__":
     parser.add_argument('-rosc', "--routing_scored", type=bool, default=False, action=argparse.BooleanOptionalAction)
 
     # Memory management
-    args = parser.parse_args()
     parser.add_argument('-rmf', "--reduce_memory_footprint", type=bool, default=False, action=argparse.BooleanOptionalAction)
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.device_id
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+    args = parser.parse_args()
 
     if args.device == "cuda" and not torch.cuda.is_available():
         print("\ncuda is not avaiable.\n")
