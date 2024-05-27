@@ -58,6 +58,7 @@ class Server(object):
         self.save_folder_name = args.save_folder_name
         self.top_cnt = 100
         self.auto_break = args.auto_break
+        self.reduce_memory_footprint = args.reduce_memory_footprint
 
         self.clients = []
         self.selected_clients = []
@@ -97,6 +98,12 @@ class Server(object):
         self.round_train_stats = self.num_clients * [None]
 
 
+    def get_routes(self):
+        if self.routing is not None:
+            return self.routing.get_routes()
+
+        return self.routes
+    
     def set_clients(self, clientObj):
         for i, train_slow, send_slow in zip(range(self.num_clients), self.train_slow_clients, self.send_slow_clients):
             train_data = read_client_data(self.dataset, i, is_train=True)
@@ -292,8 +299,9 @@ class Server(object):
                 test.append(test_y_true)
                 test.append(test_y_prob)
                 test_client_stats.append(test)
-                t.node_data.unload_test_data()
-                t.node_data.unload_train_data()
+                if self.reduce_memory_footprint == True:
+                    t.node_data.unload_test_data()
+                    t.node_data.unload_train_data()
 
                 train =[]
                 train_tot_correct.append(train_ct*1.0)
@@ -311,7 +319,7 @@ class Server(object):
             test_clients_stats[c.model.id] = test_client_stats
             train_clients_stats[c.model.id] = train_client_stats
 
-            if ( client_index > 0 ):
+            if ( client_index > 0 and self.reduce_memory_footprint == True):
                 c.node_data.unload_test_data()
             
 
@@ -361,23 +369,23 @@ class Server(object):
         y_trues = stats[4]
         y_probs = stats[5]
 
-        stats_index = 0
-        for y_true, y_prob in zip(y_trues, y_probs):
-            client_index = stats_index // self.num_clients
-            test_index = stats_index % self.num_clients
-            y_prob_sm = F.softmax(torch.tensor(y_prob), dim=1).numpy()
-            y_prob_sm_am = np.argmax(y_prob_sm, axis=1)
-            cm = confusion_matrix(y_true, y_prob_sm_am)
-            # disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=np.arange(self.num_classes))
-            # disp.plot()
-            # destination_dir = str(self.uuid)
-            # if ( not os.path.exists(destination_dir)):
-            #     os.makedirs(destination_dir)
-            # disp.figure_.savefig(f'{destination_dir}/confusion_matrix_{self.round}_{client_index}_{test_index}.png')
-            print(cm)
-            print("balanced accuracy score: ", balanced_accuracy_score(y_true, y_prob_sm_am))
-            print("accuracy score: ", sum(y_true == y_prob_sm_am) / len(y_true))
-            stats_index += 1
+        # stats_index = 0
+        # for y_true, y_prob in zip(y_trues, y_probs):
+        #     client_index = stats_index // self.num_clients
+        #     test_index = stats_index % self.num_clients
+        #     y_prob_sm = F.softmax(torch.tensor(y_prob), dim=1).numpy()
+        #     y_prob_sm_am = np.argmax(y_prob_sm, axis=1)
+        #     # cm = confusion_matrix(y_true, y_prob_sm_am)
+        #     # disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=np.arange(self.num_classes))
+        #     # disp.plot()
+        #     # destination_dir = str(self.uuid)
+        #     # if ( not os.path.exists(destination_dir)):
+        #     #     os.makedirs(destination_dir)
+        #     # disp.figure_.savefig(f'{destination_dir}/confusion_matrix_{self.round}_{client_index}_{test_index}.png')
+        #     # print(cm)
+        #     print("balanced accuracy score: ", balanced_accuracy_score(y_true, y_prob_sm_am))
+        #     print("accuracy score: ", sum(y_true == y_prob_sm_am) / len(y_true))
+        #     stats_index += 1
 
 
         fed_test_acc_balanced = balanced_accuracy_score(y_true_tot, y_prob_tot_sm_am)

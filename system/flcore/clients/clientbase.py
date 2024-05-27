@@ -29,6 +29,7 @@ from utils.data_utils import read_client_data
 from datautils.node_dataset import NodeData
 from modelutils.modelwrapper import FLModel
 from torchvision import transforms
+from sklearn.metrics import confusion_matrix
 
 
 class Client(object):
@@ -52,6 +53,8 @@ class Client(object):
         self.val_data = val_data
         self.dataset_image_size = args.dataset_image_size
         self.transform = None
+        self.round_available_count = []
+        self.federation_clients = None
         if args.dataset_image_size != -1:
             self.transform = transforms.Compose(
                 [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
@@ -100,6 +103,13 @@ class Client(object):
         self.learning_rate_decay = args.learning_rate_decay
 
 
+    def route(self, available_clients = None): 
+        if self.routing is not None:
+            self.routing.federation_clients = self.federation_clients
+            if self.routing.model is None:
+                self.routing.model = self.model 
+            return self.routing.route( available_clients )
+        
     def load_train_data(self, batch_size=None,dataset_limit=0):
         if batch_size == None:
             batch_size = self.batch_size
@@ -133,7 +143,22 @@ class Client(object):
         for param, new_param in zip(model.parameters(), new_params):
             param.data = new_param.data.clone()
 
-    def test_metrics(self, test_client = None, on_train = False):
+    def get_scores_data(self, testloader = None, model = None):
+        if testloader == None:
+            testloader = self.load_test_data()
+        test_acc, test_num, auc, y_true, y_prob = self.test_metrics_data(testloader, model)
+        return test_acc, test_num, auc, y_true, y_prob
+        
+
+    def get_confusion_matrix(self, testloader = None, model = None):
+
+        test_acc, test_num, auc, y_true, y_pred = self.get_scores_data(testloader, model)
+        y_pred = F.softmax(torch.tensor(y_pred), dim=1).numpy()
+        y_pred = np.argmax(y_pred, axis=1)
+        cm = confusion_matrix(y_true, y_pred)
+        return cm
+    
+    def test_metrics(self, test_client = None, on_train = False, model = None):
         client = self
         if test_client != None:
             client = test_client
@@ -142,11 +167,11 @@ class Client(object):
         else:
             testloader = client.load_test_data()
         
-        test_acc, test_num, auc, test_y_true, test_y_prob = self.test_metrics_data(testloader) 
+        test_acc, test_num, auc, test_y_true, test_y_prob = self.test_metrics_data(testloader, model ) 
 
         return test_acc, test_num, auc, test_y_true, test_y_prob
     
-    def test_metrics_data(self, dataloader):
+    def test_metrics_data(self, dataloader, test_model = None):
 
         test_acc = 0
         test_num = 0
@@ -154,9 +179,13 @@ class Client(object):
         y_prob = []
         y_true = []
         a = []   
+        model = self.model
 
-        self.model.to(self.device)
-        self.model.eval()
+        if ( test_model != None):
+            model = test_model
+
+        model.to(self.device)
+        model.eval()
         self.node_data.to(self.device)
         with torch.no_grad():
             for x, y in dataloader:
@@ -165,7 +194,7 @@ class Client(object):
                 else:
                     x = x.to(self.device)
                 y = y.to(self.device)
-                output = self.model(x)
+                output = model(x)
                 # if isinstance(output, dict):
                 #     output = output['logits']
                 

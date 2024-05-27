@@ -569,7 +569,13 @@ if __name__ == "__main__":
     parser.add_argument('-rewlrdr', "--rewind_learning_rate_decay_ratio", type=float, default=0.1, help="Decay the learning rate ratio for rewind epochs")
     parser.add_argument('-rewlrk', "--rewind_learning_rate_keep", type=bool, default=False, action=argparse.BooleanOptionalAction, help="Keep the learning rate of the rewind epochs afterward")
 
+    # Routing algos
+    parser.add_argument('-rora', "--routing_random", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-rosc', "--routing_scored", type=bool, default=False, action=argparse.BooleanOptionalAction)
+
+    # Memory management
     args = parser.parse_args()
+    parser.add_argument('-rmf', "--reduce_memory_footprint", type=bool, default=False, action=argparse.BooleanOptionalAction)
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.device_id
     # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"

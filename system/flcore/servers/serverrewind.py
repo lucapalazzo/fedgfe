@@ -18,6 +18,9 @@ import matplotlib.pyplot as plt
 import time
 from itertools import cycle
 
+from flcore.routing.cmrouting import CMRouting
+from flcore.routing.randomrouting import RandomRouting
+
 
 class FedRewind(Server):
     def __init__(self, args, times):
@@ -39,7 +42,12 @@ class FedRewind(Server):
         self.set_clients(clientRewind)
         if self.no_wandb == False:
             self.define_metrics()
-       
+
+        for client in self.clients:
+            client.federation_clients = self.clients
+
+        self.routes = self.get_routes() 
+        
         print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.num_clients}")
         print("Finished creating server and clients.")
 
@@ -169,8 +177,9 @@ class FedRewind(Server):
             # [t.join() for t in threads]
 
             #self.receive_logits()
-            #self.global_logits = logit_aggregation(self.uploaded_logits)
-            self.routes = get_routes(self.num_clients, self.clients)
+            #self.global_logits = logit_aggregation(self.uploaded_logits
+            self.routes = self.get_routes()
+            # self.routes = get_routes(self.num_clients, self.clients)
             self.distribute_routes(self.routes)
             self.dump_routes(self.routes)
             # self.federation_metrics()
@@ -212,6 +221,23 @@ class FedRewind(Server):
         self.save_results()
         wandb.finish()
 
+    def get_routes ( self, clients = None):
+        if clients is None:
+            clients = self.clients
+
+        routing_clients = [client for client in self.clients]
+        check_clients = [client for client in self.clients]
+        random.shuffle(check_clients)
+        routes = np.array([c.id for c in clients])
+        for client in check_clients:
+            client_next_route = client.route( available_clients = routing_clients )
+            routes[client.id] = client_next_route
+            routing_clients.remove(self.clients[client_next_route])
+
+        return routes
+
+
+    
     def dump_routes ( self, routes ):
         for node in routes:
             next_node = routes[node]
@@ -296,6 +322,13 @@ class FedRewind(Server):
                             dataset_limit=self.dataset_limit)
             client.prefix=file_prefix
             client.device = "cuda:"+str(next(gpus))
+            client.available_clients = np.arange(self.num_clients)
+            # client.routing = RandomRouting(self.num_clients, id = i)
+
+            if self.args.routing_scored:
+                client.routing = CMRouting(self.num_clients, id = i)
+            else:
+                client.routing = RandomRouting(self.num_clients, id = i)
             # client.node_data.stats_wandb_define()
             if self.no_wandb == False:
                 client.node_data.stats_wandb_log()
