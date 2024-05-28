@@ -18,9 +18,8 @@ import matplotlib.pyplot as plt
 import time
 from itertools import cycle
 
-from flcore.routing.cmrouting import CMRouting
+from flcore.routing.scoredrouting import ScoredRouting
 from flcore.routing.randomrouting import RandomRouting
-
 
 class FedRewind(Server):
     def __init__(self, args, times):
@@ -326,7 +325,7 @@ class FedRewind(Server):
             # client.routing = RandomRouting(self.num_clients, id = i)
 
             if self.args.routing_scored:
-                client.routing = CMRouting(self.num_clients, id = i)
+                client.routing = ScoredRouting(self.num_clients, id = i, average=self.routing_scored_average)
             else:
                 client.routing = RandomRouting(self.num_clients, id = i)
             # client.node_data.stats_wandb_define()

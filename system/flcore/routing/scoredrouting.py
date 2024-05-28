@@ -6,17 +6,17 @@ import sklearn
 import torch
 from torch.nn import functional as F
 
-class CMRouting(FLRoutingBase):
+class ScoredRouting(FLRoutingBase):
 
-    def __init__(self, clients_count = -1, federation_clients = None, id = -1, model = None):
+    def __init__(self, clients_count = -1, federation_clients = None, id = -1, model = None, average = 'macro'):
 
-        super(CMRouting, self).__init__(clients_count, federation_clients, id = id, model=model)
-
+        super(ScoredRouting, self).__init__(clients_count, federation_clients, id = id, model=model)
+        self.average = average # average method for the f1_score matrix
     def route(self, available_clients = None):
         """
         Route the request to the available clients.
         """
-        super(CMRouting, self).route(available_clients)
+        super(ScoredRouting, self).route(available_clients)
         # Get the best client based on the confusion matrix
         if available_clients is None:
             available_clients = self.federation_clients

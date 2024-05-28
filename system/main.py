@@ -572,6 +572,7 @@ if __name__ == "__main__":
     # Routing algos
     parser.add_argument('-rora', "--routing_random", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-rosc', "--routing_scored", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-rosca', "--routing_scored_average", type=str, default='micro')
 
     # Memory management
     parser.add_argument('-rmf', "--reduce_memory_footprint", type=bool, default=False, action=argparse.BooleanOptionalAction)
@@ -609,8 +610,8 @@ if __name__ == "__main__":
     print("Auto break: {}".format(args.auto_break))
     if not args.auto_break:
         print("Global rounds: {}".format(args.global_rounds))
-    if args.device == "cuda":
-        print("Cuda device id: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
+    # if args.device == "cuda":
+    #     print("Cuda device id: {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
     print("DLG attack: {}".format(args.dlg_eval))
     if args.dlg_eval:
         print("DLG attack round gap: {}".format(args.dlg_gap))
