@@ -35,10 +35,10 @@ class ScoredRouting(FLRoutingBase):
         best_score = 0
         scores = []
         for client in available_clients:
-            test_acc, test_num, auc, y_true, y_pred = client.get_scores_data(model=self.model)
+            test_acc, test_num, auc, y_true, y_pred = client.get_scores_data(model=self.model, on_train=True)
             y_pred = F.softmax(torch.tensor(y_pred), dim=1).numpy()
             y_pred = np.argmax(y_pred, axis=1)
-            f1_score = sklearn.metrics.f1_score(y_true, y_pred, average='weighted')
+            f1_score = sklearn.metrics.f1_score(y_true, y_pred, average=self.average)
             scores.append(f1_score)
         best_client_id = np.argmin(scores)
         return best_client_id

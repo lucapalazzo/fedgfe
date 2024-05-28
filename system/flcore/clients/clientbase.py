@@ -143,9 +143,13 @@ class Client(object):
         for param, new_param in zip(model.parameters(), new_params):
             param.data = new_param.data.clone()
 
-    def get_scores_data(self, testloader = None, model = None):
+    def get_scores_data(self, testloader = None, model = None, on_train = False):
         if testloader == None:
-            testloader = self.load_test_data()
+            if on_train == False:
+                testloader = self.load_test_data()
+            else:
+                testloader = self.load_train_data()
+
         test_acc, test_num, auc, y_true, y_prob = self.test_metrics_data(testloader, model)
         return test_acc, test_num, auc, y_true, y_prob
         

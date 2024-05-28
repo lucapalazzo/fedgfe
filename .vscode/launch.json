@@ -199,7 +199,8 @@
                     //  "--rewind_learning_rate_decay",
                     "-mpt",
                     "--no_wandb",
-                    "--routing_scored"
+                    "--routing_scored",
+                    "--routing_scored_average", "macro",
                      //  "--loss_weighted",
                     //  "--rewind_donkey"
 //                    , "-go", "${inputs:experimentName"
