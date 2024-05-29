@@ -22,9 +22,11 @@ class ScoredRouting(FLRoutingBase):
             available_clients = self.federation_clients
         
         available_clients = self.get_available_clients(available_clients)
-        best_client_id = self.get_best_client(available_clients)
+        # selected_clients = available_clients.copy()
+        # np.random.shuffle(selected_clients)
+        best_client_id, scores = self.get_best_client(available_clients)
         best_client = available_clients[best_client_id]
-        print (f"Node {self.id} oute best client id: {best_client.id} ")
+        print (f"Node {self.id} route best client id: {best_client.id} {scores}")
         return best_client.id
 
     def get_best_client(self, available_clients):
@@ -41,7 +43,7 @@ class ScoredRouting(FLRoutingBase):
             f1_score = sklearn.metrics.f1_score(y_true, y_pred, average=self.average)
             scores.append(f1_score)
         best_client_id = np.argmin(scores)
-        return best_client_id
+        return best_client_id, scores
     
     def get_available_clients(self, available_clients, reduce_clients=False ):
         """

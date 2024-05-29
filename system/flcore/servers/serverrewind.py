@@ -47,7 +47,7 @@ class FedRewind(Server):
 
         self.routes = self.get_routes() 
         
-        print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.num_clients}")
+        # print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.num_clients}")
         print("Finished creating server and clients.")
 
         # self.load_model()
@@ -249,12 +249,15 @@ class FedRewind(Server):
             orig_model_id = self.clients[next_node_train_model_id].id
             orig_model = self.clients[next_node_train_model_id].starting_model.inner_model
             print ( "Node %d -> %d" % (node, next_node) )
-            print ( "Orig Node training model id %d %s original id %d %s optim %s" % ( node, hex(id(orig_node_train_model) ), orig_node_train_model_id, hex(id(orig_model)), hex(id(orig_node_train_optimizer)) ) )
-            print ( "Next node training model id %d %s original id %d %s optim %s" % ( next_node, hex(id(next_node_train_model) ), next_node_train_model_id, hex(id(orig_model)), hex(id(next_node_train_optimizer)) ) )
+            # print ( "Orig Node training model id %d %s original id %d %s optim %s" % ( node, hex(id(orig_node_train_model) ), orig_node_train_model_id, hex(id(orig_model)), hex(id(orig_node_train_optimizer)) ) )
+            # print ( "Next node training model id %d %s original id %d %s optim %s" % ( next_node, hex(id(next_node_train_model) ), next_node_train_model_id, hex(id(orig_model)), hex(id(next_node_train_optimizer)) ) )
 
     def distribute_routes (self, routes ):
-        for node in routes:
-            next_node = self.routes[node]
+        if routes is None:
+            routes = self.routes
+
+        for node in range(len(routes)):
+            next_node = routes[node]
             previous_node = node
             next_client = None
             for next_client in self.clients:
