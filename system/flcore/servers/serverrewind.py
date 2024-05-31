@@ -45,7 +45,8 @@ class FedRewind(Server):
         for client in self.clients:
             client.federation_clients = self.clients
 
-        self.routes = self.get_routes() 
+        # routes = self.get_routes()
+        # self.distribute_routes(routes)
         
         # print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.num_clients}")
         print("Finished creating server and clients.")

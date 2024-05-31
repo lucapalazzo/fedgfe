@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import time
+import math
 
 import wandb
 from flcore.clients.clientbase import Client
@@ -35,6 +36,7 @@ class clientRewind(Client):
         self.rewind_learning_rate_decay = args.rewind_learning_rate_decay
         self.rewind_learning_rate_decay_ratio = args.rewind_learning_rate_decay_ratio
         self.rewind_learning_rate_keep = args.rewind_learning_rate_keep
+        self.rewind_end_epoch_ratio = args.rewind_end_epoch_ratio
         self.id_by_type = id_by_type
         self.train_loader = None
         self.no_wandb = args.no_wandb
@@ -217,7 +219,9 @@ class clientRewind(Client):
         
         rewind_start_epoch = -1
         if ( self.rewind_strategy == "atend_pre" ):
-            rewind_start_epoch = max_local_epochs - rewind_epochs * 2 - 1
+            rewind_ending_epochs_count = math.ceil(rewind_epochs * self.rewind_end_epoch_ratio)
+            rewind_start_epoch = ( max_local_epochs - rewind_epochs - rewind_ending_epochs_count)
+           
         elif ( self.rewind_strategy == "halfway" ):
             rewind_start_epoch = max_local_epochs//2
         elif ( self.rewind_strategy == "interval" ):

@@ -190,7 +190,7 @@
                      "--local_epochs", "5",
                      "-lr", "0.005",
                      "-lam", "0.1",
-                     "--rewind_ratio", "0.2",
+                     "--rewind_ratio", "0.4",
                     //  "--rewind_epochs", "2",
                     //  "--rewind_interval", "5",
                      "--rewind_rotate",
@@ -199,8 +199,9 @@
                     //  "--rewind_learning_rate_decay",
                     "-mpt",
                     "--no_wandb",
-                    "--routing_scored",
-                    "--routing_scored_average", "macro",
+                    // "--routing_scored",
+                    // "--routing_scored_average", "macro",
+                    "--rewind_end_epoch_ratio", "0.5",
                      //  "--loss_weighted",
                     //  "--rewind_donkey"
 //                    , "-go", "${inputs:experimentName"

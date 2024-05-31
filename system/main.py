@@ -568,6 +568,7 @@ if __name__ == "__main__":
     parser.add_argument('-rewlrd', "--rewind_learning_rate_decay", type=bool, default=False, action=argparse.BooleanOptionalAction, help="Decay the learning rate in rewind epochs")
     parser.add_argument('-rewlrdr', "--rewind_learning_rate_decay_ratio", type=float, default=0.1, help="Decay the learning rate ratio for rewind epochs")
     parser.add_argument('-rewlrk', "--rewind_learning_rate_keep", type=bool, default=False, action=argparse.BooleanOptionalAction, help="Keep the learning rate of the rewind epochs afterward")
+    parser.add_argument('-reer', "--rewind_end_epoch_ratio", type=float, default=1, help="Epoch ratio count number of epoch for starting rewind before and of round")
 
     # Routing algos
     parser.add_argument('-rora', "--routing_random", type=bool, default=False, action=argparse.BooleanOptionalAction)
