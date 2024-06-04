@@ -152,7 +152,7 @@
                      "-nb", "10",
                      "--batch_size","64",
                      "--local_epochs", "5",
-                     "-lr", "0.01",
+                     "-lr", "0.005",
                      "-lam", "0.1",
                      "--rewind_ratio", "0.2",
                     //  "--rewind_epochs", "2",

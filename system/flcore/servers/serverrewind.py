@@ -139,17 +139,13 @@ class FedRewind(Server):
                             client_type = "standard"
                             running_client = running_clients[gpu]
                             running_client_id = running_client.id
-                            # if self.clients[running_client_id].is_strong:
-                            #     client_type = "strong"
-                            client_model_name = str(running_client.model).split( "(", 1)[0]
-                            # running_client_id.model
+                            # client_model_name = str(running_client.model).split( "(", 1)[0]
                             running_threads[gpu] = None
                             running_futures[gpu] = None
                             
                             # print ( "Calling ending hook from main")
                             self.client_round_ending_hook( running_client )
                 time.sleep(0.1)
-                # client.train()
             
             
             while running_futures[0] != None or running_futures[1] != None:
@@ -170,25 +166,18 @@ class FedRewind(Server):
                             # print ( "Calling ending hook from loop")
                             self.client_round_ending_hook( running_client )
                 time.sleep(0.1)
-            # threads = [Thread(target=client.train)
-            #            for client in self.selected_clients]
-            # [t.start() for t in threads]
-            # [t.join() for t in threads]
-
-            #self.receive_logits()
-            #self.global_logits = logit_aggregation(self.uploaded_logits
+            
             self.routes = self.get_routes()
             # self.routes = get_routes(self.num_clients, self.clients)
             self.distribute_routes(self.routes)
             self.dump_routes(self.routes)
-            # self.federation_metrics()
 
 
             print(self.uploaded_ids)
             # self.send_logits()
 
             self.Budget.append(time.time() - s_t)
-            print('-'*50, self.Budget[-1])
+            print('-'*50 + "Round time: ", self.Budget[-1])
 
             if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], top_cnt=self.top_cnt):
                 break
@@ -196,14 +185,14 @@ class FedRewind(Server):
             self.save_checkpoint()
 
 
-        print("Node routes\n")
-        for node in self.clients:
-            print ( "Node %d -> %s <- %s" % (node.id, node.node_routes, node.rewind_previous_node) )
+        # print("Node routes\n")
+        # for node in self.clients:
+        #     print ( "Node %d -> %s <- %s" % (node.id, node.node_routes, node.rewind_previous_node) )
         # for client in self.clients:
 
         #     client.save_model()
-        print("\nBest accuracy.")
-        # wandb.define_metric("node")
+        # print("\nBest accuracy.")
+        
         for test_client in self.clients:
             if not self.no_wandb:
                 wandb.define_metric(f"node_acc_{test_client.id}", step_metric="node")
@@ -232,7 +221,10 @@ class FedRewind(Server):
         random.shuffle(check_clients)
         routes = np.array([c.id for c in clients])
         for client in check_clients:
-            client_next_route = client.route( available_clients = routing_clients )
+            client_next_route = client.route( available_clients = routing_clients)
+            if client_next_route == -1:
+                print("Error: client_next_route is -1, keeping model on current node")
+                client_next_route = client.id
             routes[client.id] = client_next_route
             routing_clients.remove(self.clients[client_next_route])
 
@@ -241,6 +233,7 @@ class FedRewind(Server):
 
     
     def dump_routes ( self, routes ):
+        print ( "Routes: ", end="")
         for node in routes:
             next_node = routes[node]
             orig_node_train_model_id = self.clients[next_node].starting_model.id
@@ -251,10 +244,12 @@ class FedRewind(Server):
             next_node_train_optimizer = self.clients[next_node].next_train_model.optimizer
             orig_model_id = self.clients[next_node_train_model_id].id
             orig_model = self.clients[next_node_train_model_id].starting_model.inner_model
-            print ( "Node %d -> %d" % (node, next_node) )
+            print ( "%d->%d " % (node, next_node), end="")
+            if ( self.rewind_epochs or self.rewind_ratio) and len(self.clients[next_node].rewind_previous_node_id) > 0:
+                print ( "(>%d) " % (self.clients[next_node].rewind_previous_node_id[-1]), end="")
             # print ( "Orig Node training model id %d %s original id %d %s optim %s" % ( node, hex(id(orig_node_train_model) ), orig_node_train_model_id, hex(id(orig_model)), hex(id(orig_node_train_optimizer)) ) )
             # print ( "Next node training model id %d %s original id %d %s optim %s" % ( next_node, hex(id(next_node_train_model) ), next_node_train_model_id, hex(id(orig_model)), hex(id(next_node_train_optimizer)) ) )
-
+        print()
     def distribute_routes (self, routes ):
         if routes is None:
             routes = self.routes
@@ -282,7 +277,7 @@ class FedRewind(Server):
             if self.rewind_rotate:
                 next_client.next_train_model = client.train_model
                 next_client.next_train_model_id = client.train_model_id
-                print ( "Node %d model will be sent to %d and will rewind back to node %d" % (node, next_node, previous_node ) )
+                # print ( "Node %d model will be sent to %d and will rewind back to node %d" % (node, next_node, previous_node ) )
         
         for client in self.clients:
             client.model = client.next_train_model

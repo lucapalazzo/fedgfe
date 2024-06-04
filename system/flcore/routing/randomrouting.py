@@ -12,6 +12,7 @@ class RandomRouting(FLRoutingBase):
 
     def __init__(self, clients_count = -1, federation_clients = None, id = -1, model = None):
         super(RandomRouting, self).__init__(clients_count, federation_clients, id = id, model = model)
+        self.route_pairs = None
 
     def route(self, available_clients = None):
         """
@@ -19,14 +20,20 @@ class RandomRouting(FLRoutingBase):
         """
         super(RandomRouting, self).route(available_clients)
         # Get the best client based on the confusion matrix
+        
         if available_clients is None:
             available_clients = self.federation_clients
         
-        available_clients = self.get_available_clients(available_clients)
+        next_client_id = -1
 
+        available_clients = self.get_available_clients(available_clients)
+        # self.route_pairs = list(RandomRouting.pairwise(available_clients))
+
+        # if self.id in self.route_pairs:
+        #     next_client_id = self.route_pairs[self.id]
         next_client = np.random.choice(available_clients)
         next_client_id = next_client.id
-        print (f"Best client id: {next_client_id} ")
+        # print (f"Chosen client id: {next_client_id} ")
         return next_client_id
 
     def get_available_clients(self, available_clients, reduce_clients=False ):
@@ -70,3 +77,9 @@ class RandomRouting(FLRoutingBase):
 
     def __str__(self):
         return str(self.routing)
+    
+    def pairwise(iterable):
+        # pairwise('ABCDEFG') --> AB BC CD DE EF FG
+        a, b = itertools.tee(iterable)
+        next(b, None)
+        return zip(a, b)
