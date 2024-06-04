@@ -226,11 +226,14 @@ class Client(object):
         # self.model.cpu()
         # self.save_model(self.model, 'model')
 
-        # a = np.concatenate(prob, axis=0)  
-        y_prob = np.concatenate(y_prob, axis=0)
-        y_true = np.concatenate(y_true, axis=0)
+        # a = np.concatenate(prob, axis=0)
+        if len(y_prob) > 0:
+            y_prob = np.concatenate(y_prob, axis=0)
+            y_true = np.concatenate(y_true, axis=0)
+            prob = prob.detach().cpu().numpy()
+        # else:
+        #     print ( "No data for client ", self.node_data.id)
 
-        prob = prob.detach().cpu().numpy()
 
         # auc = metrics.roc_auc_score(y_true, y_prob[:,1], average='micro')
         # auc = metrics.roc_auc_score(y_true, prob, average='micro')
