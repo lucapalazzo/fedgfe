@@ -37,8 +37,9 @@ class RandomRouting(FLRoutingBase):
         # reduce the number of clients by choosing random clients from the available clients
             clients_count = np.random.randint(len(self.federation_clients))
             available_clients = np.sort(np.random.choice(self.federation_clients, clients_count, replace=False))
-        
-        available_clients = [client for client in available_clients if client.id != self.id]
+
+        if len(available_clients) > 1:
+            available_clients = [client for client in available_clients if client.id != self.id]
         
         return available_clients
     

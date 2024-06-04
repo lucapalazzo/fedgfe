@@ -22,7 +22,7 @@ import random
 import torch
 import torchvision
 import torchvision.transforms as transforms
-from datautils.utils.dataset_utils import check, separate_data, split_data, save_file
+from datautils.dataset_utils import check, separate_data, split_data, save_file
 
 
 random.seed(1)

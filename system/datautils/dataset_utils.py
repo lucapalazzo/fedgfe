@@ -18,12 +18,13 @@
 import os
 import ujson
 import numpy as np
+import sys
 import gc
 from sklearn.model_selection import train_test_split
 
 batch_size = 10
 train_size = 0.75 # merge original training set and test set, then split it manually. 
-least_samples = 400 # guarantee that each client must have at least one samples for testing. 
+least_samples = 10 # guarantee that each client must have at least one samples for testing. 
 alpha = 0.1 # for Dirichlet distribution
 
 def check(config_path, train_path, test_path, num_clients, num_classes, niid=False, 

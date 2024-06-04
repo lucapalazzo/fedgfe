@@ -205,6 +205,12 @@ class clientRewind(Client):
         #     self.learning_rate_scheduler.step()
         # self.rewind_metrics()
         print()
+        if len(self.rewind_previous_node) > 0:
+            rewind_node = self.rewind_previous_node[-1]
+            local_loss, rw_loss = self.rewind_train_metrics(rewind_node)
+            if not self.no_wandb:
+                wandb.log({f"train/model_{self.model.id}/atend_loss_on_local": local_loss, "round": self.round})
+                wandb.log({f"train/model_{self.model.id}/atend_loss_on_previous": rw_loss, "round": self.round})
 
     def rewind(self, step, max_local_epochs = 0, rewind_epochs = 0, rewind_node_count = 0, device = 0):
 

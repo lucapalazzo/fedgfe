@@ -18,7 +18,7 @@
 import numpy as np
 import os
 import random
-from utils.dataset_utils import split_data, save_file
+from system.datautils.dataset_utils import split_data, save_file
 from scipy.sparse import coo_matrix
 from os import path
 

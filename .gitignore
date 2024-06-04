@@ -3,3 +3,7 @@ wandb/*
 models/*
 dataset/*
 *.png
+34257c06-45e4-45ad-b351-fbe52c9ab4e6/client_0.pt
+*.pt
+wandb-metadata.json
+*.h5

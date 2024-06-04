@@ -74,14 +74,12 @@ from flcore.trainmodel.alexnet import *
 from flcore.trainmodel.mobilenet_v2 import *
 from flcore.trainmodel.transformer import *
 
-from datautils.generate_cifar10 import generate_cifar10
-from datautils.generate_mnist import generate_mnist
-
 from utils.result_utils import average_data
 from utils.mem_utils import MemReporter
 
 from disablrandomness import set_seed
 
+from datautils.dataset_generate import dataset_generate
 from torchvision.models import ResNet18_Weights
 
 logger = logging.getLogger()
@@ -429,6 +427,8 @@ if __name__ == "__main__":
         print( "%d %d\n" % ( i, torch.cuda.utilization(i) ) )
     parser = argparse.ArgumentParser()
     # general
+    parser.add_argument('-ru', "--run_uuid", type=str, default=None, 
+                        help="Run UUID for resuming from checkpoint")
     parser.add_argument('-go', "--goal", type=str, default="test", 
                         help="The goal for this experiment")
     parser.add_argument('-dev', "--device", type=str, default="cuda",
@@ -580,6 +580,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    if args.dataset_generate:
+        dataset_generate(args)
+
+
     if args.device == "cuda" and not torch.cuda.is_available():
         print("\ncuda is not avaiable.\n")
         args.device = "cpu"
@@ -639,20 +643,7 @@ if __name__ == "__main__":
         print ("Setting seed to",args.seed)
         set_seed(args.seed)
 
-    if args.dataset_generate:
-        if args.dataset == "mnist" or args.dataset == "fmnist":
-            outdir = 'dataset/mnist/'
-            if ( args.dataset_outdir != None ):
-                outdir = 'dataset/' + args.dataset_outdir + '/'
-            generate_mnist('dataset/mnist/', args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition)
-        elif args.dataset == "CIFAR-10" or args.dataset == "CIFAR-100":
-            outdir = 'dataset/CIFAR-10/'
-            if ( args.dataset_outdir != None ):
-                outdir = 'dataset/' + args.dataset_outdir + '/'
-            generate_cifar10( args, outdir, args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition, args.dataset_dir_alpha, class_per_client=args.num_classes_per_client)
-        # else:
-        #     generate_synthetic('dataset/synthetic/', args.num_clients, 10, args.niid)
-        sys.exit(0)
+
         
 
     

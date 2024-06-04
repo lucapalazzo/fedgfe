@@ -20,7 +20,7 @@ import os
 import sys
 import random
 import torchtext
-from utils.dataset_utils import check, separate_data, split_data, save_file
+from system.datautils.dataset_utils import check, separate_data, split_data, save_file
 from torchtext.data.utils import get_tokenizer
 from torchtext.vocab import build_vocab_from_iterator
 

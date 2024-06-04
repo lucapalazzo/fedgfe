@@ -35,6 +35,7 @@ class Server(object):
     def __init__(self, args, times):
         # Set up the main attributes
         self.uuid = uuid.uuid4()
+        self.save_folder_name = str(self.uuid)
 
         self.args = args
         self.device = args.device
@@ -55,7 +56,6 @@ class Server(object):
         self.time_select = args.time_select
         self.goal = args.goal
         self.time_threthold = args.time_threthold
-        self.save_folder_name = args.save_folder_name
         self.top_cnt = 100
         self.auto_break = args.auto_break
         self.reduce_memory_footprint = args.reduce_memory_footprint
@@ -99,6 +99,17 @@ class Server(object):
         self.round_test_on_train_stats = self.num_clients * [None]
         self.round_train_stats = self.num_clients * [None]
 
+    def save_checkpoint(self):
+        if self.save_folder_name == None:
+            self.save_folder_name = os.path.join(self.uuid)
+        if not os.path.exists(self.save_folder_name):
+            os.makedirs(self.save_folder_name)
+        
+        # torch.save(self, os.path.join(self.save_folder_name, "server.pt"))
+
+        for client in self.clients:
+            torch.save(client.model, os.path.join(self.save_folder_name, "client_" + str(client.model.id) + ".pt"))
+            # torch.save(client.node_data, os.path.join(self.save_folder_name, "client_data_" + str(client.id) + ".pt"))
 
     def get_routes(self):
         if self.routing is not None:
@@ -213,7 +224,7 @@ class Server(object):
         
     def save_results(self):
         algo = self.dataset + "_" + self.algorithm
-        result_path = "../results/"
+        result_path = os.path.join( self.save_folder_name, "results/" )
         if not os.path.exists(result_path):
             os.makedirs(result_path)
 

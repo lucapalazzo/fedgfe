@@ -1,7 +1,7 @@
 ciao,bello,,
 """common_args""",--global_rounds,-data,-le
 # @RT3090
-tsp0 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedRewind --global_rounds 50 -go 50C-10LE-RR0 -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.1 --rewind_rotate,,,
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedRewind --global_rounds 50 -go 50C-10LE-RR0 -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.1 --rewind_rotate
 tsp0 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedRewind --global_rounds 50 -go 50C-10LE-RR0.1  -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre
 # @Worker3
 tsp0 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedRewind --global_rounds 50 -go 50C-10LE-RR0.2  -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.2 --rewind_rotate --rewind_ratio 0.2 --rewind_strategy atend_pre
@@ -14,7 +14,23 @@ tsp4 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedProx
 tsp4 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedAvg --global_rounds 50 -go 50C-10LE-RR0.4  -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.2
 
 # @DGX
-tsp0 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedRewind --global_rounds 50 -go 50C-10LE-RR0 -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.1 --rewind_rotate --rewind_end_epoch_ratio
-tsp0 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedRewind --global_rounds 50 -go 50C-10LE-RR0.1  -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre --rewind_end_epoch_ratio
-tsp2 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedRewind --global_rounds 50 -go 50C-10LE-RR0.2  -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.2 --rewind_rotate --rewind_ratio 0.2 --rewind_strategy atend_pre --rewind_end_epoch_ratio
-tsp2 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedRewind --global_rounds 50 -go 50C-10LE-RR0.3  -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.2 --rewind_rotate --rewind_ratio 0.3 --rewind_strategy atend_pre --rewind_end_epoch_ratio
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedRewind --global_rounds 50 -go 50C-10LE-RR0 -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.1 --rewind_rotate --rewind_end_epoch_ratio 0.5
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedRewind --global_rounds 50 -go 50C-10LE-RR0.1  -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre --rewind_end_epoch_ratio 0.5
+tsp2 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedRewind --global_rounds 50 -go 50C-10LE-RR0.2  -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.2 --rewind_rotate --rewind_ratio 0.2 --rewind_strategy atend_pre --rewind_end_epoch_ratio 0.5
+tsp2 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedRewind --global_rounds 50 -go 50C-10LE-RR0.3  -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.2 --rewind_rotate --rewind_ratio 0.3 --rewind_strategy atend_pre --rewind_end_epoch_ratio 0.5
+# @RT3090
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedRewind --global_rounds 50 -go 50C-10LE-RR0 -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.1 --rewind_rotate --routing_scored --routing_scored_average micro
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-A0.95 -m resnet -algo FedRewind --global_rounds 50 -go 50C-10LE-RR0 -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -mpt -lr 0.005 -lam 0.1 --rewind_rotate --routing_scored --routing_scored_average macro
+
+# TODO
+# CL dividere in 5 task per nodo il dataset
+# implementare fine asincrona task
+
+# loss prev e curr atend
+# epoche 10
+# atend
+# CIFAR10 e CIFAR100, direchlet alfa 0.1, 0.25, 0.5, 0.9
+# rewind_ratio 0.1 e 0.2
+# 10, 50 e 100 client
+# non PT
+

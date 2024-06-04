@@ -13,7 +13,6 @@ import concurrent.futures
 import torch.futures as futures
 import pandas as pd
 from sklearn.metrics import confusion_matrix
-import matplotlib.pyplot as plt
 
 import time
 from itertools import cycle
@@ -194,6 +193,9 @@ class FedRewind(Server):
             if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], top_cnt=self.top_cnt):
                 break
 
+            self.save_checkpoint()
+
+
         print("Node routes\n")
         for node in self.clients:
             print ( "Node %d -> %s <- %s" % (node.id, node.node_routes, node.rewind_previous_node) )
@@ -359,6 +361,8 @@ class FedRewind(Server):
                 wandb.define_metric(f"train/model_{client.id}/pre_rewind_loss_on_previous", step_metric="round")
                 wandb.define_metric(f"train/model_{client.id}/post_rewind_loss_on_local", step_metric="round")
                 wandb.define_metric(f"train/model_{client.id}/post_rewind_loss_on_previous", step_metric="round")
+                wandb.define_metric(f"train/model_{client.id}/atend_loss_on_previous", step_metric="round")
+                wandb.define_metric(f"train/model_{client.id}/atend_loss_on_local", step_metric="round")
                 wandb.define_metric(f"rewind/rewind_loss_{client.id}", step_metric="round")
 
             for test_client in self.clients:
