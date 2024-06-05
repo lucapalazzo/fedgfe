@@ -514,7 +514,7 @@ class FedRewind(Server):
     def round_train_metrics(self, client):
         losses, train = client.train_metrics()
 
-        print ( "Getting train metrics on model %s loss %s " % ( hex(id(client.train_model)), hex(id(client.loss) ) ))
+        # print ( "Getting train metrics on model %s loss %s " % ( hex(id(client.train_model)), hex(id(client.loss) ) ))
         previous_loss = -1
         round_loss = losses/train
         self.data_log({f'train/model_{client.id}/round_train_loss_{client.id}': round_loss, "round": self.round})
@@ -587,6 +587,8 @@ class FedRewind(Server):
         for test_client in self.clients:
             if ( test_client.node_data.id != client.node_data.id or ignore_last == False ):
                 acc, test_num, auc, y_true, y_prob = client.test_metrics(test_client, on_train = on_train)
+                if test_num == 0:
+                    continue
                 round_acc = acc/test_num
                 other_accuracy = { 'node_dataset': test_client.node_data.id, 'accuracy': round_acc }
                 accuracies.append(other_accuracy)

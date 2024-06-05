@@ -140,7 +140,7 @@
             "program": "system/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["-data", "CIFAR-10-nIID-10C-DIRA0.1",
+            "args": ["-data", "CIFAR-10-nIID-50C-DIRA0.1",
                      // "--dataset_path", "CIFAR-10-nIID-10C",
                     //  "--dataset_path", "CIFAR-10-nIID-10C-A0.5",
                      "-m", "resnet",
@@ -148,7 +148,7 @@
                      "--global_rounds", "10",
                      "-did", "0",
                      "-go", "prova",
-                     "-nc", "3",
+                     "-nc", "10",
                      "-nb", "10",
                      "--batch_size","64",
                      "--local_epochs", "5",
@@ -160,7 +160,7 @@
                      "--rewind_rotate",
                      "--rewind_strategy", "atend_pre",
                     //  "--learning_rate_decay_gamma", "0.5",
-                    //  "--no_wandb",
+                     "--no_wandb",
                     //  "--loss_weighted",
                     //  "--rewind_donkey"
 //                    , "-go", "${inputs:experimentName"
@@ -402,14 +402,14 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": ["-data", "CIFAR-10",
-                     "-nc", "10",
+                     "-nc", "50",
                      "--dataset_generate",
                     //  "-dsbalance",
                      "--dataset_niid",
-                     "--dataset_outdir", "CIFAR-10-nIID-10C-DIRA0.9",
+                     "--dataset_outdir", "CIFAR-10-nIID-50C-DIRA0.1",
                      "--dataset_partition", "dir",
                      "--dataset_balance",
-                     "--dataset_dir_alpha", "0.9"
+                     "--dataset_dir_alpha", "0.1"
                      //                    , "-go", "${inputs:experimentName"
                 ],
         },

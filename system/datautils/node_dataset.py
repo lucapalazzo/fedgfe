@@ -37,7 +37,7 @@ class NodeData():
             self.train_data = read_client_data(self.dataset, self.id, is_train=True,dataset_limit=dataset_limit)
             self.train_samples = len(self.train_data)
         self.train_dataset = FLNodeDataset(self.train_data, transform=self.transform, target_transform=self.target_transform, device=self.device)
-        return DataLoader(self.train_dataset, batch_size, drop_last=True, shuffle=True)
+        return DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
    
     def load_test_data(self, batch_size, dataset_limit=0):
         if self.test_data == None:
