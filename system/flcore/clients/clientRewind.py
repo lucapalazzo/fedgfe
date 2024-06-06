@@ -28,7 +28,7 @@ class clientRewind(Client):
         self.rewind_previous_node_loss = []
         self.rewind_epochs = rewind_epochs
         self.rewind_interval = rewind_interval
-        self.rewind_ratio = rewind_ratio
+        self.rewind_ratio = args.rewind_ratio
         self.rewind_donkey = args.rewind_donkey
         self.rewind_donkey_count = args.rewind_donkey_count
         self.rewind_learning_rate_schedule = args.rewind_learning_rate_schedule
@@ -212,6 +212,17 @@ class clientRewind(Client):
                 wandb.log({f"train/model_{self.model.id}/atend_loss_on_local": local_loss, "round": self.round})
                 wandb.log({f"train/model_{self.model.id}/atend_loss_on_previous": rw_loss, "round": self.round})
 
+
+    def prepare_rewind(self, max_local_epochs, rewind_train_node = None):
+        if ( self.rewind_epochs > 0 and rewind_train_node != None ):
+            rewind_epochs = self.rewind_epochs
+        else:
+            rewind_epochs = int ( max_local_epochs * self.rewind_ratio )
+        local_epochs = max_local_epochs - rewind_epochs
+        
+        rewind_nodes_count = len(self.rewind_previous_node)
+        return rewind_epochs, local_epochs, rewind_nodes_count
+    
     def rewind(self, step, max_local_epochs = 0, rewind_epochs = 0, rewind_node_count = 0, device = 0):
 
         if self.rewind_donkey:
@@ -340,12 +351,12 @@ class clientRewind(Client):
         losses, train_num = self.train_metrics()
         loss = losses / train_num
        
-        print("\n** REWIND: rewind loss on node's dataset: ", loss)
+        print(f"\n** REWIND: rewind loss on node's {self.id} dataset: ", loss)
         if ( rewind_train_node != None ):
             rewind_loader = rewind_train_node.load_train_data()
             rw_losses, rw_train_num = self.train_metrics(rewind_loader)
             rw_loss = rw_losses / rw_train_num
-            print("** REWIND: rewind loss on rewind dataset: ", rw_loss)
+            print(f"** REWIND: rewind loss on rewind {rewind_train_node.id} dataset: ", rw_loss)
         return loss, rw_loss
 
     def test_metrics_other(self, test_client = None):

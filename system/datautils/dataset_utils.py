@@ -27,8 +27,10 @@ train_size = 0.75 # merge original training set and test set, then split it manu
 least_samples = 10 # guarantee that each client must have at least one samples for testing. 
 # alpha = 0.1 # for Dirichlet distribution
 
-def check(config_path, train_path, test_path, num_clients, num_classes, niid=False, 
+def check(args, config_path, train_path, test_path, num_clients, num_classes, niid=False, 
         balance=True, partition=None):
+    
+    alpha = args.dataset_dir_alpha
     # check existing dataset
     if os.path.exists(config_path):
         with open(config_path, 'r') as f:
@@ -170,7 +172,7 @@ def split_data(X, y):
     return train_data, test_data
 
 def save_file(config_path, train_path, test_path, train_data, test_data, num_clients, 
-                num_classes, statistic, niid=False, balance=True, partition=None):
+                num_classes, statistic, niid=False, balance=True, partition=None, alpha=0.1):
     config = {
         'num_clients': num_clients, 
         'num_classes': num_classes, 

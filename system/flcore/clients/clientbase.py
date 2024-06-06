@@ -96,11 +96,13 @@ class Client(object):
         self.model.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.local_learning_rate)
         self.loss = self.model.loss
         self.optimizer = self.model.optimizer
-        self.learning_rate_scheduler = torch.optim.lr_scheduler.ExponentialLR(
+        
+        self.learning_rate_schedule = args.learning_rate_schedule
+        self.learning_rate_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer=self.optimizer, 
-            gamma=args.learning_rate_decay_gamma
+            # gamma=args.learning_rate_schedule_gamma,
+            patience=2
         )
-        self.learning_rate_decay = args.learning_rate_decay
 
 
     def route(self, available_clients = None): 

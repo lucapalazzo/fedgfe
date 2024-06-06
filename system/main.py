@@ -65,6 +65,7 @@ from flcore.servers.servergh import FedGH
 from flcore.servers.serveravgDBE import FedAvgDBE
 from flcore.servers.serverZIO import FedZio
 from flcore.servers.serverrewind import FedRewind
+from flcore.servers.serveravgrew import FedAvgRew
 
 from flcore.trainmodel.models import *
 
@@ -395,6 +396,8 @@ def run(args):
             args.model = BaseHeadSplit(args.model, args.head)
             server = FedAvgDBE(args, i)
 
+        elif args.algorithm == "FedAvgRew":
+            server = FedAvgRew(args, i)
         elif args.algorithm == "FedRewind":
             server = FedRewind(args, i)
 
@@ -449,8 +452,8 @@ if __name__ == "__main__":
     parser.add_argument('-lbs', "--batch_size", type=int, default=10)
     parser.add_argument('-lr', "--local_learning_rate", type=float, default=0.005,
                         help="Local learning rate")
-    parser.add_argument('-ld', "--learning_rate_decay", type=bool, default=False)
-    parser.add_argument('-ldg', "--learning_rate_decay_gamma", type=float, default=0.99)
+    parser.add_argument('-lrs', "--learning_rate_schedule", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-lrsg', "--learning_rate_schedule_gamma", type=float, default=0.99)
     parser.add_argument('-gr', "--global_rounds", type=int, default=2000)
     parser.add_argument('-ls', "--local_epochs", type=int, default=1, 
                         help="Multiple update steps in one local epoch.")
@@ -594,9 +597,9 @@ if __name__ == "__main__":
     print("Local batch size: {}".format(args.batch_size))
     print("Local epochs: {}".format(args.local_epochs))
     print("Local learing rate: {}".format(args.local_learning_rate))
-    print("Local learing rate decay: {}".format(args.learning_rate_decay))
-    if args.learning_rate_decay:
-        print("Local learing rate decay gamma: {}".format(args.learning_rate_decay_gamma))
+    print("Local learing rate schedule: {}".format(args.learning_rate_schedule))
+    if args.learning_rate_schedule:
+        print("Local learing rate schedule gamma: {}".format(args.learning_rate_schedule_gamma))
     print("Total number of clients: {}".format(args.num_clients))
     print("Clients join in each round: {}".format(args.join_ratio))
     print("Clients randomly join: {}".format(args.random_join_ratio))
