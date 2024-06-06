@@ -61,8 +61,8 @@ class clientAVG(Client):
 
         # self.model.cpu()
 
-        if self.learning_rate_schedule:
-            self.learning_rate_scheduler.step()
+            if self.learning_rate_schedule:
+                self.learning_rate_scheduler.step(loss)
 
         self.train_time_cost['num_rounds'] += 1
         self.train_time_cost['total_cost'] += time.time() - start_time
