@@ -196,7 +196,7 @@ class clientRewind(Client):
             print ( f"{loss/num} ", end='')
         if ( self.rewind_strategy == "atend" and len(self.rewind_previous_node) > 0 ):
             self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
-        if self.learning_rate_decay == True:
+        if self.rewind_learning_rate_decay == True:
             print ( "\nRestoring LR to ", starting_lr)
             self.model.optimizer.param_groups[0]['lr'] = starting_lr
         # print("lr ", *epoch_start_lr, sep=" " )

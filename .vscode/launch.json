@@ -178,7 +178,7 @@
                      // "--dataset_path", "CIFAR-10-nIID-10C",
                     //  "--dataset_path", "CIFAR-10-nIID-10C-A0.5",
                      "-m", "resnet",
-                     "-algo", "FedAvgRew",
+                     "-algo", "FedAvg",
                      "--global_rounds", "50",
                      "-did", "0",
                      "-go", "prova",

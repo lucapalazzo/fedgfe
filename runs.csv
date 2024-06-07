@@ -60,3 +60,26 @@ tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -algo FedR
 # 10, 50 e 100 client
 # non PT
 
+
+Dataset A0.1 
+10 Clients CIFAR-10-nIID-10C-DIRA0.1
+#DGX tsp0 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.1-10LE-50GR-RR0.1-AEP -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre
+#DGX tsp0 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.1-10LE-50GR-RR0.1-AE  -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
+#DGX tsp0 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.1-10LE-50GR-RR0       -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate
+tsp0 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.1 -m resnet -mpt -algo FedAvg         --global_rounds 50 -go 10C-DIRA0.1-10LE-50GR-AVG       -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1
+tsp0 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.1 -m resnet -mpt -algo FedAvgRew      --global_rounds 50 -go 10C-DIRA0.1-10LE-50GR-AVGREW    -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
+
+50 Clients CIFAR-10-nIID-50C-DIRA0.1
+tsp3 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 50C-DIRA0.1-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre
+#DGS tsp3 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 50C-DIRA0.1-10LE-50GR-RR0.1-AE  -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
+tsp3 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 50C-DIRA0.1-10LE-50GR-RR0       -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.1 -m resnet -mpt -algo FedAvg    --global_rounds 50 -go 50C-DIRA0.1-10LE-50GR-AVG       -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.1 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 50C-DIRA0.1-10LE-50GR-AVGREW    -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
+
+100 Clients CIFAR-10-nIID-100C-DIRA0.1
+tsp3 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 100C-DIRA0.1-10LE-100GR-RR0.1-AEP -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre
+tsp3 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 100C-DIRA0.1-10LE-100GR-RR0.1-AE  -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
+tsp3 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 100C-DIRA0.1-10LE-100GR-RR0       -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate
+tsp3 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.1 -m resnet -mpt -algo FedAvg    --global_rounds 50 -go 100C-DIRA0.1-10LE-100GR-AVG       -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1
+tsp3 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.1 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 100C-DIRA0.1-10LE-100GR-AVGREW    -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
+

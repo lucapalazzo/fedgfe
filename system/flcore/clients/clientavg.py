@@ -43,8 +43,8 @@ class clientAVG(Client):
         max_local_epochs = self.local_epochs
         if self.train_slow:
             max_local_epochs = np.random.randint(1, max_local_epochs // 2)
-
         for epoch in range(max_local_epochs):
+            epoch_loss = 0
             for i, (x, y) in enumerate(trainloader):
                 if type(x) == type([]):
                     x[0] = x[0].to(self.device)
@@ -55,14 +55,16 @@ class clientAVG(Client):
                     time.sleep(0.1 * np.abs(np.random.rand()))
                 output = self.model(x)
                 loss = self.loss(output, y)
+                epoch_loss += loss.item()
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
 
+
         # self.model.cpu()
 
             if self.learning_rate_schedule:
-                self.learning_rate_scheduler.step(loss)
+                self.learning_rate_scheduler.step(epoch_loss)
 
         self.train_time_cost['num_rounds'] += 1
         self.train_time_cost['total_cost'] += time.time() - start_time
