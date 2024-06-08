@@ -448,7 +448,7 @@ if __name__ == "__main__":
     parser.add_argument('-nbc', "--num_classes_per_client", type=int, default=2)
     parser.add_argument('-m', "--model", type=str, default="cnn")
     parser.add_argument('-mpt', "--model_pretrain", type=bool, default=False, action=argparse.BooleanOptionalAction)
-    parser.add_argument('-mo', "--model_optimizer", type=str, default='SGD')
+    parser.add_argument('-mopt', "--model_optimizer", type=str, default='SGD')
     parser.add_argument('-lw', "--loss_weighted", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-lbs', "--batch_size", type=int, default=10)
     parser.add_argument('-lr', "--local_learning_rate", type=float, default=0.005,
