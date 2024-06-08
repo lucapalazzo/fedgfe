@@ -93,7 +93,15 @@ class Client(object):
         self.dp_sigma = args.dp_sigma
 
         self.model.loss = nn.CrossEntropyLoss()
-        self.model.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.local_learning_rate)
+
+            
+        if args.model_optimizer == 'Adam':
+            self.model.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.local_learning_rate)
+        elif args.model_optimizer == 'AdamW':
+            self.model.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.local_learning_rate)
+        else:
+            self.model.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.local_learning_rate)
+            
         self.loss = self.model.loss
         self.optimizer = self.model.optimizer
         

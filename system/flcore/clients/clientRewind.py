@@ -158,6 +158,9 @@ class clientRewind(Client):
             trainloader = node_trainloader
 
             for i, (x, y) in enumerate(trainloader):
+                if len(x) <= 1:
+                    continue
+
                 if type(x) == type([]):
                     x[0] = x[0].to(device)
                     # x[0] = self.transform(x[0])
