@@ -15,8 +15,8 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-import copy
 import torch
+import math
 import torch.nn as nn
 import numpy as np
 import os
@@ -274,9 +274,13 @@ class Client(object):
                     x = x.to(self.device)
                 y = y.to(self.device)
                 output = self.model(x)
+                if ( torch.isnan(output).any()):
+                    print ( "Output NAN")
+
                 loss = self.model.loss(output, y)
                 train_num += y.shape[0]
                 losses += loss.item() * y.shape[0]
+
 
         # self.model.cpu()
         # self.save_model(self.model, 'model')

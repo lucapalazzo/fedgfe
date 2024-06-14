@@ -69,15 +69,24 @@ class FedAvgRew(Server):
     def train_set_previous_node(self):
         previous_nodes = list(range(self.num_clients))
         for client in self.clients:
-            previous_node = np.random.randint(0, len(previous_nodes))
-            previous_nodes.pop(previous_node)
-            client.rewind_previous_node.append(self.clients[previous_node])
+            client_in_list = False
+            if client.id in previous_nodes:
+                client_in_list = True
+            if client_in_list:
+                previous_nodes.remove(client.id)
+            previous_node_index = np.random.randint(0, len(previous_nodes))
+            previous_node_id = previous_nodes[previous_node_index]
+            previous_nodes.remove(previous_node_id)
+            if client_in_list:
+                previous_nodes.append(client.id)
+            client.rewind_previous_node.append(self.clients[previous_node_index])
 
     def train(self):
         for i in range(self.global_rounds+1):
             s_t = time.time()
             self.selected_clients = self.select_clients()
-            self.send_models()
+            if ( self.round == 0):
+                self.send_models()
 
             if i%self.eval_gap == 0:
                 print(f"\n-------------Round number: {i}-------------")

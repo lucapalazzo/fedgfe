@@ -183,7 +183,7 @@
                      "--global_rounds", "50",
                      "-did", "0",
                      "-go", "prova",
-                     "-nc", "10",
+                     "-nc", "2",
                      "-nb", "10",
                      "--batch_size","64",
                      "--local_epochs", "10",

@@ -271,7 +271,7 @@ class clientRewind(Client):
         if ( rewind_epochs == 0 or rewind_train_node == None):
             return
         
-        print ( "\nStep on node %d, %s rewinding to node %d for %d epochs" % (self.id, self.rewind_strategy, rewind_train_node.id, rewind_epochs ) )
+        print ( "\nStep on node %d, %s rewinding to node %d for %d epochs" % (self.id, self.rewind_strategy, rewind_train_node.id, rewind_epochs ), end='' )
         
         dataloader = rewind_train_node.load_train_data()
         start_time = time.time()
@@ -281,8 +281,8 @@ class clientRewind(Client):
         if ( self.rewind_learning_rate_decay ):
             rewind_lr = starting_lr * self.rewind_learning_rate_decay_ratio
             self.model.optimizer.param_groups[0]['lr'] = rewind_lr
-            print ( f"Original LR: {starting_lr} new LR: {rewind_lr}")
-            print ( f"Rewind loss: ", end='')
+            print ( f"(original LR: {starting_lr} new LR: {rewind_lr},", end='' )
+            print ( f"rewind loss: ", end='')
         for step in range(rewind_epochs):
             for i, (x, y) in enumerate(dataloader):
                 if type(x) == type([]):
@@ -363,7 +363,10 @@ class clientRewind(Client):
             rewind_loader = rewind_train_node.load_train_data()
             rw_losses, rw_train_num = self.train_metrics(rewind_loader)
             rw_loss = rw_losses / rw_train_num
-            print(f"** REWIND: rewind loss on rewind {rewind_train_node.id} dataset: ", rw_loss)
+            if math.isnan(rw_loss):
+                print(f"** REWIND: rewind loss on rewind {rewind_train_node.id} dataset is NAN!!")
+            else:
+                print(f"** REWIND: rewind loss on rewind {rewind_train_node.id} dataset: ", rw_loss)
         return loss, rw_loss
 
     def test_metrics_other(self, test_client = None):

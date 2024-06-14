@@ -577,6 +577,7 @@ if __name__ == "__main__":
     # Routing algos
     parser.add_argument('-rora', "--routing_random", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-rosc', "--routing_scored", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-rosc', "--routing_cycled_static", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-rosca', "--routing_scored_average", type=str, default='micro')
 
     # Memory management
