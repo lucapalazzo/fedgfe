@@ -56,6 +56,10 @@ class clientAVGRew(clientRewind):
                 self.rewind(epoch, max_local_epochs, rewind_epochs, rewind_nodes_count)
 
             for i, (x, y) in enumerate(trainloader):
+                if self.check_batch(x, y) == False:
+                    print (f"Client {self.id} batch {i} has wrong shape, skipping {x.shape} {y.shape}")
+                    continue
+
                 if type(x) == type([]):
                     x[0] = x[0].to(self.device)
                 else:
@@ -78,10 +82,6 @@ class clientAVGRew(clientRewind):
 
             if ( self.rewind_strategy == "atend" and rewind_nodes_count ):
                 self.rewind(epoch, max_local_epochs, rewind_epochs, rewind_nodes_count)
-
-        # self.model.cpu()
-
-        
 
         if len(self.rewind_previous_node) > 0:
             rewind_node = self.rewind_previous_node[-1]

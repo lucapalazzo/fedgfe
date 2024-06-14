@@ -158,7 +158,7 @@ class clientRewind(Client):
             trainloader = node_trainloader
 
             for i, (x, y) in enumerate(trainloader):
-                if len(x) <= 1:
+                if self.check_batch(x, y) == False:
                     continue
 
                 if type(x) == type([]):
@@ -217,13 +217,17 @@ class clientRewind(Client):
 
 
     def prepare_rewind(self, max_local_epochs, rewind_train_node = None):
+        rewind_nodes_count = len(self.rewind_previous_node)
+
+        if rewind_nodes_count == 0:
+            return max_local_epochs, max_local_epochs, rewind_nodes_count
+
         if ( self.rewind_epochs > 0 and rewind_train_node != None ):
             rewind_epochs = self.rewind_epochs
         else:
             rewind_epochs = int ( max_local_epochs * self.rewind_ratio )
         local_epochs = max_local_epochs - rewind_epochs
         
-        rewind_nodes_count = len(self.rewind_previous_node)
         return rewind_epochs, local_epochs, rewind_nodes_count
     
     def rewind(self, step, max_local_epochs = 0, rewind_epochs = 0, rewind_node_count = 0, device = 0):

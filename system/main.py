@@ -140,11 +140,11 @@ def run(args):
         
         elif model_str == "resnet":
             weights = ResNet18_Weights.DEFAULT
+            args.model = torchvision.models.resnet18(weights=weights).to(args.device)
             if args.model_pretrain:
                 weights = ResNet18_Weights.IMAGENET1K_V1
-            args.model = torchvision.models.resnet18(weights=weights).to(args.device)
-            ftrs = args.model.fc.in_features
-            args.model.fc = nn.Linear(ftrs, args.num_classes).to(args.device)
+                ftrs = args.model.fc.in_features
+                args.model.fc = nn.Linear(ftrs, args.num_classes).to(args.device)
 
             # args.model = torchvision.models.resnet18(weights=weights, num_classes=args.num_classes).to(args.device)
             

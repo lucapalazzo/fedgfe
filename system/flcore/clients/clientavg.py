@@ -46,6 +46,9 @@ class clientAVG(Client):
         for epoch in range(max_local_epochs):
             epoch_loss = 0
             for i, (x, y) in enumerate(trainloader):
+                if self.check_batch(x, y) == False:
+                    continue
+                
                 if type(x) == type([]):
                     x[0] = x[0].to(self.device)
                 else:

@@ -112,7 +112,11 @@ class Client(object):
             patience=2
         )
 
-
+    def check_batch(self, x, y):
+        if len(x) <= 1:
+            return False
+        return True
+    
     def route(self, available_clients = None): 
         if self.routing is not None:
             self.routing.federation_clients = self.federation_clients
@@ -218,7 +222,8 @@ class Client(object):
                 test_num += y.shape[0]
 
                 if torch.isnan(output).any().item():
-                    wandb.log({f'warning/{self.id}': torch.isnan(output)})
+                    if not self.no_wandb:
+                        wandb.log({f'warning/{self.id}': torch.isnan(output)})
                     # print(f'warning for client {self.id} in round {self.round}:', torch.isnan(output))
                     print(f'warning for client {self.id} in round {self.round}:', "output contains nan")
 
