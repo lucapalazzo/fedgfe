@@ -71,16 +71,19 @@ class FedAvgRew(Server):
             return
         previous_nodes = list(range(self.num_clients))
         for client in self.clients:
-            client_in_list = False
-            if client.id in previous_nodes:
-                client_in_list = True
-            if client_in_list:
-                previous_nodes.remove(client.id)
-            previous_node_index = np.random.randint(0, len(previous_nodes))
-            previous_node_id = previous_nodes[previous_node_index]
-            previous_nodes.remove(previous_node_id)
-            if client_in_list:
-                previous_nodes.append(client.id)
+            if len(previous_nodes) == 1:
+                previous_node_index = previous_nodes[0]
+            else:
+                client_in_list = False
+                if client.id in previous_nodes:
+                    client_in_list = True
+                if client_in_list:
+                    previous_nodes.remove(client.id)
+                previous_node_index = np.random.randint(0, len(previous_nodes))
+                previous_node_id = previous_nodes[previous_node_index]
+                previous_nodes.remove(previous_node_id)
+                if client_in_list:
+                    previous_nodes.append(client.id)
             client.rewind_previous_node.append(self.clients[previous_node_index])
 
     def train(self):
