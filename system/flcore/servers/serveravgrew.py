@@ -85,8 +85,7 @@ class FedAvgRew(Server):
         for i in range(self.global_rounds+1):
             s_t = time.time()
             self.selected_clients = self.select_clients()
-            if ( self.round == 0):
-                self.send_models()
+            self.send_models()
 
             if i%self.eval_gap == 0:
                 print(f"\n-------------Round number: {i}-------------")
@@ -98,6 +97,7 @@ class FedAvgRew(Server):
 
             for client in self.selected_clients:
                 client.round = self.round
+                print ( f"Training client {client.id} round {client.round}" )
                 client.train()
 
             # threads = [Thread(target=client.train)

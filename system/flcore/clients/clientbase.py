@@ -112,6 +112,8 @@ class Client(object):
             patience=2
         )
 
+        self.last_sent_log = None
+
     def check_batch(self, x, y):
         if len(x) <= 1:
             return False
@@ -146,7 +148,13 @@ class Client(object):
         
     def set_parameters(self, model):
         for new_param, old_param in zip(model.parameters(), self.model.parameters()):
+            if ( torch.equal(new_param.data, old_param.data) == False):
+                self.log_once ( "pre parameters not equal")
+            # print ( "old_param.data", old_param.data, "new_param.data", new_param.data)
             old_param.data = new_param.data.clone()
+            if ( torch.equal(new_param.data, old_param.data) == False):
+                self.log_once  ( "parameters not equal")
+            # print ( "old_param.data", old_param.data, "new_param.data", new_param.data)
 
     def clone_model(self, model, target):
         for param, target_param in zip(model.parameters(), target.parameters()):
@@ -205,6 +213,7 @@ class Client(object):
         model.to(self.device)
         model.eval()
         self.node_data.to(self.device)
+
         with torch.no_grad():
             for x, y in dataloader:
                 if type(x) == type([]):
@@ -225,7 +234,7 @@ class Client(object):
                     if not self.no_wandb:
                         wandb.log({f'warning/{self.id}': torch.isnan(output)})
                     # print(f'warning for client {self.id} in round {self.round}:', torch.isnan(output))
-                    print(f'warning for client {self.id} in round {self.round}:', "output contains nan")
+                    self.log_once(f'warning for client {self.id} in round {self.round}: output contains nan"')
 
                 prob = F.softmax(output, dim=1) 
                 # y_prob.append(prob.detach().cpu().numpy()) 
@@ -274,8 +283,8 @@ class Client(object):
                     x = x.to(self.device)
                 y = y.to(self.device)
                 output = self.model(x)
-                if ( torch.isnan(output).any()):
-                    print ( "Output NAN")
+                if ( torch.isnan(output).any() ):
+                    self.log_once ( "Output NAN")
 
                 loss = self.model.loss(output, y)
                 train_num += y.shape[0]
@@ -364,6 +373,11 @@ class Client(object):
         if item_path == None:
             item_path = self.save_folder_name
         return torch.load(os.path.join(item_path, "client_" + str(self.id) + "_" + item_name + ".pt"))
+    
+    def log_once ( self, log ):
+        if self.last_sent_log != log:
+            self.last_sent_log = log
+            print ( log )   
 
     # @staticmethod
     # def model_exists():

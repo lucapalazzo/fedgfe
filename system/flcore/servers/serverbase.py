@@ -160,7 +160,8 @@ class Server(object):
 
         for client in self.clients:
             start_time = time.time()
-            
+
+            print ( hex(id(client.model)), client.id, hex(id(client.model.inner_model)) ) 
             client.set_parameters(self.global_model)
 
             client.send_time_cost['num_rounds'] += 1
@@ -198,7 +199,7 @@ class Server(object):
             param.data.zero_()
             
         for w, client_model in zip(self.uploaded_weights, self.uploaded_models):
-            self.add_parameters(w, client_model)
+           self.add_parameters(w, client_model)
 
     def add_parameters(self, w, client_model):
         for server_param, client_param in zip(self.global_model.parameters(), client_model.parameters()):

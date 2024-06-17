@@ -295,6 +295,8 @@ class clientRewind(Client):
                 if self.train_slow:
                     time.sleep(0.1 * np.abs(np.random.rand()))
                 output = self.model(x)
+                if ( torch.isnan(output).any() ):
+                    self.log_once ( f'\nrewind_train: nan in output {self.id}\n' )
                 loss = self.model.loss(output, y)
 
                 self.model.optimizer.zero_grad()
@@ -303,7 +305,7 @@ class clientRewind(Client):
                 # end_lr = self.optimizer.param_groups[0]['lr']
                 self.model.optimizer.step()
             print ( f" {loss} ", end='')
-        if not self.rewind_learning_rate_keep:
+        if not self.rewind_learning_rate_keep and self.rewind_learning_rate_decay:
             print ( "\nRestoring LR to ", starting_lr)
             self.model.optimizer.param_groups[0]['lr'] = starting_lr
             
