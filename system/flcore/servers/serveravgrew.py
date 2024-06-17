@@ -67,6 +67,8 @@ class FedAvgRew(Server):
                 wandb.define_metric(f"test/model_{client.id}/round_test_acc_{client.id}_on_{test_client.id}", step_metric="round")
 
     def train_set_previous_node(self):
+        if self.rewind_ratio == 0:
+            return
         previous_nodes = list(range(self.num_clients))
         for client in self.clients:
             client_in_list = False
