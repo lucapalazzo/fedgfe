@@ -37,6 +37,7 @@ class clientRewind(Client):
         self.rewind_learning_rate_decay_ratio = args.rewind_learning_rate_decay_ratio
         self.rewind_learning_rate_keep = args.rewind_learning_rate_keep
         self.rewind_end_epoch_ratio = args.rewind_end_epoch_ratio
+        self.rewind_noise = args.rewind_noise
         self.id_by_type = id_by_type
         self.train_loader = None
         self.no_wandb = args.no_wandb
@@ -241,6 +242,8 @@ class clientRewind(Client):
         if rewind_epochs == 0:
             return
         
+        noise = self.rewind_noise
+        
         rewind_start_epoch = -1
         if ( self.rewind_strategy == "atend_pre" ):
             rewind_ending_epochs_count = math.ceil(rewind_epochs * self.rewind_end_epoch_ratio)
@@ -258,14 +261,14 @@ class clientRewind(Client):
                         if not self.no_wandb:
                             wandb.log({f"train/model_{self.model.id}/pre_rewind_loss_on_local": local_loss, "round": self.round})
                             wandb.log({f"train/model_{self.model.id}/pre_rewind_loss_on_previous": rw_loss, "round": self.round})
-                        self.rewind_train ( rewind_epochs, teacher, device )
+                        self.rewind_train ( rewind_epochs, teacher, device, noise = noise )
                         
                         local_loss, rw_loss = self.rewind_train_metrics(teacher)
                         if not self.no_wandb:
                             wandb.log({f"train/model_{self.model.id}/post_rewind_loss_on_local": local_loss, "round": self.round})
                             wandb.log({f"train/model_{self.model.id}/post_rewind_loss_on_previous": rw_loss, "round": self.round})
 
-    def rewind_train(self, rewind_epochs = 0, rewind_train_node = None, device = 0):
+    def rewind_train(self, rewind_epochs = 0, rewind_train_node = None, device = 0, noise = False):
 
         # rewind_optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
         if ( rewind_epochs == 0 or rewind_train_node == None):
@@ -291,6 +294,8 @@ class clientRewind(Client):
                 else:
                     x = x.to(device)
                     self.transform(x)
+                if noise == True:
+                    y = torch.randint(0, self.num_classes, (y.shape[0],)).to(device) 
                 y = y.to(device)
                 if self.train_slow:
                     time.sleep(0.1 * np.abs(np.random.rand()))

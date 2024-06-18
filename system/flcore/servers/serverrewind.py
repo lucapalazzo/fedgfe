@@ -19,6 +19,7 @@ from itertools import cycle
 
 from flcore.routing.scoredrouting import ScoredRouting
 from flcore.routing.randomrouting import RandomRouting
+from flcore.routing.cyclicstaticrouting import StaticCyclicRouting
 
 class FedRewind(Server):
     def __init__(self, args, times):
@@ -29,6 +30,8 @@ class FedRewind(Server):
         self.rewind_interval = args.rewind_interval
         self.rewind_rotate = args.rewind_rotate
         self.global_rounds = args.global_rounds
+        self.rewind_random = args.rewind_random
+        self.rewind_noise = args.rewind_noise
         self.rewind_donkey = args.rewind_donkey
         self.rewind_donkey_count = args.rewind_donkey_count
         self.rewind_learning_rate_decay = args.rewind_learning_rate_decay
@@ -327,6 +330,8 @@ class FedRewind(Server):
 
             if self.args.routing_scored:
                 client.routing = ScoredRouting(self.num_clients, id = i, average=self.routing_scored_average)
+            if self.args.routing_cyclic:
+                client.routing = StaticCyclicRouting(self.num_clients, id = i)
             else:
                 client.routing = RandomRouting(self.num_clients, id = i)
             # client.node_data.stats_wandb_define()

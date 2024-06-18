@@ -29,11 +29,10 @@ class StaticCyclicRouting(FLRoutingBase):
         available_clients = self.get_available_clients(available_clients)
         # self.route_pairs = list(RandomRouting.pairwise(available_clients))
 
+        next_client_id = self.id + 1 if self.id + 1 < len(available_clients) else 0
         # if self.id in self.route_pairs:
         #     next_client_id = self.route_pairs[self.id]
-        next_client = np.random.choice(available_clients)
-        next_client_id = next_client.id
-        # print (f"Chosen client id: {next_client_id} ")
+        next_client = available_clients[next_client_id ]
         return next_client_id
 
     def get_available_clients(self, available_clients, reduce_clients=False ):

@@ -25,17 +25,14 @@ tsp0 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.9 -m resnet -algo FedRe
 
 # @DGX
 
-tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -algo FedRewind --global_rounds 100 -did 1 -go 50C-DIRA0.25-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre -mpt
-tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -algo FedRewind --global_rounds 100 -did 1 -go 50C-DIRA0.25-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend -mpt
-tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -algo FedRewind --global_rounds 100 -did 1 -go 50C-DIRA0.25-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate -mpt
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -algo FedRewind --global_rounds 50 -go 50C-DIRA0.25-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre -mpt
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -algo FedRewind --global_rounds 50 -go 50C-DIRA0.25-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate -mpt
 
-tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.5 -m resnet -algo FedRewind --global_rounds 100 -did 1 -go 50C-DIRA0.5-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre -mpt
-tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.5 -m resnet -algo FedRewind --global_rounds 100 -did 1 -go 50C-DIRA0.5-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend -mpt
-tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.5 -m resnet -algo FedRewind --global_rounds 100 -did 1 -go 50C-DIRA0.5-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate -mpt
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.5 -m resnet -algo FedRewind --global_rounds 100 -go 50C-DIRA0.5-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre -mpt
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.5 -m resnet -algo FedRewind --global_rounds 100 -go 50C-DIRA0.5-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate -mpt
 
-tsp2 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.9 -m resnet -algo FedRewind --global_rounds 100 -did 1 -go 50C-DIRA0.9-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre -mpt
-tsp2 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.9 -m resnet -algo FedRewind --global_rounds 100 -did 1 -go 50C-DIRA0.9-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend -mpt
-tsp2 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.9 -m resnet -algo FedRewind --global_rounds 100 -did 1 -go 50C-DIRA0.9-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate -mpt
+tsp2 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.9 -m resnet -algo FedRewind --global_rounds 100 -go 50C-DIRA0.9-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre -mpt
+tsp2 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.9 -m resnet -algo FedRewind --global_rounds 100 -go 50C-DIRA0.9-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate -mpt
 
 tsp2 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.1 -m resnet -algo FedRewind --global_rounds 100 -did 1 -go 50C-DIRA0.1-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre -mpt
 tsp2 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.1 -m resnet -algo FedRewind --global_rounds 100 -did 1 -go 50C-DIRA0.1-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend -mpt
@@ -61,25 +58,28 @@ tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -algo FedR
 # non PT
 
 
-Dataset A0.1 
-10 Clients CIFAR-10-nIID-10C-DIRA0.1
-tsp2 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.1-10LE-50GR-RR0.1-AEP -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre
-tsp2 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.1-10LE-50GR-RR0.1-AE  -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
-tsp2 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.1-10LE-50GR-RR0       -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate
-# @RT3090 tsp0 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.1 -m resnet -mpt -algo FedAvg    --global_rounds 50 -go 10C-DIRA0.1-10LE-50GR-AVG       -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1
-# @RT3090 tsp0 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.1 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 10C-DIRA0.1-10LE-50GR-AVGREW    -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
+# Dataset 50C A0.25
+# 50 Clients CIFAR-10-nIID-50C-DIRA0.25
+tsp2 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-RR0.1-AEP -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre
+tsp2 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-RR0       -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate
+tsp2 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-SA        -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -mpt -algo FedAvg    --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-AVG       -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-AVGREW    -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre
 
-50 Clients CIFAR-10-nIID-50C-DIRA0.1
-tsp3 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 50C-DIRA0.1-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre
-tsp3 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 50C-DIRA0.1-10LE-50GR-RR0.1-AE  -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
-tsp3 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 50C-DIRA0.1-10LE-50GR-RR0       -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate
-tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.1 -m resnet -mpt -algo FedAvg    --global_rounds 50 -go 50C-DIRA0.1-10LE-50GR-AVG       -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1
-tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.1 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 50C-DIRA0.1-10LE-50GR-AVGREW    -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
+# Dataset 50C A0.5
+# 50 Clients CIFAR-10-nIID-50C-DIRA0.5
+tsp3 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.5 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 50C-DIRA0.5-10LE-50GR-RR0.1-AEP -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre
+tsp3 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.5 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 50C-DIRA0.5-10LE-50GR-RR0       -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate
+tsp2 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.5 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.5-10LE-50GR-SA        -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.5 -m resnet -mpt -algo FedAvg    --global_rounds 50 -go 50C-DIRA0.5-10LE-50GR-AVG       -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.5 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 50C-DIRA0.5-10LE-50GR-AVGREW    -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre
 
 100 Clients CIFAR-10-nIID-100C-DIRA0.1
-# @DGX tsp0 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 100C-DIRA0.1-10LE-100GR-RR0.1-AEP -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre
-# @DGX tsp0 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 100C-DIRA0.1-10LE-100GR-RR0.1-AE  -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
-# @DGX tsp0 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 100C-DIRA0.1-10LE-100GR-RR0       -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate
+tsp0 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 100C-DIRA0.1-10LE-100GR-RR0.1-AEP -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre
+tsp0 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 100C-DIRA0.1-10LE-100GR-RR0.1-AE  -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
+tsp2 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.1-10LE-50GR-SA        -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1
+tsp0 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 100C-DIRA0.1-10LE-100GR-RR0       -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate
+tsp2 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.1-10LE-50GR-SA        -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1
 # @Worker3 tsp0 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.1 -m resnet -mpt -algo FedAvg    --global_rounds 50 -go 100C-DIRA0.1-10LE-100GR-AVG       -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1
 # @Worker3 tsp0 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.1 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 100C-DIRA0.1-10LE-100GR-AVGREW    -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
 
@@ -87,11 +87,11 @@ tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.1 -m resnet -mpt -algo 
 Dataset A0.25 
 #@DGX
 10 Clients CIFAR-10-nIID-10C-DIRA0.25
-tsp4 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.25 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-RR0.1-AEP -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre
-tsp4 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.25 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-RR0.1-AE  -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
-tsp4 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.25 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-RR0       -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate
-tsp4 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.25 -m resnet -mpt -algo FedAvg    --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-AVG       -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1
-tsp4 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.25 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-AVGREW    -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
+tsp2 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.25 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-RR0.1-AEP -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend_pre
+tsp2 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.25 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-RR0.1-AE  -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
+tsp2 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.25 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-RR0       -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate
+tsp2 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.25 -m resnet -mpt -algo FedAvg    --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-AVG       -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1
+tsp2 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.25 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-AVGREW    -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_rotate --rewind_ratio 0.1 --rewind_strategy atend
 
 #@DGX
 50 Clients CIFAR-10-nIID-50C-DIRA0.25
@@ -116,8 +116,8 @@ tsp0 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.1  -m resnet -mpt -algo
 tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.1  -m resnet -mpt -algo FedRewind --global_rounds 50 -go 50C-DIRA0.1-10LE-50GR  -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1
 tsp0 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.1 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 100C-DIRA0.1-10LE-50GR -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1
 
-tsp0 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.25  -m resnet -mpt -algo FedRewind --global_rounds 50 -go  10C-DIRA0.25-10LE-50GR  -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1
-tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25  -m resnet -mpt -algo FedRewind --global_rounds 50 -go  50C-DIRA0.25-10LE-50GR  -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1
+tsp0 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.25  -m resnet -mpt -algo FedRewind --global_rounds 50 -go  10C-DIRA0.25-10LE-50GR  -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1
+tsp0 python system/main.py -data CIFAR-10-nIID-50C-DIRA0.25  -m resnet -mpt -algo FedRewind --global_rounds 50 -go  50C-DIRA0.25-10LE-50GR  -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1
 tsp0 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.25 -m resnet -mpt -algo FedRewind --global_rounds 50 -go 100C-DIRA0.25-10LE-50GR -nc 100 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1
 
 tsp0 python system/main.py -data CIFAR-10-nIID-10C-DIRA0.5  -m resnet -mpt -algo FedRewind --global_rounds 50 -go 10C-DIRA0.5-10LE-50GR  -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1
@@ -131,8 +131,8 @@ tsp0 python system/main.py -data CIFAR-10-nIID-100C-DIRA0.9 -m resnet -mpt -algo
 # A0.1
 tsp1 python  system/main.py -data CIFAR-10-nIID-10C-DIRA0.1 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 10C-DIRA0.1-10LE-50GR-AVGRew -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_ratio 0.1 --rewind_strategy atend_pre
 tsp1 python  system/main.py -data CIFAR-10-nIID-50C-DIRA0.1 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 50C-DIRA0.1-10LE-50GR-AVGRew -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_ratio 0.1 --rewind_strategy atend_pre
-tsp1 python  system/main.py -data CIFAR-10-nIID-10C-DIRA0.25 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-AVGRew -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_ratio 0.1 --rewind_strategy atend_pre
-tsp1 python  system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 50C-DIRA0.25-10LE-50GR-AVGRew -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_ratio 0.1 --rewind_strategy atend_pre
+tsp1 python  system/main.py -data CIFAR-10-nIID-10C-DIRA0.25 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 10C-DIRA0.25-10LE-50GR-AVGRew -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_ratio 0.1 --rewind_strategy atend_pre
+tsp1 python  system/main.py -data CIFAR-10-nIID-50C-DIRA0.25 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 50C-DIRA0.25-10LE-50GR-AVGRew -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.001 -lam 0.1 --rewind_ratio 0.1 --rewind_strategy atend_pre
 tsp0 python  system/main.py -data CIFAR-10-nIID-10C-DIRA0.5 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 10C-DIRA0.5-10LE-50GR-AVGRew -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_ratio 0.1 --rewind_strategy atend_pre
 tsp0 python  system/main.py -data CIFAR-10-nIID-50C-DIRA0.5 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 50C-DIRA0.5-10LE-50GR-AVGRew -nc 50 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_ratio 0.1 --rewind_strategy atend_pre
 tsp0 python  system/main.py -data CIFAR-10-nIID-10C-DIRA0.9 -m resnet -mpt -algo FedAvgRew --global_rounds 50 -go 10C-DIRA0.9-10LE-50GR-AVGRew -nc 10 -nb 10 --batch_size 64 --local_epochs 10 -lr 0.005 -lam 0.1 --rewind_ratio 0.1 --rewind_strategy atend_pre

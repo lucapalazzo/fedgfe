@@ -133,7 +133,7 @@
                 ],
         },
         {
-            "name": "FedRewind 10C RR0.1 10LE 50GR DIRA0.1",
+            "name": "FedRewind 10C RR0.1 10LE 50GR DIRA0.25",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/ffr_federated",
@@ -153,14 +153,16 @@
                      "-nb", "10",
                      "--batch_size","64",
                      "--local_epochs", "10",
-                     "-lr", "0.005",
+                     "-lr", "0.001",
                      "-lam", "0.1",
                      "--rewind_ratio", "0.1",
                     //  "--rewind_epochs", "2",
                     //  "--rewind_interval", "5",
                      "--rewind_rotate",
                      "--rewind_strategy", "atend_pre",
+                     "--rewind_noise",
                     //  "--learning_rate_decay_gamma", "0.5",
+                     "--routing_cyclic",
                      "--no_wandb",
                     //  "--loss_weighted",
                     //  "--rewind_donkey"
@@ -194,6 +196,7 @@
                     //  "--rewind_interval", "5",
                     //  "--rewind_rotate",
                      "--rewind_strategy", "atend_pre",
+                     "--rewind_noise"
                     //  "--learning_rate_schedule"
                     //  "--learning_rate_decay_gamma", "0.5",
                     //  "--no_wandb",
