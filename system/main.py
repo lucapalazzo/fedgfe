@@ -568,7 +568,7 @@ if __name__ == "__main__":
     parser.add_argument('-rewro', "--rewind_rotate", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-rewdo', "--rewind_donkey", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-rewno', "--rewind_noise", type=bool, default=False, action=argparse.BooleanOptionalAction)
-    parser.add_argument('-rewno', "--rewind_random", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-rewra', "--rewind_random", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-rewdoc', "--rewind_donkey_count", type=int, default=2)
     parser.add_argument('-rewlrs', "--rewind_learning_rate_schedule", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-rewlrd', "--rewind_learning_rate_decay", type=bool, default=False, action=argparse.BooleanOptionalAction, help="Decay the learning rate in rewind epochs")
