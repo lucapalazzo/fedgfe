@@ -28,6 +28,8 @@ class clientRewind(Client):
         self.rewind_previous_node_loss = []
         self.rewind_epochs = rewind_epochs
         self.rewind_interval = rewind_interval
+        self.rewind_random = args.rewind_random
+        self.rewind_random_clients = None
         self.rewind_ratio = args.rewind_ratio
         self.rewind_donkey = args.rewind_donkey
         self.rewind_donkey_count = args.rewind_donkey_count
@@ -143,10 +145,12 @@ class clientRewind(Client):
         if ( self.rewind_epochs > 0 and rewind_train_node != None ):
             rewind_epochs = self.rewind_epochs
         else:
-            rewind_epochs = int ( max_local_epochs * self.rewind_ratio )
-        local_epochs = max_local_epochs - rewind_epochs
+            rewind_epochs, local_epochs, rewind_nodes_count = self.prepare_rewind(max_local_epochs)
+            # rewind_epochs = int ( max_local_epochs * self.rewind_ratio )
+        # local_epochs = max_local_epochs - rewind_epochs
         
-        rewind_nodes_count = len(self.rewind_previous_node)
+        # rewind_nodes_count = len(self.rewind_previous_node)
+
         epoch_start_lr = []
         epoch_end_lr = []
         starting_lr = self.local_learning_rate
@@ -226,7 +230,7 @@ class clientRewind(Client):
         if ( self.rewind_epochs > 0 and rewind_train_node != None ):
             rewind_epochs = self.rewind_epochs
         else:
-            rewind_epochs = int ( max_local_epochs * self.rewind_ratio )
+            rewind_epochs = math.ceil ( max_local_epochs * self.rewind_ratio )
         local_epochs = max_local_epochs - rewind_epochs
         
         return rewind_epochs, local_epochs, rewind_nodes_count
@@ -255,6 +259,8 @@ class clientRewind(Client):
             rewind_start_epoch = max_local_epochs / rewind_epochs // 2
         
         if ( step == rewind_start_epoch or self.rewind_strategy == "atend" ) and rewind_node_count > 0:
+                if self.rewind_random:
+                    rewind_nodes = [self.rewind_random_clients[np.random.randint(0, rewind_node_count)]]
                 for teacher in rewind_nodes:
                     if ( teacher != None ):
                         local_loss, rw_loss = self.rewind_train_metrics(teacher)

@@ -33,7 +33,7 @@ dir_path = "mnist/"
 
 
 # Allocate data to users
-def generate_mnist(dir_path, num_clients, num_classes, niid, balance, partition):
+def generate_mnist(args, dir_path, num_clients, num_classes, niid, balance, partition):
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
         
@@ -42,7 +42,7 @@ def generate_mnist(dir_path, num_clients, num_classes, niid, balance, partition)
     train_path = dir_path + "train/"
     test_path = dir_path + "test/"
 
-    if check(config_path, train_path, test_path, num_clients, num_classes, niid, balance, partition):
+    if check(args, config_path, train_path, test_path, num_clients, num_classes, niid, balance, partition, alpha=0.1, class_per_client = 2):
         return
 
     # FIX HTTP Error 403: Forbidden
@@ -52,6 +52,15 @@ def generate_mnist(dir_path, num_clients, num_classes, niid, balance, partition)
     urllib.request.install_opener(opener)
 
     # Get MNIST data
+
+    transform = None
+    image_size = args.dataset_image_size
+    transform = transforms.Compose(
+        [transforms.ToTensor()])
+    if args.dataset_transform:
+        transform.append([transforms.Normalize((0.5, 0.5))])
+    if image_size != -1:
+        transform.append(transforms.Compose([transforms.Resize(image_size)]))
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5], [0.5])])
 
     trainset = torchvision.datasets.MNIST(
@@ -83,16 +92,17 @@ def generate_mnist(dir_path, num_clients, num_classes, niid, balance, partition)
     #     idx = dataset_label == i
     #     dataset.append(dataset_image[idx])
 
-    X, y, statistic = separate_data((dataset_image, dataset_label), num_clients, num_classes, 
-                                    niid, balance, partition, class_per_client=2)
+    X, y, statistic = separate_data((dataset_image, dataset_label), num_clients, num_classes,  
+                                    niid, balance, partition, class_per_client, alpha=alpha)
     train_data, test_data = split_data(X, y)
     save_file(config_path, train_path, test_path, train_data, test_data, num_clients, num_classes, 
-        statistic, niid, balance, partition)
+        statistic, niid, balance, partition, alpha=alpha)
 
 
 if __name__ == "__main__":
     niid = True if sys.argv[1] == "noniid" else False
     balance = True if sys.argv[2] == "balance" else False
     partition = sys.argv[3] if sys.argv[3] != "-" else None
+    args = None
 
-    generate_mnist(dir_path, num_clients, num_classes, niid, balance, partition)
+    generate_mnist(args, dir_path, num_clients, num_classes, niid, balance, partition )

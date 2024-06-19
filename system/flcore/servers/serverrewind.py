@@ -343,6 +343,10 @@ class FedRewind(Server):
             # else:
             #     n_weak += 1
             self.clients.append(client)
+        if self.rewind_random:
+            for client in self.clients:
+                client.rewind_random_clients = self.clients
+                client.rewind_random = True
 
     def define_metrics(self):
         super().define_metrics()
