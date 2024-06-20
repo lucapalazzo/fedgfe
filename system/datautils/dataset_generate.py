@@ -9,7 +9,7 @@ def dataset_generate ( args ):
         outdir = 'dataset/mnist/'
         if ( args.dataset_outdir != None ):
             outdir = 'dataset/' + args.dataset_outdir + '/'
-        generate_mnist( args, 'dataset/mnist/', args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition)
+        generate_mnist( args, outdir, args.num_clients, 10, args.dataset_niid, args.dataset_balance, args.dataset_partition, args.dataset_dir_alpha, class_per_client=args.num_classes_per_client)
     elif args.dataset == "CIFAR-10":
         outdir = 'dataset/CIFAR-10/'
         if ( args.dataset_outdir != None ):

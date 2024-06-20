@@ -33,7 +33,7 @@ dir_path = "mnist/"
 
 
 # Allocate data to users
-def generate_mnist(args, dir_path, num_clients, num_classes, niid, balance, partition):
+def generate_mnist(args, dir_path, num_clients, num_classes, niid, balance, partition, alpha=0.1, class_per_client = 2):
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
         
@@ -42,7 +42,7 @@ def generate_mnist(args, dir_path, num_clients, num_classes, niid, balance, part
     train_path = dir_path + "train/"
     test_path = dir_path + "test/"
 
-    if check(args, config_path, train_path, test_path, num_clients, num_classes, niid, balance, partition, alpha=0.1, class_per_client = 2):
+    if check(args, config_path, train_path, test_path, num_clients, num_classes, niid, balance, partition):
         return
 
     # FIX HTTP Error 403: Forbidden
@@ -61,7 +61,8 @@ def generate_mnist(args, dir_path, num_clients, num_classes, niid, balance, part
         transform.append([transforms.Normalize((0.5, 0.5))])
     if image_size != -1:
         transform.append(transforms.Compose([transforms.Resize(image_size)]))
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5], [0.5])])
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize([0.5], [0.5]),
+                                   transforms.Lambda(lambda x: x.repeat(3,1,1))])
 
     trainset = torchvision.datasets.MNIST(
         root=dir_path+"rawdata", train=True, download=True, transform=transform)

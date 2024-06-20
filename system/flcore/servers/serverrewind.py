@@ -87,6 +87,7 @@ class FedRewind(Server):
     def train(self):
        
         for i in range(self.global_rounds+1):
+            self.round = i
             s_t = time.time()
             # importante commentare questa riga per avere i client sempre ordinati
             #self.selected_clients = self.select_clients()
@@ -173,6 +174,14 @@ class FedRewind(Server):
             self.routes = self.get_routes()
             # self.routes = get_routes(self.num_clients, self.clients)
             self.distribute_routes(self.routes)
+            if self.rewind_random and self.round > 0:
+                random_routing = RandomRouting(self.num_clients, self.clients)
+                random_rewind_routes = random_routing.route_pairs( self.clients)
+                for node in random_rewind_routes:
+                    rewind_node_id = random_rewind_routes[node]
+                    rewind_node = self.clients[rewind_node_id]
+                    self.clients[node].rewind_previous_node = [rewind_node]
+                    self.clients[node].rewind_previous_node_id = [rewind_node.id]
             self.dump_routes(self.routes)
 
 

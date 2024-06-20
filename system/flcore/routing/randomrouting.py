@@ -12,8 +12,22 @@ class RandomRouting(FLRoutingBase):
 
     def __init__(self, clients_count = -1, federation_clients = None, id = -1, model = None):
         super(RandomRouting, self).__init__(clients_count, federation_clients, id = id, model = model)
-        self.route_pairs = None
+        # self.route_pairs = None
 
+    def __call__(self, *args, **kwargs):
+        clients = kwargs.get('available_clients', None) 
+        self.pairwise(clients)
+        return self.route(*args, **kwargs)
+
+    def route_pairs(self, available_clients = None):
+        if available_clients is None:
+            available_clients = self.federation_clients
+        
+        available_clients_ids = [client.id for client in available_clients]
+        random.shuffle(available_clients_ids)
+        route_pairs = {x[0]:x[1] for x in self.pairwise(available_clients_ids)}
+        return route_pairs
+    
     def route(self, available_clients = None):
         """
         Route the request to the available clients.
@@ -78,8 +92,8 @@ class RandomRouting(FLRoutingBase):
     def __str__(self):
         return str(self.routing)
     
-    def pairwise(iterable):
+    def pairwise(self, iterable):
         # pairwise('ABCDEFG') --> AB BC CD DE EF FG
         a, b = itertools.tee(iterable)
         next(b, None)
-        return zip(a, b)
+        return zip(a,b)

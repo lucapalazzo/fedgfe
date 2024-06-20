@@ -11,6 +11,7 @@ class FLRoutingBase(object):
         self.id = id
         self.previous = []
         self.federation_clients = []
+        self.federation_clients = federation_clients
         self.federation_clients_count = clients_count
         
         if ( federation_clients is not None ):
