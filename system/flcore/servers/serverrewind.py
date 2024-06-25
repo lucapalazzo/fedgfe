@@ -19,7 +19,7 @@ from itertools import cycle
 
 from flcore.routing.scoredrouting import ScoredRouting
 from flcore.routing.randomrouting import RandomRouting
-from flcore.routing.cyclicstaticrouting import StaticCyclicRouting
+from flcore.routing.staticrouting import StaticRouting
 
 class FedRewind(Server):
     def __init__(self, args, times):
@@ -37,7 +37,9 @@ class FedRewind(Server):
         self.rewind_learning_rate_decay = args.rewind_learning_rate_decay
         self.rewind_learning_rate_decay_ratio = args.rewind_learning_rate_decay_ratio
         self.rewind_learning_rate_keep = args.rewind_learning_rate_keep
-        
+
+        if self.routing_static:
+            self.routing = StaticRouting(clients_count=self.num_clients, random=self.routing_random) 
         # select slow clients
         self.set_slow_clients()
         self.set_clients(clientRewind)
@@ -262,6 +264,7 @@ class FedRewind(Server):
             # print ( "Orig Node training model id %d %s original id %d %s optim %s" % ( node, hex(id(orig_node_train_model) ), orig_node_train_model_id, hex(id(orig_model)), hex(id(orig_node_train_optimizer)) ) )
             # print ( "Next node training model id %d %s original id %d %s optim %s" % ( next_node, hex(id(next_node_train_model) ), next_node_train_model_id, hex(id(orig_model)), hex(id(next_node_train_optimizer)) ) )
         print()
+
     def distribute_routes (self, routes ):
         if routes is None:
             routes = self.routes
@@ -339,8 +342,9 @@ class FedRewind(Server):
 
             if self.args.routing_scored:
                 client.routing = ScoredRouting(self.num_clients, id = i, average=self.routing_scored_average)
-            if self.args.routing_cyclic:
-                client.routing = StaticCyclicRouting(self.num_clients, id = i)
+            if self.args.routing_static:
+                client.routing = self.routing
+                client.routing.create_routes(self.clients)
             else:
                 client.routing = RandomRouting(self.num_clients, id = i)
             # client.node_data.stats_wandb_define()

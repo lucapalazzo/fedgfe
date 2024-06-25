@@ -162,8 +162,9 @@
                      "--rewind_strategy", "atend_pre",
                     //  "--rewind_noise",
                     //  "--learning_rate_decay_gamma", "0.5",
-                    //  "--routing_cyclic",
-                     "--rewind_random",
+                     "--routing_static",
+                     "--routing_random",
+                    //  "--rewind_random",
                      "--no_wandb",
                     //  "--loss_weighted",
                     //  "--rewind_donkey"
@@ -511,7 +512,7 @@
                 ],
         },
         {
-            "name": "CIFAR Generate nIID 100C alpha 0.9",
+            "name": "CIFAR Generate nIID 1C alpha 1",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/ffr_federated",
@@ -519,19 +520,19 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": ["-data", "CIFAR-10",
-                     "-nc", "100",
+                     "-nc", "1",
                      "--dataset_generate",
                     //  "-dsbalance",
                      "--dataset_niid",
-                     "--dataset_outdir", "CIFAR-10-nIID-100C-DIRA0.9",
+                     "--dataset_outdir", "CIFAR-10-nIID-1C-DIRA1",
                      "--dataset_partition", "dir",
                      "--dataset_balance",
-                     "--dataset_dir_alpha", "0.9"
+                     "--dataset_dir_alpha", "1"
                      //                    , "-go", "${inputs:experimentName"
                 ],
         },
         {
-            "name": "CIFAR-100 Generate nIID 10C alpha 0.25",
+            "name": "CIFAR-100 Generate nIID 1C alpha 1",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/ffr_federated",
@@ -539,19 +540,19 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": ["-data", "CIFAR-100",
-                     "-nc", "50",
+                     "-nc", "1",
                      "--dataset_generate",
                     //  "-dsbalance",
                      "--dataset_niid",
-                     "--dataset_outdir", "CIFAR-100-nIID-50C-DIRA0.25",
+                     "--dataset_outdir", "CIFAR-100-nIID-1C-DIRA1",
                      "--dataset_partition", "dir",
                      "--dataset_balance",
-                     "--dataset_dir_alpha", "0.25"
+                     "--dataset_dir_alpha", "1"
                      //                    , "-go", "${inputs:experimentName"
                 ],
         },
         {
-            "name": "MNIST Generate nIID 10C alpha 0.25",
+            "name": "MNIST Generate nIID 1C alpha 1",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/ffr_federated",
@@ -559,14 +560,14 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": ["-data", "mnist",
-                     "-nc", "10",
+                     "-nc", "1",
                      "--dataset_generate",
                     //  "-dsbalance",
                      "--dataset_niid",
-                     "--dataset_outdir", "MNIST-nIID-10C-DIRA0.25",
+                     "--dataset_outdir", "MNIST-nIID-1C-DIRA1",
                      "--dataset_partition", "dir",
                      "--dataset_balance",
-                     "--dataset_dir_alpha", "0.25"
+                     "--dataset_dir_alpha", "1"
                      //                    , "-go", "${inputs:experimentName"
                 ],
         },

@@ -124,7 +124,7 @@ class Client(object):
             self.routing.federation_clients = self.federation_clients
             if self.routing.model is None:
                 self.routing.model = self.model 
-            return self.routing.route( available_clients )
+            return self.routing.route( available_clients, id = self.id )
         
     def load_train_data(self, batch_size=None,dataset_limit=0):
         if batch_size == None:

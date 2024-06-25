@@ -60,6 +60,11 @@ class Server(object):
         self.auto_break = args.auto_break
         self.reduce_memory_footprint = args.reduce_memory_footprint
 
+        self.routing = None
+
+        
+        self.routing_random = args.routing_random
+        self.routing_static = args.routing_static
         self.routing_scored_average = args.routing_scored_average
 
         self.clients = []
