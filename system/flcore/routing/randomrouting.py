@@ -28,7 +28,7 @@ class RandomRouting(FLRoutingBase):
         route_pairs = {x[0]:x[1] for x in self.pairwise(available_clients_ids)}
         return route_pairs
     
-    def route(self, available_clients = None):
+    def route(self, available_clients = None, id = -1):
         """
         Route the request to the available clients.
         """
