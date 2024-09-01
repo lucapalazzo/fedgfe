@@ -577,9 +577,9 @@ if __name__ == "__main__":
     parser.add_argument('-reer', "--rewind_end_epoch_ratio", type=float, default=1, help="Epoch ratio count number of epoch for starting rewind before and of round")
 
     # Routing algos
-    parser.add_argument('-rora', "--routing_random", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-rora', "--routing_random", type=bool, default=False, action=argparse.BooleanOptionalAction, help="Route to random node")
     parser.add_argument('-rosc', "--routing_scored", type=bool, default=False, action=argparse.BooleanOptionalAction)
-    parser.add_argument('-rost', "--routing_static", type=bool, default=False, action=argparse.BooleanOptionalAction)
+    parser.add_argument('-rost', "--routing_static", type=bool, default=False, action=argparse.BooleanOptionalAction, help="Don't change routing after first round")
     parser.add_argument('-rostc', "--routing_static_cycled", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-rosca', "--routing_scored_average", type=str, default='micro')
 
