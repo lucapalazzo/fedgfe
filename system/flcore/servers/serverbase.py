@@ -36,6 +36,7 @@ class Server(object):
         # Set up the main attributes
         self.uuid = uuid.uuid4()
         self.save_folder_name = str(self.uuid)
+        self.save_checkpoint_enable = False
 
         self.args = args
         self.device = args.device
@@ -46,7 +47,7 @@ class Server(object):
         self.local_epochs = args.local_epochs
         self.batch_size = args.batch_size
         self.learning_rate = args.local_learning_rate
-        self.global_model = copy.deepcopy(args.model)
+        self.global_model = args.model
         self.num_clients = args.num_clients
         self.join_ratio = args.join_ratio
         self.random_join_ratio = args.random_join_ratio
@@ -104,7 +105,13 @@ class Server(object):
         self.round_test_on_train_stats = self.num_clients * [None]
         self.round_train_stats = self.num_clients * [None]
 
+    def data_log(self, data):
+        if not self.no_wandb:
+            wandb.log(data)
+            
     def save_checkpoint(self):
+        if self.save_checkpoint_enable != True:
+            return
         if self.save_folder_name == None:
             self.save_folder_name = os.path.join(self.uuid)
         if not os.path.exists(self.save_folder_name):
@@ -294,17 +301,26 @@ class Server(object):
         train_y_t =[]
         train_y_p = []
         test_clients_stats = self.num_clients * [None]
-        train_clients_stats = self.num_clients * [None] 
+        train_clients_stats = self.num_clients * [None]
+
+        tested_clients = 0
 
         # metric = ConfusionMatrix(num_classes=10)
         # metric.attach(default_evaluator, 'cm')
         for client_index,c in enumerate(self.clients):
+            if c.test_data == None:
+                print ( "Client %d test data is None" % c.id)
+                continue
+            tested_clients += 1
             test_client_stats = []
             train_client_stats = []
             if ( client_index < len(self.clients) - 1):
                 self.clients[client_index+1].node_data.load_test_data(self.args.batch_size)
             for t in self.clients:
                 test = []
+                if c.test_data == None:
+                    print ( "Client %d test data is None" % c.id)
+                    continue
                 test_ct, test_ns, test_auc, test_y_true, test_y_prob = c.test_metrics(t)
                 train_ct, train_ns, train_auc, train_y_true, train_y_prob = c.test_metrics(t, on_train=True)
                 test_tot_correct.append(test_ct*1.0)
@@ -345,7 +361,8 @@ class Server(object):
             
             # if not self.no_wandb:
             #     wandb.log({f'test_acc_{c.id}': ct*1.0/ns})
-
+        if tested_clients == 0:
+            return None
         ids = [c.id for c in self.clients]
 
         return ids, test_num_samples, test_tot_correct, test_tot_auc, test_y_t, test_y_p, test_clients_stats, train_clients_stats
@@ -356,13 +373,20 @@ class Server(object):
         
         num_samples = []
         losses = []
+        tested_clients = 0
         for c in self.clients:
+            if c.train_data == None:
+                print ( "Client %d train data is None" % c.id)
+                continue
+            tested_clients += 1
             cl, ns = c.train_metrics()
             num_samples.append(ns)
             losses.append(cl*1.0)
             if not self.no_wandb:
                 wandb.log({f'train_loss_{c.id}': cl*1.0/ns})
 
+        if tested_clients == 0:
+            return None
         ids = [c.id for c in self.clients]
 
         return ids, num_samples, losses
@@ -372,7 +396,8 @@ class Server(object):
 
         stats = self.test_metrics()
         stats_train = self.train_metrics()
-
+        if stats == None or stats_train == None:
+            return
         round_test_stats = stats[6]
         round_test_on_train_stats = stats[7]
         self.round_test_stats.insert(self.round, round_test_stats)
@@ -455,157 +480,4 @@ class Server(object):
             model_stats = round_test_on_train_stats[model_id]
             for test_client_id in range(len(model_stats)):
                 round_acc = model_stats[test_client_id][0]/model_stats[test_client_id][2]
-                test_accuracies_on_train.append(round_acc)
-                model_accs_on_train.append(round_acc)
-                self.data_log({f"test/model_{model_id}/round_test_acc_on_train_{test_client_id}": round_acc, "round":self.round})
-            round_acc_on_train_std = np.std(test_accuracies_on_train)
-            self.data_log({f"test/model_{model_id}/test_std_on_train": round_acc_on_train_std, "round":self.round})
-
-
-
-        fed_acc_std = np.std(test_accuracies)
-        fed_acc_std_on_train = np.std(test_accuracies_on_train)
-        self.data_log({"federation/acc_std": fed_acc_std, "round":self.round})
-        self.data_log({"federation/acc_std_on_train": fed_acc_std_on_train, "round":self.round})
-
-        print("Averaged Train Loss: {:.4f}".format(train_loss))
-        print("Averaged Test Accuracy: {:.4f}".format(fed_test_acc))
-        print("Averaged Balanced Test Accurancy : {:.4f}".format(fed_test_acc_balanced))
-        
-        self.data_log({"federation/Federation Test Accuracy Mean": fed_test_acc, "round":self.round})
-        self.data_log({"federation/Federation Balanced Test Accuracy Mean": fed_test_acc_balanced, "round":self.round})
-        
-        print("Averaged Test AUC: {:.4f}".format(fed_test_auc))
-        # self.print_(test_acc, train_acc, train_loss)
-        print("Std Test Accuracy: {:.4f}".format(np.std(accs)))
-        print("Std Test AUC: {:.4f}".format(np.std(aucs)))
-
-        # for client in self.clients:
-        #     for test_client in self.clients:
-        #         if ( client.model.id != test_client.model.id):
-        #             acc, test_num, auc, y_true, y_prob = client.test_metrics_other(test_client)
-        #             round_acc = acc/test_num
-        #             # print("Accuracy of model from node %d on dataset from node %d test set accuracy %02f" % (client.id, test_client.id, round_acc ))
-        #             self.data_log( {f"test/model_{client.id}/round_test_acc_{client.id}_on_{test_client.id}": round_acc, "round":self.round})
-        self.round += 1
-
-    def print_(self, test_acc, test_auc, train_loss):
-        print("Average Test Accurancy: {:.4f}".format(test_acc))
-        print("Average Test AUC: {:.4f}".format(test_auc))
-        print("Average Train Loss: {:.4f}".format(train_loss))
-
-    def check_done(self, acc_lss, top_cnt=None, div_value=None):
-        for acc_ls in acc_lss:
-            if top_cnt != None and div_value != None:
-                find_top = len(acc_ls) - torch.topk(torch.tensor(acc_ls), 1).indices[0] > top_cnt
-                find_div = len(acc_ls) > 1 and np.std(acc_ls[-top_cnt:]) < div_value
-                if find_top and find_div:
-                    pass
-                else:
-                    return False
-            elif top_cnt != None:
-                find_top = len(acc_ls) - torch.topk(torch.tensor(acc_ls), 1).indices[0] > top_cnt
-                if find_top:
-                    pass
-                else:
-                    return False
-            elif div_value != None:
-                find_div = len(acc_ls) > 1 and np.std(acc_ls[-top_cnt:]) < div_value
-                if find_div:
-                    pass
-                else:
-                    return False
-            else:
-                raise NotImplementedError
-        return True
-
-    def call_dlg(self, R):
-        # items = []
-        cnt = 0
-        psnr_val = 0
-        for cid, client_model in zip(self.uploaded_ids, self.uploaded_models):
-            client_model.eval()
-            origin_grad = []
-            for gp, pp in zip(self.global_model.parameters(), client_model.parameters()):
-                origin_grad.append(gp.data - pp.data)
-
-            target_inputs = []
-            trainloader = self.clients[cid].load_train_data()
-            with torch.no_grad():
-                for i, (x, y) in enumerate(trainloader):
-                    if i >= self.batch_num_per_client:
-                        break
-
-                    if type(x) == type([]):
-                        x[0] = x[0].to(self.device)
-                    else:
-                        x = x.to(self.device)
-                    y = y.to(self.device)
-                    output = client_model(x)
-                    target_inputs.append((x, output))
-
-            d = DLG(client_model, origin_grad, target_inputs)
-            if d is not None:
-                psnr_val += d
-                cnt += 1
-            
-            # items.append((client_model, origin_grad, target_inputs))
-                
-        if cnt > 0:
-            print('PSNR value is {:.2f} dB'.format(psnr_val / cnt))
-        else:
-            print('PSNR error')
-
-        # self.save_item(items, f'DLG_{R}')
-
-    def set_new_clients(self, clientObj):
-        for i in range(self.num_clients, self.num_clients + self.num_new_clients):
-            train_data = read_client_data(self.dataset, i, is_train=True)
-            test_data = read_client_data(self.dataset, i, is_train=False)
-            client = clientObj(self.args, 
-                            id=i, 
-                            train_samples=len(train_data), 
-                            test_samples=len(test_data), 
-                            train_slow=False, 
-                            send_slow=False)
-            self.new_clients.append(client)
-
-    # fine-tuning on new clients
-    def fine_tuning_new_clients(self):
-        for client in self.new_clients:
-            client.set_parameters(self.global_model)
-            opt = torch.optim.SGD(client.model.parameters(), lr=self.learning_rate)
-            CEloss = torch.nn.CrossEntropyLoss()
-            trainloader = client.load_train_data()
-            client.model.train()
-            for e in range(self.fine_tuning_epoch_new):
-                for i, (x, y) in enumerate(trainloader):
-                    if type(x) == type([]):
-                        x[0] = x[0].to(client.device)
-                    else:
-                        x = x.to(client.device)
-                    y = y.to(client.device)
-                    output = client.model(x)
-                    loss = CEloss(output, y)
-                    opt.zero_grad()
-                    loss.backward()
-                    opt.step()
-
-    # evaluating on new clients
-    def test_metrics_new_clients(self):
-        num_samples = []
-        tot_correct = []
-        tot_auc = []
-        for c in self.new_clients:
-            ct, ns, auc = c.test_metrics()
-            tot_correct.append(ct*1.0)
-            tot_auc.append(auc*ns)
-            num_samples.append(ns)
-
-        ids = [c.id for c in self.new_clients]
-
-        return ids, num_samples, tot_correct, tot_auc
-    
-    def data_log(self, data):
-        if not self.no_wandb:
-            wandb.log(data)
+                test_accuracies_on_trai

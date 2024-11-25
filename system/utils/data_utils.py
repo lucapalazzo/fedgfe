@@ -27,7 +27,9 @@ def read_data(dataset, idx, is_train=True, prefix="",dataset_limit=0):
 
         if os.path.isfile(train_file) != True:
             train_file = train_data_dir +str(idx) + '.npz'
- 
+        if os.path.isfile(train_file) != True:
+            print ( "File not found: ", train_file)
+            return None
         with open(train_file, 'rb') as f:
             train_data = np.load(f, allow_pickle=True)['data'].tolist()
 
@@ -39,6 +41,10 @@ def read_data(dataset, idx, is_train=True, prefix="",dataset_limit=0):
         test_file = test_data_dir + prefix + str(idx) + '.npz'
         if os.path.isfile(test_file) != True:
             test_file = test_data_dir + str(idx) + '.npz'
+        if os.path.isfile(test_file) != True:
+            print ( "File not found: ", test_file)
+            return None
+        
         with open(test_file, 'rb') as f:
             test_data = np.load(f, allow_pickle=True)['data'].tolist()
 
@@ -53,6 +59,8 @@ def read_client_data(dataset, idx, is_train=True, prefix="",dataset_limit=0):
 
     if is_train:
         train_data = read_data(dataset, idx, is_train, prefix,dataset_limit=dataset_limit)
+        if train_data is None:
+            return None
         X_train = torch.Tensor(train_data['x']).type(torch.float32)
         y_train = torch.Tensor(train_data['y']).type(torch.int64)
 
@@ -60,6 +68,8 @@ def read_client_data(dataset, idx, is_train=True, prefix="",dataset_limit=0):
         return train_data
     else:
         test_data = read_data(dataset, idx, is_train, prefix,dataset_limit=dataset_limit)
+        if test_data is None:
+            return None
         X_test = torch.Tensor(test_data['x']).type(torch.float32)
         y_test = torch.Tensor(test_data['y']).type(torch.int64)
         test_data = [(x, y) for x, y in zip(X_test, y_test)]

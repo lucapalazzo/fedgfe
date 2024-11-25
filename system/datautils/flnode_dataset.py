@@ -27,13 +27,22 @@ class FLNodeDataset(Dataset):
     def __getitem__(self, idx):
         data = self.data[idx][0].to(self.device)
         label = self.data[idx][1].to(self.device)
-        if self.transform:
-            if data.shape[2] != self.transform.transforms[1].size:
-                data = self.transform(data.to(self.device))
+        if data.shape[0] > 3:
+            data = data.moveaxis(2,0)
+        sample_transforms = len(self.transform.transforms)
+        if self.transform != None:
+            if data.shape[2] != self.transform.transforms[sample_transforms-1].size[0]:
+                # print ( "Transforming sample ", idx, " with shape ", data.shape)
+                # data = data.to('cpu')
+                transformed_data = self.transform(data)
+                if (transformed_data.shape[0] == 1):
+                    transformed_data = transformed_data.expand(3, transformed_data.shape[1], transformed_data.shape[2])
+                # data.to(self.device)
                 temp = list(self.data[idx])
-                temp[0] = data.detach().cpu()
-                self.data[idx]= tuple(temp)
+                temp[0] = transformed_data.detach().cpu()
+                self.data[idx] = tuple(temp)
+                data = transformed_data
             else:
                 t = 1
-            data = data.to(self.device)
+            # data = data.to(self.device)
         return data, label

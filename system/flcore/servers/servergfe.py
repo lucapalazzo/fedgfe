@@ -1,7 +1,7 @@
 import copy
 import wandb
-from flcore.clients.clientRewind import clientRewind
-from flcore.servers.serverbase import Server
+from flcore.clients.clientgfe import clientGFE
+from flcore.servers.serverrewind import FedRewind
 from threading import Thread
 import time
 import numpy as np
@@ -17,13 +17,26 @@ from sklearn.metrics import confusion_matrix
 import time
 from itertools import cycle
 
+import torch
+from torchvision import transforms
+
 from flcore.routing.scoredrouting import ScoredRouting
 from flcore.routing.randomrouting import RandomRouting
 from flcore.routing.staticrouting import StaticRouting
 
-class FedRewind(Server):
-    def __init__(self, args, times, create_clients=True):
-        super().__init__(args, times)
+class FedGFE(FedRewind):
+    def __init__(self, args, times, pretext_tasks=None):
+        super().__init__(args, times, create_clients=False)
+
+        self.global_model = None
+
+        if pretext_tasks is not None:
+            self.pretext_tasks = pretext_tasks
+        else:
+            self.pretext_tasks = list(filter(len,self.args.nodes_pretext_tasks.split(",")))
+
+        self.nodes_datasets = self.args.nodes_datasets.split(",")
+        self.nodes_downstream_tasks = self.args.nodes_downstream_tasks.split(",")
 
         self.rewind_ratio = args.rewind_ratio
         self.rewind_epochs = args.rewind_epochs
@@ -37,19 +50,18 @@ class FedRewind(Server):
         self.rewind_learning_rate_decay = args.rewind_learning_rate_decay
         self.rewind_learning_rate_decay_ratio = args.rewind_learning_rate_decay_ratio
         self.rewind_learning_rate_keep = args.rewind_learning_rate_keep
+        self.clients = []
 
         if self.routing_static:
             self.routing = StaticRouting(clients_count=self.num_clients, random=self.routing_random) 
         # select slow clients
-        if create_clients:
-            print ( "Creating clients")
-            self.set_slow_clients()
-            self.set_clients(clientRewind)
-            if self.no_wandb == False:
-                self.define_metrics()
+        self.set_slow_clients()
+        self.set_clients(clientGFE)
+        if self.no_wandb == False:
+            self.define_metrics()
 
-            for client in self.clients:
-                client.federation_clients = self.clients
+        for client in self.clients:
+            client.federation_clients = self.clients
 
         # routes = self.get_routes()
         # self.distribute_routes(routes)
@@ -326,7 +338,7 @@ class FedRewind(Server):
             test_data_len = -1
 
             client = clientObj(self.args, 
-                            id=i, 
+                            model_id=i, 
                             train_samples=train_data_len, 
                             test_samples=test_data_len, 
                             train_slow=train_slow, 
@@ -340,8 +352,14 @@ class FedRewind(Server):
             client.prefix=file_prefix
             client.device = "cuda:"+str(next(gpus))
             client.available_clients = np.arange(self.num_clients)
+            client.pretext_tasks = self.pretext_tasks
             # client.routing = RandomRouting(self.num_clients, id = i)
-
+            client.transform = transforms.Compose(
+            [
+            # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+             transforms.Resize([224, 224]),
+            #  transforms.ToTensor()
+            ])
             if self.args.routing_scored:
                 client.routing = ScoredRouting(self.num_clients, id = i, average=self.routing_scored_average)
             if self.args.routing_static:

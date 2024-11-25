@@ -9,37 +9,23 @@ import time
 import math
 
 import wandb
-from flcore.clients.clientbase import Client
+from flcore.clients.clientRewind import clientRewind
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import balanced_accuracy_score
 from sklearn import metrics
 from sklearn.utils.class_weight import compute_class_weight
 from torchvision.ops.focal_loss import sigmoid_focal_loss
 from torchvision import  transforms
+from flcore.trainmodel.downstream import DownstreamTask
 
-class clientRewind(Client):
-    def __init__(self, args, id, train_samples, test_samples,is_strong = False, id_by_type=-1, rewind_epochs = 0, rewind_interval = 0, rewind_ratio = 0,**kwargs):
-        super().__init__(args, id, train_samples, test_samples, **kwargs)
+from tqdm import tqdm
+
+class clientGFE(clientRewind):
+    def __init__(self, args, model_id, train_samples, test_samples,is_strong = False, id_by_type=-1, rewind_epochs = 0, rewind_interval = 0, rewind_ratio = 0, pretext_tasks = [], **kwargs):
+        super().__init__(args, model_id, train_samples, test_samples, **kwargs)
 
         self.node_routes = []
-        self.rewind_previous_node_id = []
-        self.rewind_previous_model_id = []
-        self.rewind_previous_node = []
-        self.rewind_previous_node_loss = []
-        self.rewind_epochs = rewind_epochs
-        self.rewind_interval = rewind_interval
-        self.rewind_random = args.rewind_random
-        self.rewind_random_clients = None
-        self.rewind_ratio = args.rewind_ratio
-        self.rewind_donkey = args.rewind_donkey
-        self.rewind_donkey_count = args.rewind_donkey_count
-        self.rewind_learning_rate_schedule = args.rewind_learning_rate_schedule
-        self.rewind_strategy = args.rewind_strategy
-        self.rewind_learning_rate_decay = args.rewind_learning_rate_decay
-        self.rewind_learning_rate_decay_ratio = args.rewind_learning_rate_decay_ratio
-        self.rewind_learning_rate_keep = args.rewind_learning_rate_keep
-        self.rewind_end_epoch_ratio = args.rewind_end_epoch_ratio
-        self.rewind_noise = args.rewind_noise
+     
         self.id_by_type = id_by_type
         self.train_loader = None
         self.no_wandb = args.no_wandb
@@ -52,8 +38,8 @@ class clientRewind(Client):
         self.starting_loss = self.loss
         self.train_model = self.model
         self.next_train_model = self.model
-        self.train_model_id = id
-        self.next_train_model_id = id
+        self.train_model_id = model_id
+        self.next_train_model_id = model_id
 
         self.logits = None
         # self.global_logits = None # quesi non sono più qelli globali ma quelli ricevuti dall'altro client
@@ -68,9 +54,18 @@ class clientRewind(Client):
         self.test_std = []
         self.test_std_on_train = []
 
-        self.transform = transforms.Compose(
-            [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-             transforms.Resize(224)])
+        self.prextasks = pretext_tasks
+
+        self.downstream_task = DownstreamTask(self.model.inner_model.vit.embed_dim, self.num_classes)
+        self.downstream_task.loss = nn.CrossEntropyLoss()
+
+
+        # self.transform = transforms.Compose(
+        #     [
+        #     # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        #      transforms.Resize([224, 224]),
+        #     #  transforms.ToTensor()
+        #     ])
 
     def train(self, client_device = None, rewind_train_node = None, ):
         node_trainloader = self.load_train_data()
@@ -130,7 +125,7 @@ class clientRewind(Client):
         self.train_model_id = self.next_train_model_id
         self.model = self.train_model
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
-        self.model.train().to(device)
+        # self.model.train().to(device)
 
         print ( "\n--------\nNode %d: training model %d (%d) on dataset %d " % ( self.id, self.train_model.id, self.model.id, self.node_data.id ) )
         print ( "Training on model %s loss %s optimizer %s" % ( hex(id(self.model.inner_model)), hex(id (self.model.loss)), hex(id(self.model.optimizer)) ) )
@@ -154,73 +149,161 @@ class clientRewind(Client):
         epoch_start_lr = []
         epoch_end_lr = []
         starting_lr = self.local_learning_rate
-        self.model.optimizer.param_groups[0]['lr'] = self.local_learning_rate
+        # self.model.optimizer.param_groups[0]['lr'] = self.local_learning_rate
         print ( "Epoch starting LR ", starting_lr)
-        for step in range(local_epochs):
-            if ( ( self.rewind_strategy == "halfway" or self.rewind_strategy == "interval" or self.rewind_strategy == "atend_pre"  ) and len(self.rewind_previous_node) > 0 ):
-                self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
 
-            trainloader = node_trainloader
-            if trainloader == None:
-                print ( f"Node {self.id} has no data")
-                return
-            for i, (x, y) in enumerate(trainloader):
-                if self.check_batch(x, y) == False:
-                    continue
+        pbarbatch = None
+        num_batches = len(trainloader.dataset)//trainloader.batch_size
 
-                if type(x) == type([]):
-                    x[0] = x[0].to(device)
-                    # x[0] = self.transform(x[0])
-                else:
-                    x = x.to(device)
-                    # x= self.transform(x)
-                y = y.to(device)
-                if self.train_slow:
-                    time.sleep(0.1 * np.abs(np.random.rand()))
-                output = self.model(x).to(device)
-                loss = self.model.loss(output, y).to(device)
-                # floss = self.focal_loss(output, y, alpha=0.25, gamma=2, reduction='mean')
-                # print ( f"Step {step} Loss {loss} Focal Loss {floss}")
-                # if self.global_logits != None:
-                #     logit_new = copy.deepcopy(output.detach())
-                #     for i, yy in enumerate(y):
-                #         y_c = yy.item()
-                #         if type(self.global_logits[y_c]) != type([]):
-                #             logit_new[i, :] = self.global_logits[y_c].data
-                #     loss += self.loss_mse(logit_new, output) * self.lamda
+        if self.optimizer == None:
+            self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
 
-                # for i, yy in enumerate(y):
-                #     y_c = yy.item()
-                #     logits[y_c].append(output[i, :].detach().data)
+        for pretext_task in self.pretext_tasks:
+            self.model.pretext_train = True
+            self.model.pretext_task = pretext_task
+            print ( f"Pretext task {pretext_task}")
+            # self.model.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
+            # self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
+            for params in self.model.parameters():
+                params.requires_grad = True
+            params_id = self.optimizer.add_param_group({'params': self.model.inner_model.pretext_head.parameters(), 'lr': self.learning_rate})
+            for params in self.model.inner_model.pretext_head.parameters():
+                params.requires_grad = True
 
-                self.model.optimizer.zero_grad()
-                loss.backward()
-                self.model.optimizer.step()
+            for step in range(local_epochs):
+                if ( ( self.rewind_strategy == "halfway" or self.rewind_strategy == "interval" or self.rewind_strategy == "atend_pre"  ) and len(self.rewind_previous_node) > 0 ):
+                    self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
 
-            if ( self.rewind_learning_rate_schedule == True ):
-                epoch_start_lr.append( self.learning_rate_scheduler.get_last_lr() )
-                self.learning_rate_scheduler.step()
-                epoch_end_lr.append( self.learning_rate_scheduler.get_last_lr() )
+                trainloader = node_trainloader
+                if trainloader == None:
+                    print ( f"Node {self.id} has no data")
+                    return
+                losses = 0
+                print ( "Round %d Epoch %d Optimizer: %s " % ( self.round, step, hex(id(self.model.optimizer))), end='')
+                # with tqdm(total=local_epochs, desc=f"Epoch {step+1}/{local_epochs}", unit='epoch') as pbarepoch:
+
+                    # print ( "Samples worked: ", end='') 
+                pbarbatch = tqdm(total=num_batches, desc=f"Batch ", unit='batch', leave=False) 
+                # pbarbatch = tqdm(total=num_batches, desc=f"Batch {i+1}/{num_batches}", unit='batch', leave=False) 
+                for i, (x, y) in enumerate(trainloader):
+                    if self.check_batch(x, y) == False:
+                        continue
+
+                    if type(x) == type([]):
+                        x[0] = x[0].to(device)
+                        # x[0] = self.transform(x[0])
+                    else:
+                        x = x.to(device)
+                        # x= self.transform(x)
+                    y = y.to(device)
+                    if self.train_slow:
+                        time.sleep(0.1 * np.abs(np.random.rand()))
+                    
+                    output = self.model(x).to(device)
+                    # output = heads(output)
+                    # loss = self.model.loss(output, y).to(device)
+                    loss = self.model.inner_model.loss()
+                    losses += loss.item()
+
+
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
+
+                    pbarbatch.set_postfix({'Loss': f'{loss.item():.4f}', 'Epoch': f'{step+1}/{local_epochs}'})
+                    pbarbatch.update(1)
+                    if ( self.args.limit_samples_number > 0 and i*trainloader.batch_size > self.args.limit_samples_number ):
+                        break
+
+                # pbarepoch.update(1)
+                print ( f": loss {losses/i} ")
+                    # break
+
+                # if ( self.rewind_learning_rate_schedule == True ):
+                #     epoch_start_lr.append( self.learning_rate_scheduler.get_last_lr() )
+                #     self.learning_rate_scheduler.step()
+                #     epoch_end_lr.append( self.learning_rate_scheduler.get_last_lr() )
+            
+                # print ( f"{loss/num} ", end='')
+            # if ( self.rewind_strategy == "atend" and len(self.rewind_previous_node) > 0 ):
+            #     self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
+            # if self.rewind_learning_rate_decay == True:
+            #     print ( "\nRestoring LR to ", starting_lr)
+            #     self.model.optimizer.param_groups[0]['lr'] = starting_lr
+            # print("lr ", *epoch_start_lr, sep=" " )
+            # print("lr ", *epoch_end_lr, sep=" " )
+            # if self.learning_rate_scheduler != None:
+            #     self.learning_rate_scheduler.step()
+            # self.rewind_metrics()
+        if pbarbatch != None:
+            pbarbatch.close()
+            print()
+
+        if self.downstream_task != None:
+            backbone_grad = False
+            if len(self.pretext_tasks) == 0:
+                print ( f"No pretext task, not freezing backbone parameters")
+                backbone_grad = True
+            for param in self.model.parameters():
+                param.requires_grad = backbone_grad
+
+            if self.model.inner_model.pretext_head != None:
+                for param in self.model.inner_model.pretext_head.parameters():
+                    param.requires_grad = False
+            for param in self.downstream_task.parameters():
+                param.requires_grad = True
+            if len(self.optimizer.param_groups) < len(self.prextasks) - 2:
+                self.optimizer.add_param_group({'params': self.downstream_task.parameters(), 'lr': self.learning_rate})
+
+            self.model.pretext_train = False
+            self.model.inner_model.vit.head = self.downstream_task
+
+            pbarbatch = tqdm(total=num_batches, desc=f"Batch ", unit='batch', leave=False)  
+            for step in range(local_epochs):
+
+                for i, (x, y) in enumerate(trainloader):
+                    if self.check_batch(x, y) == False:
+                        continue
+
+                    if type(x) == type([]):
+                        x[0] = x[0].to(device)
+                        # x[0] = self.transform(x[0])
+                    else:
+                        x = x.to(device)
+                        # x= self.transform(x)
+                    y = y.to(device)
+                    if self.train_slow:
+                        time.sleep(0.1 * np.abs(np.random.rand()))
+                    
+                    output = self.model(x).to(device)
+
+                    self.optimizer.zero_grad()
+                    loss = self.downstream_task.loss(output, y).to(device)
+
+                    loss.backward()
+                    self.optimizer.step()
+                    pbarbatch.set_postfix({'Loss': f'{loss.item():.4f}', 'Epoch': f'{step+1}/{local_epochs}'})
+                    pbarbatch.update(1)
+
+        local_loss, num = self.train_metrics()
+        print ( f"Downstream task loss {local_loss/num}")
         
-            loss, num = self.train_metrics()
-            print ( f"{loss/num} ", end='')
-        if ( self.rewind_strategy == "atend" and len(self.rewind_previous_node) > 0 ):
-            self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
-        if self.rewind_learning_rate_decay == True:
-            print ( "\nRestoring LR to ", starting_lr)
-            self.model.optimizer.param_groups[0]['lr'] = starting_lr
-        # print("lr ", *epoch_start_lr, sep=" " )
-        # print("lr ", *epoch_end_lr, sep=" " )
-        # if self.learning_rate_scheduler != None:
-        #     self.learning_rate_scheduler.step()
-        # self.rewind_metrics()
-        print()
-        if len(self.rewind_previous_node) > 0:
-            rewind_node = self.rewind_previous_node[-1]
-            local_loss, rw_loss = self.rewind_train_metrics(rewind_node)
-            if not self.no_wandb:
-                wandb.log({f"train/model_{self.model.id}/atend_loss_on_local": local_loss, "round": self.round})
-                wandb.log({f"train/model_{self.model.id}/atend_loss_on_previous": rw_loss, "round": self.round})
+        # self.downstream_optimizer = torch.optim.SGD(self.downstream_net.parameters(), lr=self.learning_rate)
+        # for downstream_task in self.downstream_tasks:
+        #     self.model.pretext_train = False
+        #     self.model.pretext_task = None
+        #     self.model.downstream_task = downstream_task
+        #     print ( f"Downstream task {downstream_task}")
+            
+
+        # loss, num = self.train_metrics()
+
+        # if len(self.rewind_previous_node) > 0:
+        #     rewind_node = self.rewind_previous_node[-1]
+        #     local_loss, rw_loss = self.rewind_train_metrics(rewind_node)
+        #     if not self.no_wandb:
+        #         wandb.log({f"train/model_{self.model.id}/atend_loss_on_local": local_loss, "round": self.round})
+        #         wandb.log({f"train/model_{self.model.id}/atend_loss_on_previous": rw_loss, "round": self.round})
 
 
     def prepare_rewind(self, max_local_epochs, rewind_train_node = None):
@@ -332,6 +415,43 @@ class clientRewind(Client):
     def set_logits(self, global_logits):
         self.global_logits = copy.deepcopy(global_logits)
 
+    def train_metrics(self, trainloader=None):
+        if ( trainloader == None):
+            trainloader = self.load_train_data()
+        if trainloader == None:
+            print ( "No train data for client ", self.id)
+            return 0, 0
+        # self.model = self.load_model('model')
+        # self.model.to(self.device)
+        self.model.eval()
+
+        train_num = 0
+        losses = 0
+        self.model.to(self.device)
+        self.model.pretext_train = False
+
+
+        with torch.no_grad():
+            for x, y in trainloader:
+                if type(x) == type([]):
+                    x[0] = x[0].to(self.device)
+                else:
+                    x = x.to(self.device)
+                y = y.to(self.device)
+                output = self.model(x)
+                if ( torch.isnan(output).any() ):
+                    self.log_once ( "Output NAN")
+
+                loss = self.model.loss(output, y)
+                train_num += y.shape[0]
+                losses += loss.item() * y.shape[0]
+
+                print ( f"Downstream task loss {losses/train_num}")
+                break
+        # self.model.cpu()
+        # self.save_model(self.model, 'model')
+
+        return losses, train_num
     # def train_metrics(self):
     #     trainloader = self.load_train_data()
     #     # self.model = self.load_model('model')

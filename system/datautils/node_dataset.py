@@ -35,6 +35,12 @@ class NodeData():
         if self.train_data == None:
             print("Loading train data for client %d" % self.id)
             self.train_data = read_client_data(self.dataset, self.id, is_train=True,dataset_limit=dataset_limit)
+            if self.train_data == None:
+                return None
+            memory_footprint = 0
+            for i in range(len(self.train_data)):
+                memory_footprint += self.train_data[i][0].element_size() * self.train_data[i][0].nelement() + self.train_data[i][1].element_size() * self.train_data[i][1].nelement()
+            print("Client %d train data memory footprint: %d" % (self.id, memory_footprint))
             self.train_samples = len(self.train_data)
         self.train_dataset = FLNodeDataset(self.train_data, transform=self.transform, target_transform=self.target_transform, device=self.device)
         return DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
@@ -43,6 +49,12 @@ class NodeData():
         if self.test_data == None:
             print("Loading test data for client %d" % self.id)
             self.test_data = read_client_data(self.dataset, self.id, is_train=False,dataset_limit=dataset_limit)
+            if self.test_data == None:
+                return None
+            memory_footprint = 0
+            for i in range(len(self.test_data)):
+                memory_footprint += self.test_data[i][0].element_size() * self.test_data[i][0].nelement() + self.test_data[i][1].element_size() * self.test_data[i][1].nelement()
+            print("Client %d test data memory footprint: %d" % (self.id, memory_footprint))
             self.test_samples = len(self.test_data)
         self.test_dataset = FLNodeDataset(self.test_data, transform=self.transform, target_transform=self.target_transform, device=self.device)
         return DataLoader(self.test_dataset, batch_size, drop_last=False, shuffle=True)
@@ -59,6 +71,9 @@ class NodeData():
     def stats_get(self):
         # labels = self.labels_get()
         self.load_train_data(1)
+
+        if self.train_data == None:
+            return None
 
         labels = list(range(self.num_classes))
         if self.labels_count == None or self.labels_percent == None:
@@ -109,6 +124,9 @@ class NodeData():
         #     wandb.log({f"dataset/client_{self.id}_test_labels": v, "class":k})
 
     def stats_dump(self):
+        if self.stats_get() == None:
+            print("No data to dump")
+            return
         labels_count, labels_percent = self.stats_get()
         print("Dataset %d stats: %s" % (self.id,labels_count))
         # print("Labels percent: %s" % labels_percent)

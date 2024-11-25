@@ -37,16 +37,16 @@ class Client(object):
     Base class for clients in federated learning.
     """
 
-    def __init__(self, args, id, train_samples, test_samples, train_data = None, test_data = None, val_data = None, **kwargs):
+    def __init__(self, args, node_id, train_samples, test_samples, train_data = None, test_data = None, val_data = None, **kwargs):
         self.args = args
-        self.model = FLModel(args, id)
+        self.model = FLModel(args, node_id)
 
         # self.model = copy.deepcopy(args.model)
         self.starting_model = self.model.inner_model
         self.algorithm = args.algorithm
         self.dataset = args.dataset
         self.device = args.device
-        self.id = id  # integer
+        self.id = node_id
         self.save_folder_name = args.save_folder_name
         self.train_data = train_data
         self.test_data = test_data
@@ -57,8 +57,10 @@ class Client(object):
         self.federation_clients = None
         if args.dataset_image_size != -1:
             self.transform = transforms.Compose(
-                [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-                transforms.Resize(self.dataset_image_size)])
+                [
+                    # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                    transforms.Resize([self.dataset_image_size, self.dataset_image_size]),
+                ])
        
         self.node_data = NodeData(args, self.id, transform=self.transform, **kwargs)
 
@@ -95,22 +97,25 @@ class Client(object):
         self.model.loss = nn.CrossEntropyLoss()
 
             
-        if args.model_optimizer == 'Adam':
-            self.model.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.local_learning_rate)
-        elif args.model_optimizer == 'AdamW':
-            self.model.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.local_learning_rate)
-        else:
-            self.model.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.local_learning_rate)
+        # if args.model_optimizer == 'Adam':
+        #     self.model.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.local_learning_rate)
+        # elif args.model_optimizer == 'AdamW':
+        #     self.model.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.local_learning_rate)
+        # elif self.model.optimizer == None:
+        #     self.model.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.local_learning_rate)
             
         self.loss = self.model.loss
         self.optimizer = self.model.optimizer
         
         self.learning_rate_schedule = args.learning_rate_schedule
-        self.learning_rate_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer=self.optimizer, 
-            # gamma=args.learning_rate_schedule_gamma,
-            patience=2
-        )
+        if self.optimizer != None:
+            self.learning_rate_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer=self.optimizer, 
+                # gamma=args.learning_rate_schedule_gamma,
+                patience=2
+            )
+        else:
+            print ( "Trying to set schdulers but no optimizer for client ", self.id)
 
         self.last_sent_log = None
 
@@ -199,6 +204,8 @@ class Client(object):
     
     def test_metrics_data(self, dataloader, test_model = None):
 
+        if dataloader == None:
+            return 0, 0, 0, [], []
         test_acc = 0
         test_num = 0
         y_pred = []
@@ -247,6 +254,9 @@ class Client(object):
                     lb = lb[:, :2]
                 y_true.append(y.detach().cpu().numpy())
 
+                # print ( f"y_true {y_true} y_prob {y_prob}")
+                break
+
         # self.model.cpu()
         # self.save_model(self.model, 'model')
 
@@ -268,6 +278,9 @@ class Client(object):
     def train_metrics(self, trainloader=None):
         if ( trainloader == None):
             trainloader = self.load_train_data()
+        if trainloader == None:
+            print ( "No train data for client ", self.id)
+            return 0, 0
         # self.model = self.load_model('model')
         # self.model.to(self.device)
         self.model.eval()

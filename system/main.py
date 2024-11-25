@@ -27,6 +27,8 @@ import warnings
 import numpy as np
 import torchvision
 import logging
+import timm
+from timm.models.vision_transformer import VisionTransformer as timmVisionTransformer
 
 from flcore.servers.serveravg import FedAvg
 from flcore.servers.serverpFedMe import pFedMe
@@ -66,8 +68,10 @@ from flcore.servers.serveravgDBE import FedAvgDBE
 from flcore.servers.serverZIO import FedZio
 from flcore.servers.serverrewind import FedRewind
 from flcore.servers.serveravgrew import FedAvgRew
+from flcore.servers.servergfe import FedGFE
 
 from flcore.trainmodel.models import *
+from flcore.trainmodel.vitfc import VITFC
 
 from flcore.trainmodel.bilstm import *
 from flcore.trainmodel.resnet import *
@@ -97,7 +101,7 @@ emb_dim=32
 def run(args):
 
     if not args.no_wandb:
-        wandb.init(project="fedRewind", entity="ngslung", config=args)
+        wandb.init(project="fedFGE", entity="ngslung", config=args)
 
     time_list = []
     reporter = MemReporter()
@@ -233,9 +237,45 @@ def run(args):
             elif args.dataset == 'pamap':
                 args.model = HARCNN(9, dim_hidden=3712, num_classes=args.num_classes, conv_kernel_size=(1, 9), pool_kernel_size=(1, 2)).to(args.device)
 
+        elif model_str == "vit":
+            weights = torchvision.models.ViT_B_16_Weights.DEFAULT
+            if args.model_pretrain:
+                weights = torchvision.models.ViT_B_16_Weights.IMAGENET1K_V1
+
+            # model = timm.create_model('vit_base_patch16_224', pretrained=False, num_classes=args.num_classes)
+            model = timmVisionTransformer(
+        # img_size=img_size,
+        # patch_size=patch_size,
+        in_chans=3,
+        num_classes=args.num_classes,
+        embed_dim=args.embedding_size,       # d_model = 16
+        depth=12,            # Number of transformer layers = 2
+        num_heads=12,        # Number of attention heads
+        mlp_ratio=4.0,      # MLP hidden dimension ratio
+        patch_size=args.patch_size         # Patch size
+        # qkv_bias=True,
+        # representation_size=None,
+        # distilled=False,
+        # drop_rate=0.0,
+        # attn_drop_rate=0.0,
+        # drop_path_rate=0.0,
+    ) 
+            # model = torchvision.models.VisionTransformer(image_size=224, patch_size=16, num_layers=2, num_heads=16, hidden_dim=64, mlp_dim=1,num_classes=args.num_classes).to(args.device)
+            # model = torchvision.models.vit_b_16(weights=weights).to(args.device)
+            args.model = VITFC(model, args.num_classes,patch_size=args.patch_size).to(args.device)
         else:
             raise NotImplementedError
+        
+        param_size = 0
+        for param in args.model.parameters():
+            param_size += param.nelement() * param.element_size()
+        buffer_size = 0
+        for buffer in args.model.buffers():
+            buffer_size += buffer.nelement() * buffer.element_size()
 
+        size_all_mb = (param_size + buffer_size) / 1024**2
+
+        print(f"Model size: {size_all_mb:.3f}MB")
         print(args.model)
 
         # select algorithm
@@ -403,6 +443,11 @@ def run(args):
 
         elif args.algorithm == "FedZio":
             server = FedZio(args, i)
+        elif args.algorithm == "FedGFE":
+            # pretext_tasks = ['patch_ordering']
+
+            # pretext_tasks = ['patch_ordering','mask', 'rotation', 'colorization', 'inpainting']
+            server = FedGFE(args, i)
         else:
             raise NotImplementedError
 
@@ -575,6 +620,15 @@ if __name__ == "__main__":
     parser.add_argument('-rewlrdr', "--rewind_learning_rate_decay_ratio", type=float, default=0.1, help="Decay the learning rate ratio for rewind epochs")
     parser.add_argument('-rewlrk', "--rewind_learning_rate_keep", type=bool, default=False, action=argparse.BooleanOptionalAction, help="Keep the learning rate of the rewind epochs afterward")
     parser.add_argument('-reer', "--rewind_end_epoch_ratio", type=float, default=1, help="Epoch ratio count number of epoch for starting rewind before and of round")
+
+    #FedGFE
+    parser.add_argument('-nds', '--nodes_datasets', type=str, default='cifar10', help="Datasets for federation")
+    parser.add_argument('-ndst', '--nodes_downstream_tasks', type=str, default='classification', help="Downstream tasks for federation")
+    parser.add_argument('-nptt', '--nodes_pretext_tasks', type=str, default='', help="Pretext tasks for federation")
+    parser.add_argument('-es', '--embedding_size', type=int, default=768, help="embedding size for transformer")
+    parser.add_argument('-ps', '--patch_size', type=int, default=16, help="patch size for transformer")
+    parser.add_argument('-lsn', '--limit_samples_number', type=int, default=0, help="Limit the first n samples for each node")
+
 
     # Routing algos
     parser.add_argument('-rora', "--routing_random", type=bool, default=False, action=argparse.BooleanOptionalAction, help="Route to random node")
