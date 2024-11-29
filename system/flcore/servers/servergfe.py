@@ -232,10 +232,10 @@ class FedGFE(FedRewind):
                     print("Accuracy of nodes %d model on node %d: %02f" % (test_client.id, dest_client.id, round_acc ))
         # self.print_(max(self.rs_test_acc), max(
         #     self.rs_train_acc), min(self.rs_train_loss))
-        print(max(self.rs_test_acc))
-        self.data_log({"best_acc": max(self.rs_test_acc)})
+        # print(max(self.rs_test_acc))
+        # self.data_log({"best_acc": max(self.rs_test_acc)})
         # wandb.log({"best_acc": max(self.rs_test_acc)})
-        print(sum(self.Budget[1:])/len(self.Budget[1:]))
+        # print(sum(self.Budget[1:])/len(self.Budget[1:]))
 
         self.save_results()
         wandb.finish()
@@ -370,6 +370,8 @@ class FedGFE(FedRewind):
             # client.node_data.stats_wandb_define()
             if self.no_wandb == False:
                 client.node_data.stats_wandb_log()
+
+            client.data_log = self.data_log
             
             # if is_strong:
             #     n_strong += 1
@@ -385,40 +387,15 @@ class FedGFE(FedRewind):
         super().define_metrics()
   
         for client in self.clients:
-            wandb.define_metric(f"test/model_{client.id}/acc", step_metric="round")
-            wandb.define_metric(f"test/model_{client.id}/bal", step_metric="round")
-            wandb.define_metric(f"train/model_{client.id}/round_train_loss_{client.id}", step_metric="round")
-            wandb.define_metric(f"test/model_{client.id}/round_test_acc_{client.id}", step_metric="round")
-            wandb.define_metric(f'train/model_loss_{client.train_model_id}', step_metric="round")
-            wandb.define_metric(f"test/model_{client.id}/test_std", step_metric="round")
-            wandb.define_metric(f"test/model_{client.id}/test_std_on_train", step_metric="round")
-            if self.rewind_ratio > 0 or self.rewind_epochs > 0:
-                wandb.define_metric(f"rewind/rewind_phase_loss_{client.id}", step_metric="rewind_step")
-                wandb.define_metric(f"train/model_{client.id}/pre_rewind_loss_on_local", step_metric="round")
-                wandb.define_metric(f"train/model_{client.id}/pre_rewind_loss_on_previous", step_metric="round")
-                wandb.define_metric(f"train/model_{client.id}/post_rewind_loss_on_local", step_metric="round")
-                wandb.define_metric(f"train/model_{client.id}/post_rewind_loss_on_previous", step_metric="round")
-                wandb.define_metric(f"train/model_{client.id}/atend_loss_on_previous", step_metric="round")
-                wandb.define_metric(f"train/model_{client.id}/atend_loss_on_local", step_metric="round")
-                wandb.define_metric(f"rewind/rewind_loss_{client.id}", step_metric="round")
-
-            for test_client in self.clients:
-                wandb.define_metric(f"train/model_{client.id}/round_train_loss_{client.id}_on_{test_client.id}", step_metric="round")
-                wandb.define_metric(f"test/model_{client.id}/round_test_acc_{client.id}_on_{test_client.id}", step_metric="round")
-
-        # super().define_metrics()
-        # if not self.no_wandb:
-        #     for client in self.clients:
-        #         wandb.define_metric(f"train/client_{client.id}/round_train_loss_{client.id}", step_metric="round")
-        #         wandb.define_metric(f"test/client_{client.id}/round_test_acc_{client.id}", step_metric="round")
-        #         if self.rewind_ratio > 0 or self.rewind_epochs > 0:
-        #             wandb.define_metric(f"rewind/rewind_phase_loss_{client.id}", step_metric="round")
-
-        #         for test_client in self.clients:
-        #             if ( test_client.id != client.id):
-        #                 wandb.define_metric(f"train/client_{client.id}/round_train_loss_{client.id}_on_{test_client.id}", step_metric="round")
-        #                 wandb.define_metric(f"test/client_{client.id}/round_test_acc_{client.id}_on_{test_client.id}", step_metric="round")
-
+            wandb.define_metric(f"test/node_{client.id}/acc", step_metric="round")
+            wandb.define_metric(f"test/node_{client.id}/bal", step_metric="round")
+            wandb.define_metric(f"train/node_{client.id}/downstream_train_loss_{client.id}", step_metric="round")
+            wandb.define_metric(f"test/node_{client.id}/downstream_test_acc_{client.id}", step_metric="round")
+            wandb.define_metric(f"test/node_{client.id}/test_std", step_metric="round")
+            wandb.define_metric(f"test/node_{client.id}/test_std_on_train", step_metric="round")
+            wandb.define_metric(f"train/node_{client.id}/round_train_loss_{client.id}", step_metric="round")
+            for pretext_task in self.pretext_tasks:
+                wandb.define_metric(f"train/node_{client.id}/pretext_train_loss_{client.id}_{pretext_task}", step_metric="round")
 
     def evaluate(self):
         super().evaluate()
@@ -562,8 +539,8 @@ class FedGFE(FedRewind):
             return 0, 0
         
         round_loss = losses/train
-        self.data_log({f'train/model_{client.id}/round_train_loss_{client.id}': round_loss, "round": self.round})
-        # self.data_log({f'train/model_loss_{client.train_model_id}': round_loss, "round": self.round})
+        self.data_log({f'train/node_{client.id}/round_train_loss_{client.id}': round_loss, "round": self.round})
+        # self.data_log({f'train/node_loss_{client.train_model_id}': round_loss, "round": self.round})
         loss_dict = {client.train_model_id: round_loss}
         client.node_data_losses.append(loss_dict)
         # node_data_loss_string = [ f"{k}:{v:.2f}" for k,v in [ node_data_loss for node_data_loss in client.node_data_losses ] ]
@@ -573,7 +550,7 @@ class FedGFE(FedRewind):
             node_data_loss_string += f"{k}:{v:.2f} "
         
         print("** Round %d Trained node %d using model from %d on dataset %d loss %02f (%s)" % ( client.round, client.id, client.train_model_id, client.node_data.id, round_loss, node_data_loss_string ))
-        if len(client.rewind_previous_node):
+        if len(client.rewind_previous_node) and self.rewind_ratio:
             previous_losses, previous_losses_log = self.round_rewind_train_metrics(client)
             previous_loss = previous_losses[-1]
             client.rewind_previous_node_loss.append(previous_loss)
@@ -626,8 +603,8 @@ class FedGFE(FedRewind):
         print("** Round %d Accuracies on train sets %.02f %s" % ( self.round, accuracy_on_train, accuracies_on_train ))
         print("** Round %d std on test %.02f on train %.02f" % ( self.round, acc_std, acc_std_on_train ))
         if not self.no_wandb:    
-            wandb.log({f'test/model_{client.id}/test_std': acc_std, "round": self.round})
-            wandb.log({f'test/model_{client.id}/test_std_on_train': acc_std_on_train, "round": self.round})
+            wandb.log({f'test/node_{client.id}/test_std': acc_std, "round": self.round})
+            wandb.log({f'test/node_{client.id}/test_std_on_train': acc_std_on_train, "round": self.round})
         # standard_deviation = self.round_test_metric_deviation(client)
         # print(f"Standard deviation of accuracies for client {client.id}: {standard_deviation}")
         return client_round_acc
@@ -644,7 +621,7 @@ class FedGFE(FedRewind):
                 accuracies.append(other_accuracy)
                 # print("Node's model %d accuracy dataset %d: %02f" % (client.id, test_client.id, round_acc )) 
                 if  not self.no_wandb:
-                    wandb.log({f'test/model_{client.model.id}/round_test_acc_{client.model.id}_on_{test_client.node_data.id}': round_acc, 'round': self.round } )
+                    wandb.log({f'test/node_{client.model.id}/round_test_acc_{client.model.id}_on_{test_client.node_data.id}': round_acc, 'round': self.round } )
                 # if previous_node != None:
                 #     client.rewind_previous_node_loss.append(previous_loss)
                 #     print("Previous node %d loss %02f" % ( previous_node.id, previous_loss))

@@ -229,25 +229,8 @@ class clientGFE(clientRewind):
 
                 # pbarepoch.update(1)
                 print ( f": loss {losses/i} ")
-                    # break
+                self.data_log({f"train/node_{self.id}/pretext_train_loss_{self.id}_{pretext_task}": losses/i, "round": self.round})
 
-                # if ( self.rewind_learning_rate_schedule == True ):
-                #     epoch_start_lr.append( self.learning_rate_scheduler.get_last_lr() )
-                #     self.learning_rate_scheduler.step()
-                #     epoch_end_lr.append( self.learning_rate_scheduler.get_last_lr() )
-            
-                # print ( f"{loss/num} ", end='')
-            # if ( self.rewind_strategy == "atend" and len(self.rewind_previous_node) > 0 ):
-            #     self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
-            # if self.rewind_learning_rate_decay == True:
-            #     print ( "\nRestoring LR to ", starting_lr)
-            #     self.model.optimizer.param_groups[0]['lr'] = starting_lr
-            # print("lr ", *epoch_start_lr, sep=" " )
-            # print("lr ", *epoch_end_lr, sep=" " )
-            # if self.learning_rate_scheduler != None:
-            #     self.learning_rate_scheduler.step()
-            # self.rewind_metrics()
-        if type(pbarbatch) == type(tqdm):
             pbarbatch.close()
             print()
 
@@ -266,14 +249,14 @@ class clientGFE(clientRewind):
             for param in self.downstream_task.parameters():
                 param.requires_grad = True
             
-            if len(self.pretext_tasks) < len(self.optimizer.param_groups):
-                self.optimizer.add_param_group({'params': self.downstream_task.parameters(), 'lr': self.learning_rate})
+            # if len(self.pretext_tasks) < len(self.optimizer.param_groups):
+            #     self.optimizer.add_param_group({'params': self.downstream_task.parameters(), 'lr': self.learning_rate})
 
             self.model.pretext_train = False
 
 
-            if self.no_downstream_tasks != True:
-                self.model.inner_model.vit.head = self.downstream_task
+            # if self.no_downstream_tasks != True:
+            #     self.model.inner_model.vit.head = self.downstream_task
 
             self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
             
@@ -303,9 +286,12 @@ class clientGFE(clientRewind):
                     self.optimizer.step()
                     pbarbatch.set_postfix({'Loss': f'{loss.item():.4f}', 'Epoch': f'{step+1}/{local_epochs}'})
                     pbarbatch.update(1)
+                    if ( self.args.limit_samples_number > 0 and i*trainloader.batch_size > self.args.limit_samples_number ):
+                        break
 
         local_loss, num = self.train_metrics()
         print ( f"Downstream task loss {local_loss/num}")
+        self.data_log({f"train/node_{self.id}/downstream_train_loss_{self.id}": local_loss/num, "round": self.round})
         
         # self.downstream_optimizer = torch.optim.SGD(self.downstream_net.parameters(), lr=self.learning_rate)
         # for downstream_task in self.downstream_tasks:

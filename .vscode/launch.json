@@ -93,7 +93,7 @@
             "args": ["-data", "CIFAR10",
                      "-m", "vit",
                      "-algo", "FedGFE",
-                     "--global_rounds", "100",
+                     "--global_rounds", "5",
                      "-did", "0",
                      "-go", "prova",
                      "-nc", "1",
