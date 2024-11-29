@@ -74,8 +74,8 @@
                      "--dataset_image_size", "224",
                      "--model_pretrain",
                     //  "--embedding_size", "64",
-                    //  "--nodes_pretext_tasks", "patch_mask",
-                     "--nodes_pretext_tasks", "patch_rotation,patch_ordering,patch_mask",
+                     "--nodes_pretext_tasks", "patch_ordering",
+                    //  "--nodes_pretext_tasks", "patch_rotation,patch_ordering,patch_mask",
                      "--patch_size", "56",
                     //  "--limit_samples", "1000"
 //                    , "-go", "${inputs:experimentName"
@@ -99,16 +99,17 @@
                      "-nc", "1",
                      "-nb", "10",
                      "--batch_size","64",
-                     "--local_epochs", "10",
+                     "--local_epochs", "3",
                      "-lr", "0.0001",
                      "-lam", "0.1",
                      "--no_wandb",
                      "--dataset_image_size", "224",
                      "--model_pretrain",
                     //  "--embedding_size", "64",
-                    //  "--nodes_pretext_tasks", "patch_mask",
+                    //  "--nodes_pretext_tasks", "patch_ordering",
                     //  "--nodes_pretext_tasks", "patch_rotation",
-                     "--nodes_pretext_tasks", "image_rotation,patch_rotation,patch_ordering,patch_mask",
+                    //  "--nodes_pretext_tasks", "image_rotation,patch_rotation,patch_ordering,patch_mask",
+                    // "--no_downstream_task",
                      "--patch_size", "56",
                     //  "--limit_samples", "1000"
 //                    , "-go", "${inputs:experimentName"

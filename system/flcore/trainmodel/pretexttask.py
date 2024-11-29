@@ -2,15 +2,13 @@ from torch import nn
 import torch
 
 class PretextTask (nn.Module):
-    def __init__(self, backbone=None, input_dim, output_dim):
+    def __init__(self, backbone=None, input_dim, output_dim, debug_images=False):
         super(PretextTask, self).__init__()
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.backbone = backbone
-        self.fc = nn.Linear(input_dim, 512).to(self.device)
-        self.fc1 = nn.Linear(512, 64).to(self.device)
-        self.relu = nn.ReLU().to(self.device)
-        self.fc2 = nn.Linear(64, output_dim).to(self.device)
+        self.debug_images = debug_images
+        self.head = None
 
     def to(self, device):
         self.device = device

@@ -16,7 +16,8 @@ from sklearn import metrics
 from sklearn.utils.class_weight import compute_class_weight
 from torchvision.ops.focal_loss import sigmoid_focal_loss
 from torchvision import  transforms
-from flcore.trainmodel.downstream import DownstreamTask
+from flcore.trainmodel.downstreamclassification import DownstreamClassification
+from flcore.trainmodel.singlelayerclassification import SingleLayerClassification
 
 from tqdm import tqdm
 
@@ -56,8 +57,13 @@ class clientGFE(clientRewind):
 
         self.prextasks = pretext_tasks
 
-        self.downstream_task = DownstreamTask(self.model.inner_model.vit.embed_dim, self.num_classes)
+        # self.downstream_task = DownstreamTask(self.model.inner_model.vit.embed_dim, self.num_classes)
+        self.downstream_task = SingleLayerClassification(self.model.inner_model.vit.embed_dim, self.num_classes)
+        self.downstream_task.to(self.device)
         self.downstream_task.loss = nn.CrossEntropyLoss()
+        self.no_downstream_tasks = args.no_downstream_tasks
+
+        self.model_optimizer = args.model_optimizer
 
 
         # self.transform = transforms.Compose(
@@ -155,7 +161,8 @@ class clientGFE(clientRewind):
         pbarbatch = None
         num_batches = len(trainloader.dataset)//trainloader.batch_size
 
-        if self.optimizer == None:
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
+        if self.model_optimizer == "AdamW":
             self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
 
         for pretext_task in self.pretext_tasks:
@@ -166,7 +173,12 @@ class clientGFE(clientRewind):
             # self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
             for params in self.model.parameters():
                 params.requires_grad = True
+            
+            for params in self.model.inner_model.pretext_head.parameters():
+                params.requires_grad = True
+
             params_id = self.optimizer.add_param_group({'params': self.model.inner_model.pretext_head.parameters(), 'lr': self.learning_rate})
+            
             for params in self.model.inner_model.pretext_head.parameters():
                 params.requires_grad = True
 
@@ -235,7 +247,7 @@ class clientGFE(clientRewind):
             # if self.learning_rate_scheduler != None:
             #     self.learning_rate_scheduler.step()
             # self.rewind_metrics()
-        if pbarbatch != None:
+        if type(pbarbatch) == type(tqdm):
             pbarbatch.close()
             print()
 
@@ -250,16 +262,23 @@ class clientGFE(clientRewind):
             if self.model.inner_model.pretext_head != None:
                 for param in self.model.inner_model.pretext_head.parameters():
                     param.requires_grad = False
+            
             for param in self.downstream_task.parameters():
                 param.requires_grad = True
-            if len(self.optimizer.param_groups) < len(self.prextasks) - 2:
+            
+            if len(self.pretext_tasks) < len(self.optimizer.param_groups):
                 self.optimizer.add_param_group({'params': self.downstream_task.parameters(), 'lr': self.learning_rate})
 
             self.model.pretext_train = False
-            self.model.inner_model.vit.head = self.downstream_task
 
-            pbarbatch = tqdm(total=num_batches, desc=f"Batch ", unit='batch', leave=False)  
+
+            if self.no_downstream_tasks != True:
+                self.model.inner_model.vit.head = self.downstream_task
+
+            self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
+            
             for step in range(local_epochs):
+                pbarbatch = tqdm(total=num_batches, desc=f"Batch ", unit='batch', leave=False)  
 
                 for i, (x, y) in enumerate(trainloader):
                     if self.check_batch(x, y) == False:

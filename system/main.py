@@ -100,9 +100,7 @@ emb_dim=32
 
 def run(args):
 
-    if not args.no_wandb:
-        wandb.init(project="fedFGE", entity="ngslung", config=args)
-
+   
     time_list = []
     reporter = MemReporter()
     model_str = args.model
@@ -252,13 +250,14 @@ def run(args):
         depth=12,            # Number of transformer layers = 2
         num_heads=12,        # Number of attention heads
         mlp_ratio=4.0,      # MLP hidden dimension ratio
-        patch_size=args.patch_size         # Patch size
+        patch_size=args.patch_size,         # Patch size
         # qkv_bias=True,
         # representation_size=None,
         # distilled=False,
         # drop_rate=0.0,
         # attn_drop_rate=0.0,
         # drop_path_rate=0.0,
+        # pretrained=args.model_pretrain,
     ) 
             # model = torchvision.models.VisionTransformer(image_size=224, patch_size=16, num_layers=2, num_heads=16, hidden_dim=64, mlp_dim=1,num_classes=args.num_classes).to(args.device)
             # model = torchvision.models.vit_b_16(weights=weights).to(args.device)
@@ -277,6 +276,10 @@ def run(args):
 
         print(f"Model size: {size_all_mb:.3f}MB")
         print(args.model)
+
+        if not args.no_wandb:
+            print ("Enabling wandb to progect: ", args.algorithm)
+            wandb.init(project=args.algorithm, entity="ngslung", config=args)
 
         # select algorithm
         if args.algorithm == "FedAvg":
@@ -451,12 +454,17 @@ def run(args):
         else:
             raise NotImplementedError
 
+
+
         server.train()
+
 
         time_list.append(time.time()-start)
 
     print(f"\nAverage time cost: {round(np.average(time_list), 2)}s.")
-    
+
+   
+
 
     # Global average
     average_data(dataset=args.dataset, algorithm=args.algorithm, goal=args.goal, times=args.times)
@@ -624,7 +632,9 @@ if __name__ == "__main__":
     #FedGFE
     parser.add_argument('-nds', '--nodes_datasets', type=str, default='cifar10', help="Datasets for federation")
     parser.add_argument('-ndst', '--nodes_downstream_tasks', type=str, default='classification', help="Downstream tasks for federation")
+    parser.add_argument('-nodst', '--no_downstream_tasks', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Use original head for downstram tasks for federation")
     parser.add_argument('-nptt', '--nodes_pretext_tasks', type=str, default='', help="Pretext tasks for federation")
+    parser.add_argument('-npttp', '--nodes_pretext_tasks_parallel', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Parallel pretext task training")
     parser.add_argument('-es', '--embedding_size', type=int, default=768, help="embedding size for transformer")
     parser.add_argument('-ps', '--patch_size', type=int, default=16, help="patch size for transformer")
     parser.add_argument('-lsn', '--limit_samples_number', type=int, default=0, help="Limit the first n samples for each node")

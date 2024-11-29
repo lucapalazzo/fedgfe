@@ -28,7 +28,7 @@ import numpy as np
 from modelutils.custompatchembedding import CustomPatchEmbed
 from modelutils.patchorderloss import PatchOrderLoss
 from modelutils.patchmaskloss import PatchMaskLoss
-from flcore.trainmodel.downstream import DownstreamTask
+from flcore.trainmodel.downstream import DownstreamClassification
 from timm.models.vision_transformer import Block
 from utils.variablewatcher import VariableWatcher
 from torchvision import transforms
@@ -97,7 +97,15 @@ class VITFC(nn.Module):
         print ( "Created VITFC model %s optimizer %s" %( hex(id(self)), hex(id(self.optimizer)) ) )
 
     def parameters(self, recurse: bool = True) -> Iterator[nn.Parameter]:
-        return self.vit.parameters(recurse)
+        modules = nn.ModuleList()
+        modules.add_module("vit", self.vit)
+        modules.add_module("vit_head", self.vit.head)
+
+        parameters = modules.parameters(recurse)
+        # parameters = self.vit.parameters(recurse)
+        # for param in parameters:
+        #     yield param 
+        return parameters
     
     def prepare_masking(self):
         if self.pretext_task == "patch_mask":
@@ -141,7 +149,7 @@ class VITFC(nn.Module):
             self.custom_order = np.random.permutation(self.num_patches)
 
         self.custom_patch_embed.custom_order = self.custom_order
-        print ( "Rotation custom order: ", self.custom_order )
+        print ( "Patch custom order: ", self.custom_order )
         self.vit.patch_embed = self.custom_patch_embed
         self.pretext_head = self.patch_position_predictor
         self.pretext_loss = PatchOrderLoss(self.num_patches, self.vit.head_hidden_size)
