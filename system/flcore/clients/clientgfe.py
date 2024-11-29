@@ -57,8 +57,8 @@ class clientGFE(clientRewind):
 
         self.prextasks = pretext_tasks
 
-        # self.downstream_task = DownstreamTask(self.model.inner_model.vit.embed_dim, self.num_classes)
-        self.downstream_task = SingleLayerClassification(self.model.inner_model.vit.embed_dim, self.num_classes)
+        self.downstream_task = DownstreamClassification(self.model.inner_model.vit.embed_dim, self.num_classes)
+        # self.downstream_task = SingleLayerClassification(self.model.inner_model.vit.embed_dim, self.num_classes)
         self.downstream_task.to(self.device)
         self.downstream_task.loss = nn.CrossEntropyLoss()
         self.no_downstream_tasks = args.no_downstream_tasks
