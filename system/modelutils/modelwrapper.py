@@ -9,11 +9,11 @@ class FLModel(nn.Module):
         self.id = model_id
         self.inner_model = copy.deepcopy(args.model)
         self.loss = None
-        # self.inner_model.optimizer = SGD(self.inner_model.parameters(), lr=0.01)
         print ( "Optimizer: ", hex(id(self.inner_model.optimizer)))
         self.optimizer = self.inner_model.optimizer
         self.pretext_task = None
         self.pretext_train = False
+        self.downstream_task = None
 
     def to(self, device):
         self.device = device
@@ -21,8 +21,6 @@ class FLModel(nn.Module):
         return self
 
     def forward(self,x):
-        # self.inner_model.pretext_task = self.pretext_task
-        # self.inner_model.pretext_train = self.pretext_train
         output = self.inner_model(x)
         return output
     
@@ -51,3 +49,7 @@ class FLModel(nn.Module):
     @pretext_train.setter
     def pretext_train(self, pretext_train):
         self.inner_model.pretext_train = pretext_train
+
+    def downstream_task_set(self, new_downstream_task):
+        self.downstream_task = new_downstream_task
+        self.inner_model.downstream_task = new_downstream_task

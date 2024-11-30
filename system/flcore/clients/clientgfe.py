@@ -33,31 +33,11 @@ class clientGFE(clientRewind):
         self.train_dataloader = None
         self.test_dataloader = None
 
-
-
-        self.starting_model = self.model
-        self.starting_loss = self.loss
-        self.train_model = self.model
-        self.next_train_model = self.model
-        self.train_model_id = model_id
-        self.next_train_model_id = model_id
-
-        self.logits = None
-        # self.global_logits = None # quesi non sono più qelli globali ma quelli ricevuti dall'altro client
-        # self.loss_mse = nn.MSELoss()
-
-        self.lamda = args.lamda
         self.dataset = args.dataset
         self.node_data_losses = []
 
-        self.rewind_step = 0
-        self.focal_loss = sigmoid_focal_loss
-        self.test_std = []
-        self.test_std_on_train = []
-
-        self.prextasks = pretext_tasks
-
         self.downstream_task = DownstreamClassification(self.model.inner_model.vit.embed_dim, self.num_classes)
+        self.model.downstream_task_set(self.downstream_task)
         # self.downstream_task = SingleLayerClassification(self.model.inner_model.vit.embed_dim, self.num_classes)
         self.downstream_task.to(self.device)
         self.downstream_task.loss = nn.CrossEntropyLoss()
@@ -161,27 +141,24 @@ class clientGFE(clientRewind):
         pbarbatch = None
         num_batches = len(trainloader.dataset)//trainloader.batch_size
 
+
+        self.model.downstream_task_set( self.downstream_task)
+        self.model.pretext_train = True
+
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
         if self.model_optimizer == "AdamW":
             self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
 
         for pretext_task in self.pretext_tasks:
-            self.model.pretext_train = True
             self.model.pretext_task = pretext_task
             print ( f"Pretext task {pretext_task}")
             # self.model.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
             # self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
-            for params in self.model.parameters():
-                params.requires_grad = True
             
-            for params in self.model.inner_model.pretext_head.parameters():
-                params.requires_grad = True
+            self.freeze_backbone(freeze = False)
 
-            params_id = self.optimizer.add_param_group({'params': self.model.inner_model.pretext_head.parameters(), 'lr': self.learning_rate})
+            self.optimizer.add_param_group({'params': self.model.inner_model.pretext_head.parameters(), 'lr': self.learning_rate})
             
-            for params in self.model.inner_model.pretext_head.parameters():
-                params.requires_grad = True
-
             for step in range(local_epochs):
                 if ( ( self.rewind_strategy == "halfway" or self.rewind_strategy == "interval" or self.rewind_strategy == "atend_pre"  ) and len(self.rewind_previous_node) > 0 ):
                     self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
@@ -228,7 +205,7 @@ class clientGFE(clientRewind):
                         break
 
                 # pbarepoch.update(1)
-                print ( f": loss {losses/i} ")
+                # print ( f": loss {losses/i} ")
                 self.data_log({f"train/node_{self.id}/pretext_train_loss_{self.id}_{pretext_task}": losses/i, "round": self.round})
 
             pbarbatch.close()
@@ -239,25 +216,19 @@ class clientGFE(clientRewind):
             if len(self.pretext_tasks) == 0:
                 print ( f"No pretext task, not freezing backbone parameters")
                 backbone_grad = True
-            for param in self.model.parameters():
-                param.requires_grad = backbone_grad
 
-            if self.model.inner_model.pretext_head != None:
-                for param in self.model.inner_model.pretext_head.parameters():
-                    param.requires_grad = False
-            
-            for param in self.downstream_task.parameters():
-                param.requires_grad = True
             
             # if len(self.pretext_tasks) < len(self.optimizer.param_groups):
             #     self.optimizer.add_param_group({'params': self.downstream_task.parameters(), 'lr': self.learning_rate})
 
-            self.model.pretext_train = False
 
 
             # if self.no_downstream_tasks != True:
             #     self.model.inner_model.vit.head = self.downstream_task
 
+            
+            self.model.pretext_train = False
+            self.freeze_backbone(freeze = True)
             self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
             
             for step in range(local_epochs):
@@ -309,6 +280,24 @@ class clientGFE(clientRewind):
         #     if not self.no_wandb:
         #         wandb.log({f"train/model_{self.model.id}/atend_loss_on_local": local_loss, "round": self.round})
         #         wandb.log({f"train/model_{self.model.id}/atend_loss_on_previous": rw_loss, "round": self.round})
+
+
+
+    def freeze_backbone(self, freeze = True):
+        backbone_grad = not freeze
+        pretext_head_grad = backbone_grad
+        downstream_grad = not backbone_grad
+
+        print ( f"Freezing backbone parameters {backbone_grad} pretext head {pretext_head_grad} downstream {downstream_grad}")   
+        for param in self.model.parameters():
+            param.requires_grad = backbone_grad
+
+        if self.model.inner_model.pretext_head != None:
+            for param in self.model.inner_model.pretext_head.parameters():
+                param.requires_grad = pretext_head_grad
+        
+        for param in self.downstream_task.parameters():
+            param.requires_grad = downstream_grad
 
 
     def prepare_rewind(self, max_local_epochs, rewind_train_node = None):
@@ -416,10 +405,6 @@ class clientGFE(clientRewind):
         # self.train_time_cost['num_rounds'] += 1
         self.train_time_cost['total_cost'] += time.time() - start_time
 
-
-    def set_logits(self, global_logits):
-        self.global_logits = copy.deepcopy(global_logits)
-
     def train_metrics(self, trainloader=None):
         if ( trainloader == None):
             trainloader = self.load_train_data()
@@ -457,42 +442,7 @@ class clientGFE(clientRewind):
         # self.save_model(self.model, 'model')
 
         return losses, train_num
-    # def train_metrics(self):
-    #     trainloader = self.load_train_data()
-    #     # self.model = self.load_model('model')
-    #     # self.model.to(self.device)
-    #     self.model.eval()
 
-    #     train_num = 0
-    #     losses = 0
-    #     lsf = sigmoid_focal_loss
-    #     self.model.to(self.device)
-    #     with torch.no_grad():
-    #         for x, y in trainloader:
-    #             if type(x) == type([]):
-    #                 x[0] = x[0].to(self.device)
-    #             else:
-    #                 x = x.to(self.device)
-    #             y = y.to(self.device)
-    #             output = self.model(x)
-    #             loss = self.loss(output, y)
-
-    #             # if self.global_logits != None:
-    #             #     logit_new = copy.deepcopy(output.detach())
-    #             #     for i, yy in enumerate(y):
-    #             #         y_c = yy.item()
-    #             #         if type(self.global_logits[y_c]) != type([]):
-    #             #             logit_new[i, :] = self.global_logits[y_c].data
-    #             #     loss += self.loss_mse(logit_new, output) * self.lamda
-                    
-    #             train_num += y.shape[0]
-    #             losses += loss.item() * y.shape[0]
-
-    #     # self.model.cpu()
-    #     # self.save_model(self.model, 'model')
-
-    #     return losses, train_num
-    
     def rewind_train_metrics(self, rewind_train_node = None):
         self.rewind_step += 1
         losses, train_num = self.train_metrics()

@@ -40,7 +40,7 @@ import math
 
 class VITFC(nn.Module):
 
-    def __init__(self, model, num_classes, pretext_task=None, img_size=224, patch_size=16, mask_ratio=0.15, pretrained=True, in_chans=3, decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,mlp_ratio=4., norm_layer=nn.LayerNorm):
+    def __init__(self, model, num_classes, pretext_task=None, img_size=224, patch_size=16, mask_ratio=0.15, pretrained=True, in_chans=3, decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,mlp_ratio=4., norm_layer=nn.LayerNorm, downstream_loss=None):
         super(VITFC, self).__init__()
         self.vit = model
         self.starting_head = self.vit.head
@@ -57,7 +57,10 @@ class VITFC(nn.Module):
         self.pretext_loss = None
         self.patch_embedding = None
         self.optimizer = None
+
         self.downstream_loss = nn.CrossEntropyLoss()
+        self.downstream_task = None
+
         self.decoder_embed_dim = decoder_embed_dim
         self.decoder_depth = decoder_depth
         self.decoder_num_heads = decoder_num_heads
@@ -99,7 +102,9 @@ class VITFC(nn.Module):
     def parameters(self, recurse: bool = True) -> Iterator[nn.Parameter]:
         modules = nn.ModuleList()
         modules.add_module("vit", self.vit)
-        modules.add_module("vit_head", self.vit.head)
+        if self.pretext_train == False:
+            modules.add_module("head", self.vit.head)
+        # modules.add_module("vit_head", self.vit.head)
 
         parameters = modules.parameters(recurse)
         # parameters = self.vit.parameters(recurse)
@@ -448,6 +453,8 @@ class VITFC(nn.Module):
         print(f"Pretext training set to: {new_value}")
         if not self._pretext_train:
             self.vit.head = self.starting_head
+            if self.downstream_task != None:
+                self.vit.head = self.downstream_task
             self.loss = self.downstream_loss
     
 

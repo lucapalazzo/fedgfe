@@ -11,9 +11,6 @@ class DownstreamClassification (nn.Module):
         self.relu2 = nn.ReLU()
         self.fc2 = nn.Linear(64, output_dim)
 
-    # def to(self, device):
-    #      return self
-
     def forward(self, x):
         x = self.fc(x)
         x = self.relu1(x)
