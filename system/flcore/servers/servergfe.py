@@ -187,18 +187,18 @@ class FedGFE(FedRewind):
                             self.client_round_ending_hook( running_client )
                 time.sleep(0.1)
             
-            self.routes = self.get_routes()
-            # self.routes = get_routes(self.num_clients, self.clients)
-            self.distribute_routes(self.routes)
-            if self.rewind_random and self.round > 0:
-                random_routing = RandomRouting(self.num_clients, self.clients)
-                random_rewind_routes = random_routing.route_pairs( self.clients)
-                for node in random_rewind_routes:
-                    rewind_node_id = random_rewind_routes[node]
-                    rewind_node = self.clients[rewind_node_id]
-                    self.clients[node].rewind_previous_node = [rewind_node]
-                    self.clients[node].rewind_previous_node_id = [rewind_node.id]
-            self.dump_routes(self.routes)
+            # self.routes = self.get_routes()
+            # # self.routes = get_routes(self.num_clients, self.clients)
+            # self.distribute_routes(self.routes)
+            # if self.rewind_random and self.round > 0:
+            #     random_routing = RandomRouting(self.num_clients, self.clients)
+            #     random_rewind_routes = random_routing.route_pairs( self.clients)
+            #     for node in random_rewind_routes:
+            #         rewind_node_id = random_rewind_routes[node]
+            #         rewind_node = self.clients[rewind_node_id]
+            #         self.clients[node].rewind_previous_node = [rewind_node]
+            #         self.clients[node].rewind_previous_node_id = [rewind_node.id]
+            # self.dump_routes(self.routes)
 
 
             print(self.uploaded_ids)
