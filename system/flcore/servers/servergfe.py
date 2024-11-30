@@ -360,14 +360,14 @@ class FedGFE(FedRewind):
              transforms.Resize([224, 224]),
             #  transforms.ToTensor()
             ])
-            if self.args.routing_scored:
-                client.routing = ScoredRouting(self.num_clients, id = i, average=self.routing_scored_average)
-            if self.args.routing_static:
-                client.routing = self.routing
-                client.routing.create_routes(self.clients)
-            else:
-                client.routing = RandomRouting(self.num_clients, id = i)
-            # client.node_data.stats_wandb_define()
+            # if self.args.routing_scored:
+            #     client.routing = ScoredRouting(self.num_clients, id = i, average=self.routing_scored_average)
+            # if self.args.routing_static:
+            #     client.routing = self.routing
+            #     client.routing.create_routes(self.clients)
+            # else:
+            #     client.routing = RandomRouting(self.num_clients, id = i)
+            
             if self.no_wandb == False:
                 client.node_data.stats_wandb_log()
 

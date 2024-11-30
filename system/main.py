@@ -261,7 +261,8 @@ def run(args):
     ) 
             # model = torchvision.models.VisionTransformer(image_size=224, patch_size=16, num_layers=2, num_heads=16, hidden_dim=64, mlp_dim=1,num_classes=args.num_classes).to(args.device)
             # model = torchvision.models.vit_b_16(weights=weights).to(args.device)
-            args.model = VITFC(model, args.num_classes,patch_size=args.patch_size).to(args.device)
+        
+            args.model = VITFC(model, args.num_classes,patch_size=args.patch_size,debug_images=args.debug_pretext_images).to(args.device)
         else:
             raise NotImplementedError
         
@@ -638,6 +639,7 @@ if __name__ == "__main__":
     parser.add_argument('-es', '--embedding_size', type=int, default=768, help="embedding size for transformer")
     parser.add_argument('-ps', '--patch_size', type=int, default=16, help="patch size for transformer")
     parser.add_argument('-lsn', '--limit_samples_number', type=int, default=0, help="Limit the first n samples for each node")
+    parser.add_argument('-dpti', '--debug_pretext_images', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Save images after pretext tasks")
 
 
     # Routing algos

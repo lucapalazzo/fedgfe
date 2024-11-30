@@ -40,7 +40,7 @@ import math
 
 class VITFC(nn.Module):
 
-    def __init__(self, model, num_classes, pretext_task=None, img_size=224, patch_size=16, mask_ratio=0.15, pretrained=True, in_chans=3, decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,mlp_ratio=4., norm_layer=nn.LayerNorm, downstream_loss=None):
+    def __init__(self, model, num_classes, pretext_task=None, img_size=224, patch_size=16, mask_ratio=0.15, pretrained=True, in_chans=3, decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,mlp_ratio=4., norm_layer=nn.LayerNorm, downstream_loss=None, debug_images = False):
         super(VITFC, self).__init__()
         self.vit = model
         self.starting_head = self.vit.head
@@ -68,7 +68,10 @@ class VITFC(nn.Module):
         self.norm_layer = norm_layer
         self.in_chans = in_chans
         self.image_output_directory = "output_images"
-        self.debug_images = True
+
+        self.debug_images = debug_images
+
+        
         if not os.path.exists(self.image_output_directory):
             os.makedirs(self.image_output_directory)
 
