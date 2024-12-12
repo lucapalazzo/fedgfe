@@ -156,7 +156,7 @@ class clientGFE(clientRewind):
             self.model.pretext_task_name = pretext_task_name
             print ( f"Pretext task {pretext_task_name}")
         
-            self.freeze(freeze = False)
+            self.freeze(backbone=False, pretext=False, downstream=True)
             # self.downstream_task.backbone = self.model.inner_model
 
             self.optimizer.add_param_group({'params': self.model.pretext_task.parameters(), 'lr': self.learning_rate})
