@@ -1,8 +1,8 @@
-from flcore.trainmodel.downstream import DownstreamClassification
+from flcore.trainmodel.downstream import Downstream
 
 import torch.nn as nn
 
-class SingleLayerClassification(DownstreamClassification):
+class SingleLayerClassification(Downstream):
     def __init__(self, input_dim, output_dim):
         super(SingleLayerClassification, self).__init__(input_dim, output_dim)
 

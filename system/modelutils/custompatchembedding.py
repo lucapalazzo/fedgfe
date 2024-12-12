@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class CustomPatchEmbed(nn.Module):
-    def __init__(self, img_size=224, patch_size=16, in_channels=3, embed_dim=768, custom_order=None):
+    def __init__(self, img_size=224, patch_size=16, in_channels=3, embed_dim=768, custom_order=None, device=None):
         super().__init__()
         img_size = (img_size, img_size)
         patch_size = (patch_size, patch_size)
@@ -11,9 +11,10 @@ class CustomPatchEmbed(nn.Module):
         self.img_size = img_size
         self.patch_size = patch_size
         self.num_patches = num_patches
+        self.device = device
 
         # Proiezione delle patch
-        self.proj = nn.Conv2d(in_channels, embed_dim, kernel_size=patch_size, stride=patch_size)
+        self.proj = nn.Conv2d(in_channels, embed_dim, kernel_size=patch_size, stride=patch_size).to(self.device)
 
         # Ordine personalizzato delle patch
         if custom_order is not None:

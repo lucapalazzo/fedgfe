@@ -1,35 +1,27 @@
 from torch import nn
 import torch
 
-class DownstreamClassification (nn.Module):
-    def __init__(self, input_dim, output_dim):
-        super(DownstreamClassification, self).__init__()
+class Downstream (nn.Module):
+    def __init__(self, backbone):
+        super(Downstream, self).__init__(  )
 
-        # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.downstream_head = nn.Identity()
 
-        # self.fc = nn.Linear(input_dim, 512).to(self.device)
-        # self.relu1 = nn.ReLU().to(self.device)
-        # self.fc1 = nn.Linear(512, 64).to(self.device)
-        # self.relu2 = nn.ReLU().to(self.device)
-        # self.fc2 = nn.Linear(64, output_dim).to(self.device)
+        self.backbone = backbone
+        self.backbone_enabled = True if backbone is not None else False
 
-    # def to(self, device):
-    #     self.device = device
-    #     self.fc.to(device)
-    #     self.relu1.to(device)
-    #     self.fc1.to(device)
-    #     self.relu2.to(device)
-
-    #     self.fc2.to(device)
-
-
-    #     return self
-
+    def parameters(self, recurse = True):
+        print ( "Warning: Downstream parameters not implemented" )
+        return None
+        
     def forward(self, x):
-        # x = self.fc(x)
-        # x = self.relu1(x)
-        # x = self.fc1(x)
-        # x = self.relu2(x)
-        # x = self.fc2(x)
-
+        if self.backbone is not None:
+            x = self.backbone(x)
+            # prende solo il cls token
+            # x = x[:,0,:]
         return x
+    
+    def backbone_forward(self,x):
+        return self.backbone.backbone_forward(x)
+    
+

@@ -11,7 +11,7 @@ class FLModel(nn.Module):
         self.loss = None
         print ( "Optimizer: ", hex(id(self.inner_model.optimizer)))
         self.optimizer = self.inner_model.optimizer
-        self.pretext_task = None
+        # self.pretext_task = None
         self.pretext_train = False
         self.downstream_task = None
 
@@ -33,14 +33,19 @@ class FLModel(nn.Module):
     
     def parameters(self, recurse: bool = True) -> Iterator[nn.Parameter]:
         return self.inner_model.parameters(recurse)
-    
+
     @property
     def pretext_task(self):
         return self.inner_model.pretext_task
     
-    @pretext_task.setter
-    def pretext_task(self, pretext_task):
-        self.inner_model.pretext_task = pretext_task
+
+    @property
+    def pretext_task_name(self):
+        return self.inner_model.pretext_task_name
+    
+    @pretext_task_name.setter
+    def pretext_task_name(self, pretext_task):
+        self.inner_model.pretext_task_name = pretext_task
     
     @property
     def pretext_train(self):
@@ -53,3 +58,10 @@ class FLModel(nn.Module):
     def downstream_task_set(self, new_downstream_task):
         self.downstream_task = new_downstream_task
         self.inner_model.downstream_task = new_downstream_task
+
+    @property
+    def backbone(self):
+        if self.inner_model != None and hasattr(self.inner_model, "backbone"):
+            return self.inner_model.backbone
+        else:
+            return None

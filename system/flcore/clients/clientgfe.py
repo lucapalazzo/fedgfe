@@ -36,7 +36,7 @@ class clientGFE(clientRewind):
         self.dataset = args.dataset
         self.node_data_losses = []
 
-        self.downstream_task = DownstreamClassification(self.model.inner_model.vit.embed_dim, self.num_classes)
+        self.downstream_task = DownstreamClassification(self.model.backbone, num_classes=self.num_classes)
         self.model.downstream_task_set(self.downstream_task)
         # self.downstream_task = SingleLayerClassification(self.model.inner_model.vit.embed_dim, self.num_classes)
         self.downstream_task.to(self.device)
@@ -141,23 +141,25 @@ class clientGFE(clientRewind):
         pbarbatch = None
         num_batches = len(trainloader.dataset)//trainloader.batch_size
 
-
-        self.model.downstream_task_set( self.downstream_task)
-        self.model.pretext_train = True
-
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
         if self.model_optimizer == "AdamW":
             self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
 
-        for pretext_task in self.pretext_tasks:
-            self.model.pretext_task = pretext_task
-            print ( f"Pretext task {pretext_task}")
-            # self.model.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
-            # self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
-            
-            self.freeze_backbone(freeze = False)
+        self.optimizer.add_param_group({'params': self.downstream_task.parameters(), 'lr': self.learning_rate}) 
+        # Call it AFTER the optimizer is created, otherwise the optimizer will already have use pretext_task parameters
 
-            self.optimizer.add_param_group({'params': self.model.inner_model.pretext_head.parameters(), 'lr': self.learning_rate})
+        # self.downstream_task.backbone = self.model.backbone
+        # self.model.downstream_task_set( self.downstream_task)
+        self.model.pretext_train = True
+
+        for pretext_task_name in self.pretext_tasks:
+            self.model.pretext_task_name = pretext_task_name
+            print ( f"Pretext task {pretext_task_name}")
+        
+            self.freeze(freeze = False)
+            # self.downstream_task.backbone = self.model.inner_model
+
+            self.optimizer.add_param_group({'params': self.model.pretext_task.parameters(), 'lr': self.learning_rate})
             
             for step in range(local_epochs):
                 if ( ( self.rewind_strategy == "halfway" or self.rewind_strategy == "interval" or self.rewind_strategy == "atend_pre"  ) and len(self.rewind_previous_node) > 0 ):
@@ -168,6 +170,8 @@ class clientGFE(clientRewind):
                     print ( f"Node {self.id} has no data")
                     return
                 losses = 0
+                downstream_losses = 0
+
                 print ( "Round %d Epoch %d Optimizer: %s " % ( self.round, step, hex(id(self.model.optimizer))), end='')
                 # with tqdm(total=local_epochs, desc=f"Epoch {step+1}/{local_epochs}", unit='epoch') as pbarepoch:
 
@@ -185,28 +189,36 @@ class clientGFE(clientRewind):
                         x = x.to(device)
                         # x= self.transform(x)
                     y = y.to(device)
-                    if self.train_slow:
-                        time.sleep(0.1 * np.abs(np.random.rand()))
                     
                     output = self.model(x).to(device)
                     # output = heads(output)
                     # loss = self.model.loss(output, y).to(device)
-                    loss = self.model.inner_model.loss()
+                    loss = self.model.inner_model.loss( output )
                     losses += loss.item()
 
 
                     self.optimizer.zero_grad()
+                    
                     loss.backward()
+
+                    # downstream_loss = loss
+                    with torch.no_grad():
+                        self.downstream_task.backbone_enabled = True
+                        downstream_output = self.downstream_task(x)
+                        downstream_loss = self.downstream_task.loss ( downstream_output, y)
+                        downstream_losses += downstream_loss.item()
+                        self.downstream_task.backbone_enabled = False
+
                     self.optimizer.step()
 
-                    pbarbatch.set_postfix({'Loss': f'{loss.item():.4f}', 'Epoch': f'{step+1}/{local_epochs}'})
+                    pbarbatch.set_postfix({'Loss': f'{loss.item():.2f}', 'DSLoss': f'{downstream_loss.item():.2f}', 'Epoch': f'{step+1}/{local_epochs}'})
                     pbarbatch.update(1)
                     if ( self.args.limit_samples_number > 0 and i*trainloader.batch_size > self.args.limit_samples_number ):
                         break
 
                 # pbarepoch.update(1)
-                # print ( f": loss {losses/i} ")
-                self.data_log({f"train/node_{self.id}/pretext_train_loss_{self.id}_{pretext_task}": losses/i, "round": self.round})
+                print ( f"loss {losses/i:.2f} downstream loss {downstream_losses/i:2f}")
+                self.data_log({f"train/node_{self.id}/pretext_train_loss_{self.id}_{pretext_task_name}": losses/i, "round": self.round})
 
             pbarbatch.close()
             print()
@@ -215,7 +227,10 @@ class clientGFE(clientRewind):
             backbone_grad = False
             if len(self.pretext_tasks) == 0:
                 print ( f"No pretext task, not freezing backbone parameters")
+                self.freeze(backbone=False, pretext=True, downstream=False)
                 backbone_grad = True
+            else:
+                self.freeze(backbone=True, pretext=True, downstream=False)
 
             
             # if len(self.pretext_tasks) < len(self.optimizer.param_groups):
@@ -228,8 +243,8 @@ class clientGFE(clientRewind):
 
             
             self.model.pretext_train = False
-            self.freeze_backbone(freeze = True)
-            self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
+            # self.freeze(freeze = True)
+            # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
             
             for step in range(local_epochs):
                 pbarbatch = tqdm(total=num_batches, desc=f"Batch ", unit='batch', leave=False)  
@@ -248,7 +263,7 @@ class clientGFE(clientRewind):
                     if self.train_slow:
                         time.sleep(0.1 * np.abs(np.random.rand()))
                     
-                    output = self.model(x).to(device)
+                    output = self.downstream_task(x).to(device)
 
                     self.optimizer.zero_grad()
                     loss = self.downstream_task.loss(output, y).to(device)
@@ -283,10 +298,10 @@ class clientGFE(clientRewind):
 
 
 
-    def freeze_backbone(self, freeze = True):
-        backbone_grad = not freeze
-        pretext_head_grad = backbone_grad
-        downstream_grad = not backbone_grad
+    def freeze(self, backbone = True, pretext = False, downstream = False):
+        backbone_grad = not backbone
+        pretext_head_grad = not pretext
+        downstream_grad = not downstream
 
         print ( f"Freezing backbone parameters {backbone_grad} pretext head {pretext_head_grad} downstream {downstream_grad}")   
         for param in self.model.parameters():

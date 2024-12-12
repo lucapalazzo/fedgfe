@@ -27,8 +27,9 @@ import torch.nn.functional as F
 import numpy as np
 from modelutils.custompatchembedding import CustomPatchEmbed
 from modelutils.patchorderloss import PatchOrderLoss
+from flcore.trainmodel.patchordering import PatchOrdering
 from modelutils.patchmaskloss import PatchMaskLoss
-from flcore.trainmodel.downstream import DownstreamClassification
+
 from timm.models.vision_transformer import Block
 from utils.variablewatcher import VariableWatcher
 from torchvision import transforms
@@ -40,16 +41,32 @@ import math
 
 class VITFC(nn.Module):
 
-    def __init__(self, model, num_classes, pretext_task=None, img_size=224, patch_size=16, mask_ratio=0.15, pretrained=True, in_chans=3, decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,mlp_ratio=4., norm_layer=nn.LayerNorm, downstream_loss=None, debug_images = False):
+    def __init__(self, model, num_classes, pretext_task=None, img_size=224, patch_count=16, patch_size=16, mask_ratio=0.15, pretrained=True, in_chans=3, decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,mlp_ratio=4., norm_layer=nn.LayerNorm, downstream_loss=None, debug_images = False):
         super(VITFC, self).__init__()
+        self.backbone = model
         self.vit = model
+        self.original_head = self.vit.head
+        self.vit.head = nn.Identity()
         self.starting_head = self.vit.head
         self.starting_patch_embed = self.vit.patch_embed
-        self.vit.num_classes = num_classes
+        self.num_classes = num_classes
 
         self.embedding_size = model.embed_dim
-        self.patch_size = patch_size
-        self.num_patches = (img_size // self.patch_size) ** 2
+
+        self.debug_pretext_images = False
+
+        if ( patch_size == -1  and patch_count == -1 ):
+            raise ValueError("At least one of patch_size or patch_count must be defined")
+        elif (patch_size != -1):
+            self.patch_size = patch_size
+            self.num_patches = (img_size // self.patch_size) ** 2
+            self.patch_count = self.num_patches
+        elif (patch_count != -1):
+            self.num_patches = patch_count
+            self.patch_count = patch_count
+            self.patch_size = img_size // int(self.num_patches ** 0.5)
+
+        self.original_patch_embed = self.vit.patch_embed
         self.custom_patch_embed = None
         self.patch_position_predictor = None
         self.custom_order = None
@@ -92,7 +109,9 @@ class VITFC(nn.Module):
 
 
         self.pretext_train = False
-        self.pretext_task = pretext_task
+        self.pretext_task_name = pretext_task
+        self.pretext_tasks = []
+        self.pretext_task = None
         self.pretext_head = None
 
         self.patch_rotation_head = None
@@ -116,7 +135,7 @@ class VITFC(nn.Module):
         return parameters
     
     def prepare_masking(self):
-        if self.pretext_task == "patch_mask":
+        if self.pretext_task_name == "patch_mask":
             self.vit.head = nn.Identity()  # Rimuove il classificatore finale
 
             # Decoder
@@ -130,49 +149,51 @@ class VITFC(nn.Module):
                     for _ in range(self.decoder_depth)
                 ])
                 self.decoder_norm = self.norm_layer(self.decoder_embed_dim)
-                self.decoder_pred = nn.Linear(self.decoder_embed_dim, self.patch_size * self.patch_size * self.in_chans, bias=True)
+                self.decoder_pred = nn.Linear(self.decoder_embed_dim, self.patch_count * self.patch_count * self.in_chans, bias=True)
             self.pretext_loss = PatchMaskLoss(self.num_patches, self.decoder_embed_dim)
             self.pretext_head = self.decoder_pred
-            self.vit.patch_size = self.patch_size
+            self.vit.patch_size = self.patch_count
             self.vit.patch_embed = self.starting_patch_embed
 
 
-    def prepare_patch_ordering(self):
-        if self.custom_patch_embed is None:
-            self.custom_order = np.random.permutation(self.num_patches)
-            # custom_order = list(range(self.num_patches))[::-1]
+    def prepare_patch_ordering(self, device = "cuda"):
+        task = None
+        for pretext_task in self.pretext_tasks:
+            if pretext_task.name == "patch_ordering":
+                task = pretext_task
+        
+        if task is None:
+            task = PatchOrdering(backbone=self.vit, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images)
+            self.pretext_tasks.append(task)
 
-            # Crea il modulo di embedding delle patch personalizzato
-            self.custom_patch_embed = CustomPatchEmbed(
-                img_size=self.img_size,
-                patch_size=self.patch_size,
-                in_channels=3,
-                embed_dim=self.embedding_size,
-                custom_order=self.custom_order
-            )
-            self.custom_patch_embed.to("cuda")
+        
+        # if task.custom_patch_embed is not None:
+        #     self.vit.patch_embed = task.custom_patch_embed
 
-            self.patch_position_predictor = nn.Linear(self.vit.head_hidden_size, self.patch_size)
-        else:
-            self.custom_order = np.random.permutation(self.num_patches)
+        task.custom_order = np.random.permutation(self.num_patches)
+        self.custom_order = torch.Tensor(task.custom_order).to(device)
+        # self.patch_position_predictor = nn.Linear(self.vit.head_hidden_size, self.patch_count)
 
-        self.custom_patch_embed.custom_order = self.custom_order
-        print ( "Patch custom order: ", self.custom_order )
-        self.vit.patch_embed = self.custom_patch_embed
-        self.pretext_head = self.patch_position_predictor
-        self.pretext_loss = PatchOrderLoss(self.num_patches, self.vit.head_hidden_size)
-        self.vit.patch_size = self.patch_size
+        # task.patch_ordering = self.custom_order
+        # task.head_size = self.vit.head_hidden_size
+        # print ( "Patch custom order: ", self.custom_order )
+        # self.vit.patch_embed = self.custom_patch_embed
+        # self.pretext_head = self.patch_position_predictor
+        # self.pretext_loss = PatchOrderLoss(self.num_patches, self.vit.head_hidden_size)
+        # self.vit.head = task.pretext_head
+        self.pretext_loss = task.loss
+        # self.vit.patch_size = self.patch_count
 
-        return self.custom_patch_embed
+        return task
     
     def prepare_patch_rotation(self):
         if self.patch_rotation_head is None:
             num_classes = len(self.rotation_angles) * self.num_patches
             self.patch_rotation_head = nn.Linear(self.vit.embed_dim, num_classes).to("cuda")
         # self.vit.head = self.patch_rotation_head
-        self.pretext_head = self.patch_rotation_head
-        self.head = self.patch_rotation_head 
-        self.vit.patch_embed = self.starting_patch_embed
+        # self.pretext_head = self.patch_rotation_head
+        # self.head = self.patch_rotation_head 
+        # self.vit.patch_embed = self.starting_patch_embed
 
         self.pretext_loss = nn.CrossEntropyLoss()
 
@@ -188,38 +209,49 @@ class VITFC(nn.Module):
         self.pretext_loss = nn.CrossEntropyLoss().to("cuda")
 
 
-    def loss(self):
+    def loss(self, output = None, target = None):
         if self.pretext_train:
-            if self.pretext_task == "patch_mask":
+            if self.pretext_task_name == "patch_mask":
                 loss = self.pretext_loss(self.patches, self.preds, self.mask).to("cuda")
-            if self.pretext_task == "patch_ordering":
-                loss = self.pretext_loss(self.patch_embedding).to("cuda")
-            if self.pretext_task == "patch_rotation":
+            if self.pretext_task_name == "patch_ordering":
+                loss = self.pretext_task.loss(output).to("cuda")
+            if self.pretext_task_name == "patch_rotation":
                 loss = self.pretext_loss(self.output,self.patch_rotation_labels).to("cuda")
-            if self.pretext_task == "image_rotation":
+            if self.pretext_task_name == "image_rotation":
                 loss = self.pretext_loss(self.output,self.image_rotation_labels).to("cuda")
         elif self.downstream_loss is not None:
             loss = self.downstream_loss(self.patch_embedding).to("cuda")
         return loss
 
+
+    def backbone_forward(self, x):
+        return self.backbone(x)
+    
     def forward(self, x):
         self.output = None
         if self.pretext_train:
-            if self.pretext_task == "patch_mask":
+            if self.pretext_task_name == "patch_mask":
                 # if not isinstance(self.pretext_loss, PatchMaskLoss):
                 #     self.prepare_masking()
                 self.output = self.forward_mask(x)
-            elif self.pretext_task == "patch_ordering":
+            elif self.pretext_task_name == "patch_ordering":
                 # if not isinstance(self.pretext_loss, PatchOrderLoss):
                 #     self.custom_patch_embed = self.prepare_patch_ordering()
                 #     self.vit.patch_embed = self.custom_patch_embed
-                self.output =  self.forward_patch_ordering(x)
-            elif self.pretext_task == "patch_rotation":
+
+                # if self.pretext_task.custom_patch_embed is not None and self.vit.patch_embed != self.pretext_task.custom_patch_embed:
+                #     self.vit.patch_embed = self.pretext_task.custom_patch_embed
+                # x = self.pretext_task.preprocess_sample(x)
+                self.output = self._pretext_task(x)
+                # self.output = self._pretext_task(x)
+                # self.output =  self.forward_patch_ordering(x)
+            elif self.pretext_task_name == "patch_rotation":
                 # if not isinstance(self.pretext_loss, PatchOrderLoss):
                 #     self.custom_patch_embed = self.prepare_patch_ordering()
                 #     self.vit.patch_embed = self.custom_patch_embed
+                
                 self.output =  self.forward_patch_rotation(x)
-            elif self.pretext_task == "image_rotation":
+            elif self.pretext_task_name == "image_rotation":
                 self.output =  self.forward_image_rotation(x)
         else: 
             # self.vit.head = self.starting_classifier
@@ -455,11 +487,17 @@ class VITFC(nn.Module):
         self._pretext_train = new_value
         print(f"Pretext training set to: {new_value}")
         if not self._pretext_train:
-            self.vit.head = self.starting_head
-            if self.downstream_task != None:
-                self.vit.head = self.downstream_task
+            # self.vit.head = self.starting_head
+            # if self.downstream_task != None:
+                # self.vit.head = self.downstream_task
             self.loss = self.downstream_loss
+        elif self._pretext_task is not None:
+            print ( f"Setting ViT head to pretext tas {self._pretext_task.name}" )
+            # self.vit.head = self._pretext_task.pretext_head
+        else:
+            print ( "Pretext task not set" )
     
+
 
     @property
     def pretext_task(self):
@@ -469,29 +507,65 @@ class VITFC(nn.Module):
     def pretext_task(self, new_value):
         print ( "Setting pretext task to %s" % new_value )
         self._pretext_task = new_value
-        self.pretext_task_change_callback(new_value)
+     
+    
+    def pretext_task_change_callback(self, new_task):
+        print ( "Setting pretext task to %s" % new_task.name )
 
 
-    def pretext_task_change_callback(self, new_value):
-        self._pretext_task = new_value
+        # if self.vit is not None and self._pretext_train:
+        #     self.vit.head = self._pretext_task.pretext_head
+
+    # @property
+    # def pre_logits(self):
+    #     return self._pre_logits
+    
+    # @pre_logits.setter
+    # def pre_logits(self, new_value):
+    #     print ( "Setting pre_logits to %s" % new_value )
+    #     self.pre_logits_change_callback(new_value)
+
+    # def pre_logits_change_callback(self, new_value):
+    #     self._pre_logits = new_value
+    #     self.vit.pre_logits = new_value
+    #     if self._pre_logits:
+    #         self.vit.head = nn.Identity()
+    #     else:
+    #         self.vit.head = self.starting_head
+
+    @property
+    def pretext_task_name(self):
+        return self._pretext_task_name
+    
+    @pretext_task_name.setter
+    def pretext_task_name(self, new_value):
+        print ( "Setting pretext task to %s" % new_value )
+        self._pretext_task_name = new_value
+        self.pretext_task_name_change_callback(new_value)
+
+
+    def pretext_task_name_change_callback(self, new_value):
+        self._pretext_task_name = new_value
         print(f"Pretext task callback: {new_value}")
-        if self._pretext_task == "patch_mask":
-            self.prepare_masking()
-        elif self._pretext_task == "patch_ordering":
-            self.prepare_patch_ordering()
-        elif self._pretext_task == "patch_rotation":
-            self.prepare_patch_rotation()
-        elif self._pretext_task == "image_rotation":
-            self.prepare_image_rotation()
+        if self._pretext_task_name == "patch_mask":
+            self._pretext_task = self.prepare_masking()
+        elif self._pretext_task_name == "patch_ordering":
+            self._pretext_task = self.prepare_patch_ordering()
+        elif self._pretext_task_name == "patch_rotation":
+            self._pretext_task = self.prepare_patch_rotation()
+        elif self._pretext_task_name == "image_rotation":
+            self._pretext_task = self.prepare_image_rotation()
         else:
             print ( "Pretext task not recognized" )
+            return
+        self.pretext_task_change_callback(self._pretext_task)
 
     def rotate_images(self, imgs):
         B, C, H, W = imgs.shape
 
 
         device = imgs.device
-        num_patches_per_row = H // self.patch_size
+        num_patches_per_row = H // self.patch_count
         num_patches = num_patches_per_row ** 2
         labels = torch.zeros(B, dtype=torch.long, device=device)
         rotated_imgs = torch.zeros_like(imgs).to(imgs.device)
@@ -515,13 +589,13 @@ class VITFC(nn.Module):
         # shuffled_batches = []
 
         # shuffled_batches = patches[:, -1,:][:,order,:]
-        num_patches_per_row = H // self.patch_size
+        num_patches_per_row = H // self.patch_count
         patches = self._patchify(images)
         shuffled_batches = patches[::][:, order, :]
         reconstructed_imgs = []
         self.save_images(images, shuffled_batches, max_saved=1)
         for b in range(shuffled_batches.shape[0]):
-            reconstructed_img = self.reconstruct_image_from_patches(shuffled_batches[b], num_patches_per_row, self.patch_size)
+            reconstructed_img = self.reconstruct_image_from_patches(shuffled_batches[b], num_patches_per_row, self.patch_count)
             
             reconstructed_imgs.append(reconstructed_img)
         #     shuffled_patches = []
@@ -539,15 +613,15 @@ class VITFC(nn.Module):
     def rotate_patches(self, imgs):
         B, C, H, W = imgs.shape
         device = imgs.device
-        num_patches_per_row = H // self.patch_size
+        num_patches_per_row = H // self.patch_count
         num_patches = num_patches_per_row ** 2
         labels = torch.zeros(B, num_patches, dtype=torch.long, device=device)
         rotated_imgs = torch.zeros_like(imgs)
 
         for b in range(B):
             img = imgs[b]
-            patches = img.unfold(1, self.patch_size, self.patch_size).unfold(2, self.patch_size, self.patch_size)
-            patches = patches.contiguous().view(C, -1, self.patch_size, self.patch_size)
+            patches = img.unfold(1, self.patch_count, self.patch_count).unfold(2, self.patch_count, self.patch_count)
+            patches = patches.contiguous().view(C, -1, self.patch_count, self.patch_count)
             rotated_patches = []
             for i, patch in enumerate(patches.transpose(0, 1)):
                 angle = np.random.choice(self.rotation_angles)
@@ -555,14 +629,14 @@ class VITFC(nn.Module):
                 rotated_patches.append(rotated_patch.unsqueeze(0))
                 labels[b, i] = self.rotation_angles.index(angle)
             rotated_patches = torch.cat(rotated_patches, dim=0)
-            reconstructed_img = self.reconstruct_image_from_patches(rotated_patches, num_patches_per_row, self.patch_size)
+            reconstructed_img = self.reconstruct_image_from_patches(rotated_patches, num_patches_per_row, self.patch_count)
             rotated_imgs[b] = reconstructed_img
 
         return rotated_imgs, labels
     
     def _patchify(self, x):
         """Divide l'immagine in patch."""
-        p = self.patch_size
+        p = self.patch_count
         batch_size, channels, img_h, img_w = x.shape
         patches = x.unfold(2, p, p).unfold(3, p, p)
         patches = patches.contiguous().view(batch_size, channels, -1, p, p)
@@ -583,13 +657,13 @@ class VITFC(nn.Module):
 
             B, C, H, W = images.shape
             # saved_order = np.random(0, ) 
-            num_patches_per_row = H // self.patch_size
+            num_patches_per_row = H // self.patch_count
             recontructed_patches = []
             count = 0
             for batch_id in range(B):
                 reconstructed = patches[batch_id]
                 if ( patches[batch_id].shape[1] != images[batch_id].shape[1] ):
-                    reconstructed = self.reconstruct_image_from_patches(patches[batch_id], num_patches_per_row, self.patch_size)
+                    reconstructed = self.reconstruct_image_from_patches(patches[batch_id], num_patches_per_row, self.patch_count)
                 output_filename = os.path.join(self.image_output_directory, f"reconstructed_{batch_id}.png")
                 save_grid_images([images[batch_id], reconstructed], nrow=2, output_path=output_filename)
                 recontructed_patches.append(reconstructed)

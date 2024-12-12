@@ -1,21 +1,33 @@
-from flcore.trainmodel.downstream import DownstreamClassification
+from flcore.trainmodel.downstream import Downstream
 import torch.nn as nn
 
-class DownstreamClassification (nn.Module):
-    def __init__(self, input_dim, output_dim):
-        super(DownstreamClassification, self).__init__()
+class DownstreamClassification (Downstream):
+    def __init__(self, backbone, num_classes=10):
+        super(DownstreamClassification, self).__init__(backbone)
 
-        self.fc = nn.Linear(input_dim, 512)
-        self.relu1 = nn.ReLU()
-        self.fc1 = nn.Linear(512, 64)
-        self.relu2 = nn.ReLU()
-        self.fc2 = nn.Linear(64, output_dim)
+        input_dim = backbone.embed_dim
+        output_dim = num_classes
+
+        self.downstream_head = nn.Sequential(
+            nn.Linear(input_dim, 512),
+            nn.ReLU(),
+            nn.Linear(512, 64),
+            nn.ReLU(),
+            nn.Linear(64, output_dim)
+        )
+
+        self.loss = nn.CrossEntropyLoss()
+    
+    def parameters(self, recurse=True):
+        moduleList = nn.ModuleList()
+        moduleList.add_module("downstream_head", self.downstream_head)
+        return moduleList.parameters(recurse)
 
     def forward(self, x):
-        x = self.fc(x)
-        x = self.relu1(x)
-        x = self.fc1(x)
-        x = self.relu2(x)
-        x = self.fc2(x)
+        x = super().forward(x)
+        x = self.downstream_head(x)
 
         return x
+    
+    def backbone_forward(self, x):
+        return super().backbone_forward(x)
