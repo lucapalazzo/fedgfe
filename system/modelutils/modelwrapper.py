@@ -24,6 +24,12 @@ class FLModel(nn.Module):
         output = self.inner_model(x)
         return output
     
+    def loss(self, x, Y = None):
+        return self.inner_model.loss(x, Y)
+    
+    def accuracy(self, x, Y = None):
+        return self.inner_model.accuracy(x, Y)
+    
     def train(self):
         self.inner_model.pretext_train = self.pretext_train
         return self.inner_model.train()

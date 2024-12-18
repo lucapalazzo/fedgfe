@@ -193,7 +193,7 @@ class clientGFE(clientRewind):
                     output = self.model(x).to(device)
                     # output = heads(output)
                     # loss = self.model.loss(output, y).to(device)
-                    loss = self.model.inner_model.loss( output )
+                    loss = self.model.loss( output, y )
                     losses += loss.item()
 
 
@@ -222,6 +222,21 @@ class clientGFE(clientRewind):
 
             pbarbatch.close()
             print()
+
+            print ( "Calculating pretext task accuracy")
+            testloader = self.load_test_data()
+            for i, (x, y) in enumerate(testloader):
+                if type(x) == type([]):
+                    x[0] = x[0].to(device)
+                    # x[0] = self.transform(x[0])https://www.federbridge.it/Simultanei/Classifica.asp?simdate=18/12/2024&simcode=NSTNFIGB1
+                else:
+                    x = x.to(device)
+                    # x= self.transform(x)
+                y = y.to(device)
+                output = self.model(x)
+                pretext_accuracy = self.model.accuracy(output)
+                print ( f"Pretext accuracy {pretext_accuracy}")
+                break
 
         if self.downstream_task != None:
             backbone_grad = False

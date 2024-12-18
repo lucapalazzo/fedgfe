@@ -7,7 +7,7 @@ class PretextTask (nn.Module):
     def __init__(self, backbone=None, input_dim = 768, output_dim = 768, debug_images=False, image_output_directory = 'output_images', embedding_size = 768, img_size=224, patch_size=-1, patch_count = -1):
         super(PretextTask, self).__init__()
 
-
+        self.img_size = img_size
         if ( patch_size == -1  and patch_count == -1 ):
             raise ValueError("At least one of patch_size or patch_count must be defined")
         elif (patch_size != -1):
@@ -19,6 +19,8 @@ class PretextTask (nn.Module):
             self.patch_count = patch_count
             self.patch_size = img_size // int(self.num_patches ** 0.5)
 
+        self.patch_count_per_row = int(self.img_size / self.patch_size)
+
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.backbone = backbone
@@ -27,7 +29,8 @@ class PretextTask (nn.Module):
         self.head = None
         self.img_size = img_size
         self.embedding_size = embedding_size
-        self.custom_patch_embed = None
+        self.output_dim = output_dim
+        self.input_dim = input_dim
         self.pretext_head = nn.Identity()
 
 
@@ -41,7 +44,10 @@ class PretextTask (nn.Module):
     def loss(self, x):
         print ( "Pretext loss not implemented" )
         return x
-    
+
+    def pretext_accuracy(self, x):
+        print ( "Pretext accuracy not implemented" )
+        return x 
 
     def reconstruct_image_from_patches(self, patches, num_patches_per_row, patch_size):
         C = patches.shape[1]

@@ -106,12 +106,12 @@
                      "--dataset_image_size", "224",
                      "--model_pretrain",
                     //  "--embedding_size", "64",
-                    //  "--nodes_pretext_tasks", "patch_ordering",
-                    //  "--nodes_pretext_tasks", "patch_rotation",
+                    //  "--nodes_pretext_tasks", "image_rotation",
+                    //  "--nodes_pretext_tasks", "patch_masking",
                     //  "--nodes_pretext_tasks", "image_rotation,patch_rotation,patch_ordering,patch_mask",
                     // "--no_downstream_task",
                      "--patch_size", "56",
-                    //  "--debug_pretext_images",
+                     "--debug_pretext_images",
                     //  "--limit_samples", "1000"
 //                    , "-go", "${inputs:experimentName"
                 ],
