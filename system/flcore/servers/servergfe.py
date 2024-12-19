@@ -35,8 +35,8 @@ class FedGFE(FedRewind):
         else:
             self.pretext_tasks = list(filter(len,self.args.nodes_pretext_tasks.split(",")))
 
-        self.nodes_datasets = self.args.nodes_datasets.split(",")
-        self.nodes_downstream_tasks = self.args.nodes_downstream_tasks.split(",")
+        self.nodes_datasets = self.args.dataset.split(":")
+        self.nodes_downstream_tasks = self.args.nodes_downstream_tasks.split(":")
 
         self.rewind_ratio = args.rewind_ratio
         self.rewind_epochs = args.rewind_epochs
@@ -221,15 +221,15 @@ class FedGFE(FedRewind):
         #     client.save_model()
         # print("\nBest accuracy.")
         
-        for test_client in self.clients:
-            if not self.no_wandb:
-                wandb.define_metric(f"node_acc_{test_client.id}", step_metric="node")
-            for dest_client in self.clients:
-                if ( test_client.id != dest_client.id):
-                    acc, test_num, auc, y_true, y_prob = test_client.test_metrics_other(dest_client)
-                    round_acc = acc/test_num
-                    self.data_log({f"node_acc_{test_client.id}": round_acc, "node": dest_client.id})
-                    print("Accuracy of nodes %d model on node %d: %02f" % (test_client.id, dest_client.id, round_acc ))
+        # for test_client in self.clients:
+        #     if not self.no_wandb:
+        #         wandb.define_metric(f"node_acc_{test_client.id}", step_metric="node")
+        #     for dest_client in self.clients:
+        #         if ( test_client.id != dest_client.id):
+        #             acc, test_num, auc, y_true, y_prob = test_client.test_metrics_other(dest_client)
+        #             round_acc = acc/test_num
+        #             self.data_log({f"node_acc_{test_client.id}": round_acc, "node": dest_client.id})
+        #             print("Accuracy of nodes %d model on node %d: %02f" % (test_client.id, dest_client.id, round_acc ))
         # self.print_(max(self.rs_test_acc), max(
         #     self.rs_train_acc), min(self.rs_train_loss))
         # print(max(self.rs_test_acc))
@@ -323,9 +323,12 @@ class FedGFE(FedRewind):
         # n_weak = 0
         gpus = cycle(self.gpus)
 
+        datasets = cycle(self.nodes_datasets)
+
         # for i, train_slow, send_slow in zip(range(self.num_clients), self.train_slow_clients, self.send_slow_clients):
         for i, train_slow, send_slow in zip(range(self.num_clients), self.train_slow_clients, self.send_slow_clients):
-            
+
+            dataset = next(datasets) 
             file_prefix = ""
             # if i != 2 and i != 3:
             # if i != 2:
@@ -339,6 +342,7 @@ class FedGFE(FedRewind):
 
             client = clientObj(self.args, 
                             model_id=i, 
+                            dataset=dataset,
                             train_samples=train_data_len, 
                             test_samples=test_data_len, 
                             train_slow=train_slow, 

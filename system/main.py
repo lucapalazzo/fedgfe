@@ -639,6 +639,8 @@ if __name__ == "__main__":
     parser.add_argument('-es', '--embedding_size', type=int, default=768, help="embedding size for transformer")
     parser.add_argument('-ps', '--patch_size', type=int, default=16, help="patch size for transformer")
     parser.add_argument('-lsn', '--limit_samples_number', type=int, default=0, help="Limit the first n samples for each node")
+    parser.add_argument('-dst', '--downstream_tasks', type=str, default="classification", help="Downsteam tasks list")
+    parser.add_argument('-dslo', '--downstream_loss_operation', type=str, default="none", help="Operation for pretext task loss")
     parser.add_argument('-dpti', '--debug_pretext_images', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Save images after pretext tasks")
 
 

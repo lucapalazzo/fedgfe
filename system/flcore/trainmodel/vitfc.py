@@ -46,7 +46,7 @@ import math
 
 class VITFC(nn.Module):
 
-    def __init__(self, model, num_classes, pretext_task=None, img_size=224, patch_count=16, patch_size=16, mask_ratio=0.15, pretrained=True, in_chans=3, decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,mlp_ratio=4., norm_layer=nn.LayerNorm, downstream_loss=None, debug_images = False):
+    def __init__(self, model, num_classes, pretext_task=None, downstream_task = None, img_size=224, patch_count=16, patch_size=16, mask_ratio=0.15, pretrained=True, in_chans=3, decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,mlp_ratio=4., norm_layer=nn.LayerNorm, downstream_loss=None, debug_images = False):
         super(VITFC, self).__init__()
         self.backbone = model
         self.vit = model
@@ -267,7 +267,7 @@ class VITFC(nn.Module):
                 self.output =  self._pretext_task(x)
         else: 
             # self.vit.head = self.starting_classifier
-            self.output = self.forward_classify(x)
+            self.output = self.downstream_task(x)
         return self.output
     
     def forward_image_rotation(self, x):

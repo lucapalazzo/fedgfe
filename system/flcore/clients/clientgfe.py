@@ -22,7 +22,7 @@ from flcore.trainmodel.singlelayerclassification import SingleLayerClassificatio
 from tqdm import tqdm
 
 class clientGFE(clientRewind):
-    def __init__(self, args, model_id, train_samples, test_samples,is_strong = False, id_by_type=-1, rewind_epochs = 0, rewind_interval = 0, rewind_ratio = 0, pretext_tasks = [], **kwargs):
+    def __init__(self, args, model_id, train_samples, test_samples, dataset = None, is_strong = False, id_by_type=-1, rewind_epochs = 0, rewind_interval = 0, rewind_ratio = 0, pretext_tasks = [], **kwargs):
         super().__init__(args, model_id, train_samples, test_samples, **kwargs)
 
         self.node_routes = []
@@ -33,11 +33,19 @@ class clientGFE(clientRewind):
         self.train_dataloader = None
         self.test_dataloader = None
 
-        self.dataset = args.dataset
+        if dataset != None:
+            self.dataset = dataset
+        else:
+            self.dataset = args.dataset
+        
+        self.node_data.dataset = self.dataset
+        self.node_data.id = 0
         self.node_data_losses = []
 
         self.downstream_task = DownstreamClassification(self.model.backbone, num_classes=self.num_classes)
         self.model.downstream_task_set(self.downstream_task)
+        self.downstream_tasks = args.downstream_tasks
+        self.downstream_loss_operation = args.downstream_loss_operation
         # self.downstream_task = SingleLayerClassification(self.model.inner_model.vit.embed_dim, self.num_classes)
         self.downstream_task.to(self.device)
         self.downstream_task.loss = nn.CrossEntropyLoss()
@@ -197,9 +205,7 @@ class clientGFE(clientRewind):
                     losses += loss.item()
 
 
-                    self.optimizer.zero_grad()
                     
-                    loss.backward()
 
                     # downstream_loss = loss
                     with torch.no_grad():
@@ -208,6 +214,14 @@ class clientGFE(clientRewind):
                         downstream_loss = self.downstream_task.loss ( downstream_output, y)
                         downstream_losses += downstream_loss.item()
                         self.downstream_task.backbone_enabled = False
+
+                    self.optimizer.zero_grad()
+
+                    summed_loss = loss
+                    if self.downstream_loss_operation == "sum":
+                        summed_loss = loss + downstream_loss
+                    
+                    summed_loss.backward()
 
                     self.optimizer.step()
 
