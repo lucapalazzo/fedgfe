@@ -208,12 +208,12 @@ class clientGFE(clientRewind):
                     
 
                     # downstream_loss = loss
-                    with torch.no_grad():
-                        self.downstream_task.backbone_enabled = True
-                        downstream_output = self.downstream_task(x)
-                        downstream_loss = self.downstream_task.loss ( downstream_output, y)
-                        downstream_losses += downstream_loss.item()
-                        self.downstream_task.backbone_enabled = False
+                    # with torch.no_grad():
+                    self.downstream_task.backbone_enabled = True
+                    downstream_output = self.downstream_task(x)
+                    downstream_loss = self.downstream_task.loss ( downstream_output, y)
+                    downstream_losses += downstream_loss.item()
+                    self.downstream_task.backbone_enabled = False
 
                     self.optimizer.zero_grad()
 
