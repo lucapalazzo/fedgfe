@@ -210,6 +210,10 @@ class FedGFE(FedRewind):
             if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], top_cnt=self.top_cnt):
                 break
 
+            self.receive_models()
+            self.aggregate_parameters()
+            self.send_models()
+
             self.save_checkpoint()
 
 
@@ -240,77 +244,42 @@ class FedGFE(FedRewind):
         self.save_results()
         wandb.finish()
 
-    def get_routes ( self, clients = None):
-        if clients is None:
-            clients = self.clients
+    def receive_models(self):
+        assert (len(self.selected_clients) > 0)
 
-        routing_clients = [client for client in self.clients]
-        check_clients = [client for client in self.clients]
-        random.shuffle(check_clients)
-        routes = np.array([c.id for c in clients])
-        for client in check_clients:
-            client_next_route = client.route( available_clients = routing_clients)
-            if client_next_route == -1:
-                print("Error: client_next_route is -1, keeping model on current node")
-                client_next_route = client.id
-            routes[client.id] = client_next_route
-            routing_clients.remove(self.clients[client_next_route])
+        active_clients = random.sample(
+            self.selected_clients, int((1-self.client_drop_rate) * self.current_num_join_clients))
 
-        return routes
-
-
+        self.uploaded_ids = []
+        self.uploaded_weights = []
+        self.uploaded_models = []
+        tot_samples = 0
+        for client in active_clients:
+            try:
+                client_time_cost = client.train_time_cost['total_cost'] / client.train_time_cost['num_rounds'] + \
+                        client.send_time_cost['total_cost'] / client.send_time_cost['num_rounds']
+            except ZeroDivisionError:
+                client_time_cost = 0
+            if client_time_cost <= self.time_threthold:
+                tot_samples += client.train_samples
+                self.uploaded_ids.append(client.id)
+                self.uploaded_weights.append(client.train_samples)
+                self.uploaded_models.append(client.model.backbone)
+        for i, w in enumerate(self.uploaded_weights):
+            self.uploaded_weights[i] = w / tot_samples
     
-    def dump_routes ( self, routes ):
-        print ( "Routes: ", end="")
-        for node in routes:
-            next_node = routes[node]
-            orig_node_train_model_id = self.clients[next_node].starting_model.id
-            orig_node_train_model = self.clients[next_node].starting_model.inner_model
-            orig_node_train_optimizer = self.clients[next_node].starting_model.optimizer
-            next_node_train_model_id = self.clients[next_node].next_train_model_id
-            next_node_train_model = self.clients[next_node].next_train_model.inner_model
-            next_node_train_optimizer = self.clients[next_node].next_train_model.optimizer
-            orig_model_id = self.clients[next_node_train_model_id].id
-            orig_model = self.clients[next_node_train_model_id].starting_model.inner_model
-            print ( "%d->%d " % (node, next_node), end="")
-            if ( self.rewind_epochs or self.rewind_ratio) and len(self.clients[next_node].rewind_previous_node_id) > 0:
-                print ( "(>%d) " % (self.clients[next_node].rewind_previous_node_id[-1]), end="")
-            # print ( "Orig Node training model id %d %s original id %d %s optim %s" % ( node, hex(id(orig_node_train_model) ), orig_node_train_model_id, hex(id(orig_model)), hex(id(orig_node_train_optimizer)) ) )
-            # print ( "Next node training model id %d %s original id %d %s optim %s" % ( next_node, hex(id(next_node_train_model) ), next_node_train_model_id, hex(id(orig_model)), hex(id(next_node_train_optimizer)) ) )
-        print()
+    def send_models(self):
+        assert (len(self.clients) > 0)
 
-    def distribute_routes (self, routes ):
-        if routes is None:
-            routes = self.routes
-
-        for node in range(len(routes)):
-            next_node = routes[node]
-            previous_node = node
-            next_client = None
-            for next_client in self.clients:
-                if next_node == next_client.id:
-                    break
-            if next_client == None:
-                print("Error: next client not found")
-                continue
-            next_client.rewind_previous_node_id.append(previous_node)
-            for c in self.clients:
-                if previous_node == c.id:
-                    next_client.rewind_previous_node.append(c)
-                    break
-            # next_client.rewind_previous_node.append(self.clients[previous_node])
-            for client in self.clients:
-                if node == client.id:
-                    client.node_routes.append(next_node)
-                    break
-            if self.rewind_rotate:
-                next_client.next_train_model = client.train_model
-                next_client.next_train_model_id = client.train_model_id
-                # print ( "Node %d model will be sent to %d and will rewind back to node %d" % (node, next_node, previous_node ) )
-        
         for client in self.clients:
-            client.model = client.next_train_model
-            
+            start_time = time.time()
+
+            print ( hex(id(client.model)), client.id, hex(id(client.model.backbone)) ) 
+            client.set_parameters(self.global_model)
+
+            client.send_time_cost['num_rounds'] += 1
+            client.send_time_cost['total_cost'] += 2 * (time.time() - start_time)
+
     def client_round_ending_hook(self, client):
 
         round_loss, previous_loss = self.round_train_metrics( client )

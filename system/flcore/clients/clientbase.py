@@ -134,22 +134,16 @@ class Client(object):
     def load_train_data(self, batch_size=None,dataset_limit=0):
         if batch_size == None:
             batch_size = self.batch_size
-        return self.node_data.load_train_data(batch_size, dataset_limit)
-        if self.train_data == None:
-            print("Loading train data for client %d" % self.id)
-            self.train_data = read_client_data(self.dataset, self.id, is_train=True,dataset_limit=dataset_limit)
-            self.train_samples = len(self.train_data)
-        return DataLoader(self.train_data, batch_size, drop_last=True, shuffle=True)
-
+        loader = self.node_data.load_train_data(batch_size, dataset_limit)
+        self.train_samples = len(self.node_data.train_data)
+        return loader
+     
     def load_test_data(self, batch_size=None,dataset_limit=0):
         if batch_size == None:
             batch_size = self.batch_size
-        return self.node_data.load_test_data(batch_size, dataset_limit)
-        if self.test_data == None:
-            print("Loading test data for client %d" % self.id)
-            self.test_data = read_client_data(self.dataset, self.id, is_train=False,dataset_limit=dataset_limit)
-            self.test_samples = len(self.test_data)
-        return DataLoader(self.test_data, batch_size, drop_last=False, shuffle=True)
+        loader = self.node_data.load_test_data(batch_size, dataset_limit)
+        self.test_samples = len(self.node_data.test_data)
+        return loader
         
     def set_parameters(self, model):
         for new_param, old_param in zip(model.parameters(), self.model.parameters()):

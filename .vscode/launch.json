@@ -99,7 +99,43 @@
                      "-nc", "2",
                      "-nb", "10",
                      "--batch_size","64",
-                     "--local_epochs", "3",
+                     "--local_epochs", "1",
+                     "-lr", "0.0001",
+                     "-lam", "0.1",
+                     "--no_wandb",
+                     "--dataset_image_size", "224",
+                     "--model_pretrain",
+                    //  "--embedding_size", "64",
+                     "--nodes_pretext_tasks", "image_rotation",
+                    //  "--nodes_pretext_tasks", "patch_masking",
+                    //  "--nodes_pretext_tasks", "image_rotation,patch_rotation,patch_ordering,patch_mask",
+                    // "--no_downstream_task",
+                     "--patch_size", "56",
+                    //  "--debug_pretext_images",
+                     "--limit_samples", "1000",
+                    //  "--downstream_loss_operation", "sum"
+//                    , "-go", "${inputs:experimentName"
+                ],
+
+        },
+        {
+            "name": "fedfge JSRT-1C",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": ["-data", "JSRT-1C:ChestXRay-nIID-1C",
+                     "-m", "vit",
+                     "-algo", "FedGFE",
+                     "--global_rounds", "100",
+                     "-did", "0",
+                     "-go", "prova",
+                     "-nc", "2",
+                     "-nb", "3",
+                     "--batch_size","64",
+                     "--local_epochs", "10",
                      "-lr", "0.0001",
                      "-lam", "0.1",
                      "--no_wandb",
@@ -113,7 +149,7 @@
                      "--patch_size", "56",
                     //  "--debug_pretext_images",
                     //  "--limit_samples", "1000",
-                     "--downstream_loss_operation", "sum"
+                    "--downstream_loss_operation", "sum"
 //                    , "-go", "${inputs:experimentName"
                 ],
 
@@ -660,6 +696,29 @@
                      "--dataset_balance",
                      "--dataset_dir_alpha", "0.5",
                      "--num_classes_per_client", "10"
+                     //                    , "-go", "${inputs:experimentName"
+                ],
+        },
+        {
+            "name": "JSRT XRay Generate 1N",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["-data", "JSRT",
+                     "-nc", "1",
+                     "--dataset_generate",
+                    //  "-dids", "0,1",
+                    //  "-dsbalance",
+                    //  "--dataset_niid",
+                     "--dataset_outdir", "JSRT-1C",
+                     // "--dataset_partition", "dir",
+                     "--dataset_balance",
+                     "--dataset_image_size", "224",
+                    //  "--dataset_dir_alpha", "0.5",
+                    //  "--num_classes_per_client", "10"
                      //                    , "-go", "${inputs:experimentName"
                 ],
         },

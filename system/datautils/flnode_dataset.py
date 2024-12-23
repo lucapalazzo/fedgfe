@@ -29,8 +29,8 @@ class FLNodeDataset(Dataset):
         label = self.data[idx][1].to(self.device)
         if data.shape[0] > 3:
             data = data.moveaxis(2,0)
-        sample_transforms = len(self.transform.transforms)
         if self.transform != None:
+            sample_transforms = len(self.transform.transforms)
             if data.shape[2] != self.transform.transforms[sample_transforms-1].size[0]:
                 # print ( "Transforming sample ", idx, " with shape ", data.shape)
                 # data = data.to('cpu')

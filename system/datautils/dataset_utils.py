@@ -68,6 +68,8 @@ def separate_data(data, num_clients, num_classes, niid=False, balance=False, par
         class_per_client = num_classes
 
     if partition == 'pat':
+        # get dataset_label dimensions
+        dimensions = len(dataset_label.shape)
         idxs = np.array(range(len(dataset_label)))
         idx_for_each_class = []
         for i in range(num_classes):

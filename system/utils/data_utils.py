@@ -20,9 +20,9 @@ import os
 import torch
 
 
-def read_data(dataset, idx, is_train=True, prefix="",dataset_limit=0):
+def read_data(dataset, idx, is_train=True, prefix="",dataset_dir_prefix= "", dataset_limit=0):
     if is_train:
-        train_data_dir = os.path.join('dataset', dataset, 'train/')
+        train_data_dir = os.path.join(dataset_dir_prefix, 'dataset', dataset, 'train/')
         train_file = train_data_dir + prefix + str(idx) + '.npz'
 
         if os.path.isfile(train_file) != True:
@@ -51,14 +51,14 @@ def read_data(dataset, idx, is_train=True, prefix="",dataset_limit=0):
         return test_data
 
 
-def read_client_data(dataset, idx, is_train=True, prefix="",dataset_limit=0):
+def read_client_data(dataset, idx, is_train=True, prefix="",dataset_dir_prefix= "",dataset_limit=0):
     if dataset[:2] == "ag" or dataset[:2] == "SS":
         return read_client_data_text(dataset, idx, is_train)
     elif dataset[:2] == "sh":
         return read_client_data_shakespeare(dataset, idx)
 
     if is_train:
-        train_data = read_data(dataset, idx, is_train, prefix,dataset_limit=dataset_limit)
+        train_data = read_data(dataset, idx, is_train, prefix,dataset_dir_prefix=dataset_dir_prefix,dataset_limit=dataset_limit)
         if train_data is None:
             return None
         X_train = torch.Tensor(train_data['x']).type(torch.float32)

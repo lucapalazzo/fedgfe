@@ -3,6 +3,7 @@ from datautils.generate_cifar10 import generate_cifar10
 from datautils.generate_mnist import generate_mnist
 from datautils.generate_cifar100 import generate_cifar100
 from datautils.generate_chestxray import generate_chestxray
+from datautils.generate_jsrt import generate_jsrt
 
 
 def dataset_generate ( args ):
@@ -26,6 +27,12 @@ def dataset_generate ( args ):
         if ( args.dataset_outdir != None ):
             outdir = 'dataset/' + args.dataset_outdir + '/'
         generate_chestxray( args, outdir, args.num_clients, 100, args.dataset_niid, args.dataset_balance, args.dataset_partition, args.dataset_dir_alpha, class_per_client=args.num_classes_per_client)
+    elif args.dataset == "JSRT":
+        outdir = 'dataset/JSRT/'
+        if ( args.dataset_outdir != None ):
+            outdir = 'dataset/' + args.dataset_outdir + '/'
+        generate_jsrt( args, outdir, args.num_clients, 100, args.dataset_niid, args.dataset_balance, args.dataset_partition, args.dataset_dir_alpha, class_per_client=args.num_classes_per_client)
+    
     # else:
     #     generate_synthetic('dataset/synthetic/', args.num_clients, 10, args.niid)
     sys.exit(0)

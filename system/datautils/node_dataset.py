@@ -31,10 +31,10 @@ class NodeData():
             self.test_dataset.to(device)
         return self
     
-    def load_train_data(self, batch_size, dataset_limit=0):
+    def load_train_data(self, batch_size, dataset_limit=0, prefix = "",dataset_dir_prefix= ""):
         if self.train_data == None:
             print("Loading train data for client %d" % self.id)
-            self.train_data = read_client_data(self.dataset, self.id, is_train=True,dataset_limit=dataset_limit)
+            self.train_data = read_client_data(self.dataset, self.id, is_train=True,dataset_limit=dataset_limit, prefix=prefix, dataset_dir_prefix=dataset_dir_prefix)
             if self.train_data == None:
                 return None
             memory_footprint = 0
@@ -45,10 +45,10 @@ class NodeData():
         self.train_dataset = FLNodeDataset(self.train_data, transform=self.transform, target_transform=self.target_transform, device=self.device)
         return DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
    
-    def load_test_data(self, batch_size, dataset_limit=0):
+    def load_test_data(self, batch_size, dataset_limit=0,dataset_dir_prefix= ""):
         if self.test_data == None:
             print("Loading test data for client %d" % self.id)
-            self.test_data = read_client_data(self.dataset, self.id, is_train=False,dataset_limit=dataset_limit)
+            self.test_data = read_client_data(self.dataset, self.id, is_train=False,dataset_limit=dataset_limit, dataset_dir_prefix=dataset_dir_prefix)
             if self.test_data == None:
                 return None
             memory_footprint = 0
