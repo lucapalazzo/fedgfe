@@ -198,7 +198,7 @@ class clientGFE(clientRewind):
                         # x= self.transform(x)
                     y = y.to(device)
                     
-                    output = self.model(x).to(device)
+                    output = self.model(x)
                     # output = heads(output)
                     # loss = self.model.loss(output, y).to(device)
                     loss = self.model.loss( output, y )

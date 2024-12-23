@@ -369,6 +369,8 @@ class FedGFE(FedRewind):
             wandb.define_metric(f"train/node_{client.id}/round_train_loss_{client.id}", step_metric="round")
             for pretext_task in self.pretext_tasks:
                 wandb.define_metric(f"train/node_{client.id}/pretext_train_loss_{client.id}_{pretext_task}", step_metric="round")
+            for other_client in self.clients:
+                wandb.define_metric(f"test/node_{client.model.id}/round_test_acc_{client.model.id}_on_{other_client.model.id}", step_metric="round")
 
     def evaluate(self):
         super().evaluate()
@@ -585,19 +587,19 @@ class FedGFE(FedRewind):
     def round_test_metrics_models (self, client, ignore_last = True, on_train = False):
         accuracies = []
         for test_client in self.clients:
-            if ( test_client.node_data.id != client.node_data.id or ignore_last == False ):
-                acc, test_num, auc, y_true, y_prob = client.test_metrics(test_client, on_train = on_train)
-                if test_num == 0:
-                    continue
-                round_acc = acc/test_num
-                other_accuracy = { 'node_dataset': test_client.node_data.id, 'accuracy': round_acc }
-                accuracies.append(other_accuracy)
-                # print("Node's model %d accuracy dataset %d: %02f" % (client.id, test_client.id, round_acc )) 
-                if  not self.no_wandb:
-                    wandb.log({f'test/node_{client.model.id}/round_test_acc_{client.model.id}_on_{test_client.node_data.id}': round_acc, 'round': self.round } )
-                # if previous_node != None:
-                #     client.rewind_previous_node_loss.append(previous_loss)
-                #     print("Previous node %d loss %02f" % ( previous_node.id, previous_loss))
+            # if ( test_client.node_data.id != client.node_data.id or ignore_last == False ):
+            acc, test_num, auc, y_true, y_prob = client.test_metrics(test_client, on_train = on_train)
+            if test_num == 0:
+                continue
+            round_acc = acc/test_num
+            other_accuracy = { 'node_dataset': test_client.id, 'accuracy': round_acc }
+            accuracies.append(other_accuracy)
+            # print("Node's model %d accuracy dataset %d: %02f" % (client.id, test_client.id, round_acc )) 
+            if  not self.no_wandb:
+                wandb.log({f'test/node_{client.model.id}/round_test_acc_{client.model.id}_on_{test_client.model.id}': round_acc, 'round': self.round } )
+            # if previous_node != None:
+            #     client.rewind_previous_node_loss.append(previous_loss)
+            #     print("Previous node %d loss %02f" % ( previous_node.id, previous_loss))
         return accuracies
 
             

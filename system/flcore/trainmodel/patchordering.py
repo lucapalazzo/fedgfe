@@ -17,7 +17,11 @@ class PatchOrdering (PatchPretextTask):
         self.custom_order = self.patch_order_create()
         # self.loss = PatchOrderLoss(self.num_patches, self.head_hidden_size)
         self.pretext_loss = nn.CrossEntropyLoss()
-        self.pretext_head = nn.Sequential( nn.Linear(output_dim, self.patch_count) ).to(self.device)
+        # self.pretext_head = nn.Sequential( nn.Linear(output_dim, self.patch_count) ).to(self.device)
+        self.pretext_head = nn.ModuleList(
+            nn.Linear(output_dim, self.patch_count) for _ in range(patch_count)
+        ).to(self.device)
+
 
         # self.custom_patch_embed = CustomPatchEmbed(
         #     img_size=self.img_size,
@@ -42,16 +46,40 @@ class PatchOrdering (PatchPretextTask):
         images, self.image_ordering_labels = self.shuffle_patches(x,self.custom_order)
         return images
     
+    def accuracy(self, x, y = None):
+        targets = torch.tensor(self.custom_order).long().to(self.device)
+        return 0
+        for output in x:
+            accuracy = (output.argmax(dim=1) == targets).float()
+        return (x.argmax(dim=1) == targets).float
+
     def loss(self, x, y = None):
-        target = torch.tensor(self.custom_order).float().to(x.device)
-        target = target.unsqueeze(0).expand(x.shape[0],-1)
-        return self.pretext_loss(x, target)
+        # targets = torch.tensor(self.custom_order).float().to(self.device)
+        targets = torch.tensor(self.custom_order).to(self.device)
+
+        targets = targets.unsqueeze(0).expand(x[0].shape[0],-1)
+        criterions = [self.pretext_loss for _ in range(self.patch_count)]
+
+        # for criterion, output in zip(criterions, x):
+        #     print(f"output: {output.shape}, target: {targets.shape}")
+        #     loss = criterion(output, targets)
+        #     print(f"loss: {loss}")
+        patches = range(self.patch_count)
+        losses = [criterion(output, targets[:,patch]) for patch, criterion, output in zip(patches,criterions, x)]
+
+        loss = sum(losses)
+        return loss
+        return self.pretext_loss(x, targets)
     
     def forward(self, x):
         x = self.preprocess_sample(x)
         if self.backbone is not None:
             # self.backbone.logits_only = True
             x = self.backbone(x)
+
+        predictions = [classifier(x) for classifier in self.pretext_head]
+        return predictions 
+        
         return self.pretext_head(x)
     
     def patch_order_create ( self, random_order = True):
