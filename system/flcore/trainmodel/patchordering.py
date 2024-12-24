@@ -22,6 +22,9 @@ class PatchOrdering (PatchPretextTask):
             nn.Linear(output_dim, self.patch_count) for _ in range(patch_count)
         ).to(self.device)
 
+        self.heads_loss = [self.pretext_loss for _ in range(self.patch_count)]
+
+
 
         # self.custom_patch_embed = CustomPatchEmbed(
         #     img_size=self.img_size,
@@ -47,8 +50,21 @@ class PatchOrdering (PatchPretextTask):
         return images
     
     def accuracy(self, x, y = None):
+        # targets = torch.tensor(self.custom_order).long().to(self.device).unsqueeze(0).expand(x[0].shape[0],-1)
         targets = torch.tensor(self.custom_order).long().to(self.device)
-        return 0
+
+        accuracy = 0
+        patches = 0
+        for patch_index,output in enumerate(x):
+            target = targets[patch_index]
+            for i,logits in enumerate(output):
+                predicted = logits.argmax(dim=0)
+                accuracy += (logits.argmax(dim=0) == target).float()
+                # print (f"{i} Predicted: {predicted}, Target: {target}")
+                patches += 1
+
+        accuracy = accuracy / patches  
+        return accuracy
         for output in x:
             accuracy = (output.argmax(dim=1) == targets).float()
         return (x.argmax(dim=1) == targets).float
@@ -58,16 +74,16 @@ class PatchOrdering (PatchPretextTask):
         targets = torch.tensor(self.custom_order).to(self.device)
 
         targets = targets.unsqueeze(0).expand(x[0].shape[0],-1)
-        criterions = [self.pretext_loss for _ in range(self.patch_count)]
 
         # for criterion, output in zip(criterions, x):
         #     print(f"output: {output.shape}, target: {targets.shape}")
         #     loss = criterion(output, targets)
         #     print(f"loss: {loss}")
         patches = range(self.patch_count)
-        losses = [criterion(output, targets[:,patch]) for patch, criterion, output in zip(patches,criterions, x)]
+        losses = [criterion(output, targets[:,patch]) for patch, criterion, output in zip(patches,self.heads_loss, x)]
 
-        loss = sum(losses)
+        loss = sum(losses)/len(losses)
+        
         return loss
         return self.pretext_loss(x, targets)
     

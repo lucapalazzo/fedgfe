@@ -370,6 +370,7 @@ class FedGFE(FedRewind):
             wandb.define_metric(f"train/node_{client.id}/round_train_loss_{client.id}", step_metric="round")
             for pretext_task in self.pretext_tasks:
                 wandb.define_metric(f"train/node_{client.id}/pretext_train_loss_{pretext_task}", step_metric="round")
+                wandb.define_metric(f"test/node_{client.id}/pretext_test_acc_{pretext_task}", step_metric="round")
             for other_client in self.clients:
                 wandb.define_metric(f"test/node_{client.model.id}/round_test_acc_{client.model.id}_on_{other_client.model.id}", step_metric="round")
 

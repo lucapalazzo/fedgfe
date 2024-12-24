@@ -41,7 +41,7 @@ class ImageRotation (PatchPretextTask):
 
     def accuracy(self, x, y = None):
         target = torch.tensor(self.image_rotation_labels).long().to(x.device)
-        return (x.argmax(dim=1) == target).float
+        return (x.argmax(dim=1) == target).float().mean()
      
     def loss(self, x, y = None):
         target = torch.tensor(self.image_rotation_labels).long().to(x.device)

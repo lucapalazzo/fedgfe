@@ -237,7 +237,7 @@ class clientGFE(clientRewind):
             pbarbatch.close()
             print()
 
-            print ( "Calculating pretext task accuracy")
+            pretext_accuracy = 0
             testloader = self.load_test_data()
             for i, (x, y) in enumerate(testloader):
                 if type(x) == type([]):
@@ -248,9 +248,12 @@ class clientGFE(clientRewind):
                     # x= self.transform(x)
                 y = y.to(device)
                 output = self.model(x)
-                pretext_accuracy = self.model.accuracy(output)
-                print ( f"Pretext accuracy {pretext_accuracy}")
-                break
+                pretext_accuracy += self.model.accuracy(output)
+            
+            i += 1
+            pretext_accuracy = pretext_accuracy/i
+            print ( f"Pretext {pretext_task_name} accuracy {pretext_accuracy/i:.3f}")
+            self.data_log({f"test/node_{self.id}/pretext_test_acc_{pretext_task_name}": pretext_accuracy, "round": self.round})
 
         if self.downstream_task != None:
             backbone_grad = False
