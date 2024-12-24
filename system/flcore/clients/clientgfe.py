@@ -121,11 +121,11 @@ class clientGFE(clientRewind):
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
         # self.model.train().to(device)
 
-        print ( "\n--------\nNode %d: training model %d (%d) on dataset %d " % ( self.id, self.train_model.id, self.model.id, self.node_data.id ) )
-        print ( "Training on model %s loss %s optimizer %s" % ( hex(id(self.model.inner_model)), hex(id (self.model.loss)), hex(id(self.model.optimizer)) ) )
+        # print ( "\n--------\nNode %d: training model %d (%d) on dataset %d " % ( self.id, self.train_model.id, self.model.id, self.node_data.id ) )
+        # print ( "Training on model %s loss %s optimizer %s" % ( hex(id(self.model.inner_model)), hex(id (self.model.loss)), hex(id(self.model.optimizer)) ) )
 
-        if self.train_model_id == self.id:
-            print ( f"Node {self.id} training model {self.train_model_id} on self dataset")
+        # if self.train_model_id == self.id:
+        #     print ( f"Node {self.id} training model {self.train_model_id} on self dataset")
 
         max_local_epochs = self.local_epochs
         if self.train_slow:
@@ -144,7 +144,7 @@ class clientGFE(clientRewind):
         epoch_end_lr = []
         starting_lr = self.local_learning_rate
         # self.model.optimizer.param_groups[0]['lr'] = self.local_learning_rate
-        print ( "Epoch starting LR ", starting_lr)
+        # print ( "Epoch starting LR ", starting_lr)
 
         pbarbatch = None
         num_batches = len(trainloader.dataset)//trainloader.batch_size
@@ -162,7 +162,7 @@ class clientGFE(clientRewind):
 
         for pretext_task_name in self.pretext_tasks:
             self.model.pretext_task_name = pretext_task_name
-            print ( f"Pretext task {pretext_task_name}")
+            print ( f"Node {self.id} training on pretext task {pretext_task_name}")
         
             self.freeze(backbone=False, pretext=False, downstream=True)
             # self.downstream_task.backbone = self.model.inner_model
@@ -231,8 +231,8 @@ class clientGFE(clientRewind):
                         break
 
                 # pbarepoch.update(1)
-                print ( f"loss {losses/i:.2f} downstream loss {downstream_losses/i:2f}")
-                self.data_log({f"train/node_{self.id}/pretext_train_loss_{self.id}_{pretext_task_name}": losses/i, "round": self.round})
+                # print ( f"loss {losses/i:.2f} downstream loss {downstream_losses/i:2f}")
+                self.data_log({f"train/node_{self.id}/pretext_train_loss_{pretext_task_name}": losses/i, "round": self.round})
 
             pbarbatch.close()
             print()
@@ -306,7 +306,7 @@ class clientGFE(clientRewind):
 
         local_loss, num = self.train_metrics()
         print ( f"Downstream task loss {local_loss/num}")
-        self.data_log({f"train/node_{self.id}/downstream_train_loss_{self.id}": local_loss/num, "round": self.round})
+        self.data_log({f"train/node_{self.id}/downstream_train_loss": local_loss/num, "round": self.round})
         
         # self.downstream_optimizer = torch.optim.SGD(self.downstream_net.parameters(), lr=self.learning_rate)
         # for downstream_task in self.downstream_tasks:
@@ -455,8 +455,6 @@ class clientGFE(clientRewind):
         if trainloader == None:
             print ( "No train data for client ", self.id)
             return 0, 0
-        # self.model = self.load_model('model')
-        # self.model.to(self.device)
         self.model.eval()
 
         train_num = 0
@@ -480,10 +478,7 @@ class clientGFE(clientRewind):
                 train_num += y.shape[0]
                 losses += loss.item() * y.shape[0]
 
-                print ( f"Downstream task loss {losses/train_num}")
-                break
-        # self.model.cpu()
-        # self.save_model(self.model, 'model')
+            # print ( f"Downstream task loss {losses/train_num}")
 
         return losses, train_num
 

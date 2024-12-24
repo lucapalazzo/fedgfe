@@ -362,13 +362,14 @@ class FedGFE(FedRewind):
         for client in self.clients:
             wandb.define_metric(f"test/node_{client.id}/acc", step_metric="round")
             wandb.define_metric(f"test/node_{client.id}/bal", step_metric="round")
-            wandb.define_metric(f"train/node_{client.id}/downstream_train_loss_{client.id}", step_metric="round")
-            wandb.define_metric(f"test/node_{client.id}/downstream_test_acc_{client.id}", step_metric="round")
+            wandb.define_metric(f"train/node_{client.id}/round_train_loss", step_metric="round")
+            wandb.define_metric(f"train/node_{client.id}/downstream_train_loss", step_metric="round")
+            wandb.define_metric(f"test/node_{client.id}/downstream_test_acc", step_metric="round")
             wandb.define_metric(f"test/node_{client.id}/test_std", step_metric="round")
             wandb.define_metric(f"test/node_{client.id}/test_std_on_train", step_metric="round")
             wandb.define_metric(f"train/node_{client.id}/round_train_loss_{client.id}", step_metric="round")
             for pretext_task in self.pretext_tasks:
-                wandb.define_metric(f"train/node_{client.id}/pretext_train_loss_{client.id}_{pretext_task}", step_metric="round")
+                wandb.define_metric(f"train/node_{client.id}/pretext_train_loss_{pretext_task}", step_metric="round")
             for other_client in self.clients:
                 wandb.define_metric(f"test/node_{client.model.id}/round_test_acc_{client.model.id}_on_{other_client.model.id}", step_metric="round")
 
@@ -514,7 +515,7 @@ class FedGFE(FedRewind):
             return 0, 0
         
         round_loss = losses/train
-        self.data_log({f'train/node_{client.id}/round_train_loss_{client.id}': round_loss, "round": self.round})
+        self.data_log({f'train/node_{client.id}/round_train_loss': round_loss, "round": self.round})
         # self.data_log({f'train/node_loss_{client.train_model_id}': round_loss, "round": self.round})
         loss_dict = {client.train_model_id: round_loss}
         client.node_data_losses.append(loss_dict)

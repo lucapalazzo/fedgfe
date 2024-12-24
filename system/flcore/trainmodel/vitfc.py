@@ -218,7 +218,7 @@ class VITFC(nn.Module):
     def prepare_image_rotation(self):
         task = None
         for pretext_task in self.pretext_tasks:
-            if pretext_task.name == "patch_ordering":
+            if pretext_task.name == "image_rotation":
                 task = pretext_task
         
         if task is None:
@@ -491,23 +491,23 @@ class VITFC(nn.Module):
     
     @pretext_train.setter
     def pretext_train(self, new_value):
-        print ( "Setting pretext train to %s" % new_value )
+        # print ( "Setting pretext train to %s" % new_value )
         self._pretext_train = new_value
         self.pretext_train_change_callback(new_value)
     
     def pretext_train_change_callback(self, new_value):
         self._pretext_train = new_value
-        print(f"Pretext training set to: {new_value}")
+        # print(f"Pretext training set to: {new_value}")
         if not self._pretext_train:
             # self.vit.head = self.starting_head
             # if self.downstream_task != None:
                 # self.vit.head = self.downstream_task
             self.loss = self.downstream_loss
-        elif self._pretext_task is not None:
-            print ( f"Setting ViT head to pretext tas {self._pretext_task.name}" )
+        # elif self._pretext_task is not None:
+        #     print ( f"Setting ViT head to pretext tas {self._pretext_task.name}" )
             # self.vit.head = self._pretext_task.pretext_head
-        else:
-            print ( "Pretext task not set" )
+        # else:
+        #     print ( "Pretext task not set" )
     
 
 
@@ -517,16 +517,17 @@ class VITFC(nn.Module):
     
     @pretext_task.setter
     def pretext_task(self, new_value):
-        print ( "Setting pretext task to %s" % new_value )
+        # print ( "Setting pretext task to %s" % new_value )
         self._pretext_task = new_value
      
     
     def pretext_task_change_callback(self, new_task):
-        print ( "Setting pretext task to %s" % new_task.name )
+        # print ( "Setting pretext task to %s" % new_task.name )
 
 
         # if self.vit is not None and self._pretext_train:
         #     self.vit.head = self._pretext_task.pretext_head
+        return
 
     # @property
     # def pre_logits(self):
@@ -551,14 +552,14 @@ class VITFC(nn.Module):
     
     @pretext_task_name.setter
     def pretext_task_name(self, new_value):
-        print ( "Setting pretext task to %s" % new_value )
+        # print ( "Setting pretext task to %s" % new_value )
         self._pretext_task_name = new_value
         self.pretext_task_name_change_callback(new_value)
 
 
     def pretext_task_name_change_callback(self, new_value):
         self._pretext_task_name = new_value
-        print(f"Pretext task callback: {new_value}")
+        # print(f"Pretext task callback: {new_value}")
         if self._pretext_task_name == "patch_masking":
             self._pretext_task = self.prepare_masking()
         elif self._pretext_task_name == "patch_ordering":
@@ -568,7 +569,7 @@ class VITFC(nn.Module):
         elif self._pretext_task_name == "image_rotation":
             self._pretext_task = self.prepare_image_rotation()
         else:
-            print ( "Pretext task not recognized" )
+            # print ( "Pretext task not recognized" )
             return
         self.pretext_task_change_callback(self._pretext_task)
 
