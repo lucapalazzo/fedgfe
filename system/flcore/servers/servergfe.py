@@ -396,6 +396,7 @@ class FedGFE(FedRewind):
                 wandb.define_metric(f"test/node_{client.id}/pretext_test_acc_{pretext_task}", step_metric="round")
             for other_client in self.clients:
                 wandb.define_metric(f"test/node_{client.model.id}/round_test_acc_{client.model.id}_on_{other_client.model.id}", step_metric="round")
+                wandb.define_metric(f"test/node_{client.model.id}/round_test_acc_on_train_{client.model.id}_on_{other_client.model.id}", step_metric="round")
 
     def evaluate(self):
         super().evaluate()
@@ -581,10 +582,9 @@ class FedGFE(FedRewind):
         client_round_acc = acc/test_num
         # if not self.no_wandb:
         #     wandb.log({f'test/model_{client.id}/round_test_acc_{client.id}': client_round_acc, "round": self.round})
-        test_acc, test_num, auc, test_y_true, test_y_prob  = client.test_metrics()
 
-        accuracy = test_acc/test_num
-        accuracies = self.round_test_metrics_models(client, ignore_last=False)
+        # accuracy = test_acc/test_num
+        accuracies = self.round_test_metrics_nodes(client, ignore_last=False)
         accuracies_list = [ acc['accuracy'] for acc in accuracies]
         acc_std = np.std(accuracies_list)
         client.test_std.append(acc_std)
@@ -592,14 +592,14 @@ class FedGFE(FedRewind):
 
         test_acc, test_num, auc, test_y_true, test_y_prob  = client.test_metrics( on_train = True)
         accuracy_on_train = test_acc/test_num
-        accuracies_on_train = self.round_test_metrics_models(client, on_train = True, ignore_last=False)
+        accuracies_on_train = self.round_test_metrics_nodes(client, on_train = True, ignore_last=False)
         accuracies_list = [ acc['accuracy'] for acc in accuracies_on_train]
 
         acc_std_on_train = np.std(accuracies_list)
         client.test_std_on_train.append(acc_std_on_train)
        
         print("** Round %d Trained node %d model %d accuracy %02f other %s" % (self.round, client.id, client.model.id, client_round_acc, accuracies ))
-        print("** Round %d Accuracies on test sets %.02f %s" % ( self.round, accuracy, accuracies ))
+        print("** Round %d Accuracies on test sets %.02f %s" % ( self.round, client_round_acc, accuracies ))
         print("** Round %d Accuracies on train sets %.02f %s" % ( self.round, accuracy_on_train, accuracies_on_train ))
         print("** Round %d std on test %.02f on train %.02f" % ( self.round, acc_std, acc_std_on_train ))
         if not self.no_wandb:    
@@ -609,7 +609,7 @@ class FedGFE(FedRewind):
         # print(f"Standard deviation of accuracies for client {client.id}: {standard_deviation}")
         return client_round_acc
     
-    def round_test_metrics_models (self, client, ignore_last = True, on_train = False):
+    def round_test_metrics_nodes (self, client, ignore_last = True, on_train = False):
         accuracies = []
         for test_client in self.clients:
             # if ( test_client.node_data.id != client.node_data.id or ignore_last == False ):
@@ -621,7 +621,10 @@ class FedGFE(FedRewind):
             accuracies.append(other_accuracy)
             # print("Node's model %d accuracy dataset %d: %02f" % (client.id, test_client.id, round_acc )) 
             if  not self.no_wandb:
-                wandb.log({f'test/node_{client.model.id}/round_test_acc_{client.model.id}_on_{test_client.model.id}': round_acc, 'round': self.round } )
+                if on_train == False:
+                    wandb.log({f'test/node_{client.id}/round_test_acc_{client.id}_on_{test_client.id}': round_acc, 'round': self.round } )
+                else:
+                    wandb.log({f'test/node_{client.id}/round_test_acc_on_train_{client.id}_on_{test_client.id}': round_acc, 'round': self.round } )
             # if previous_node != None:
             #     client.rewind_previous_node_loss.append(previous_loss)
             #     print("Previous node %d loss %02f" % ( previous_node.id, previous_loss))
