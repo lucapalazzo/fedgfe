@@ -37,6 +37,8 @@ class FedGFE(FedRewind):
 
         self.nodes_datasets = self.args.dataset.split(":")
         self.nodes_downstream_tasks = self.args.nodes_downstream_tasks.split(":")
+        
+        self.model_aggregation = self.args.model_aggregation
 
         self.rewind_ratio = args.rewind_ratio
         self.rewind_epochs = args.rewind_epochs
@@ -210,9 +212,10 @@ class FedGFE(FedRewind):
             if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], top_cnt=self.top_cnt):
                 break
 
-            self.receive_models()
-            self.aggregate_parameters()
-            self.send_models()
+            if self.model_aggregation == "fedavg":
+                self.receive_models()
+                self.aggregate_parameters()
+                self.send_models()
 
             self.save_checkpoint()
 

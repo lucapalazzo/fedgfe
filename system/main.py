@@ -642,6 +642,7 @@ if __name__ == "__main__":
     parser.add_argument('-dst', '--downstream_tasks', type=str, default="classification", help="Downsteam tasks list")
     parser.add_argument('-dslo', '--downstream_loss_operation', type=str, default="none", help="Operation for pretext task loss")
     parser.add_argument('-dpti', '--debug_pretext_images', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Save images after pretext tasks")
+    parser.add_argument('-ma', '--model_aggregation', type=str, default="none", help="Model aggregation method")
 
 
     # Routing algos

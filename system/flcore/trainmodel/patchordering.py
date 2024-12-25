@@ -19,7 +19,10 @@ class PatchOrdering (PatchPretextTask):
         self.pretext_loss = nn.CrossEntropyLoss()
         # self.pretext_head = nn.Sequential( nn.Linear(output_dim, self.patch_count) ).to(self.device)
         self.pretext_head = nn.ModuleList(
-            nn.Linear(output_dim, self.patch_count) for _ in range(patch_count)
+            nn.Sequential( nn.Linear(output_dim, 64).requires_grad_(False),
+            # nn.ReLU(),
+            nn.Linear(64, self.patch_count)
+            ) for _ in range(patch_count)
         ).to(self.device)
 
         self.heads_loss = [self.pretext_loss for _ in range(self.patch_count)]

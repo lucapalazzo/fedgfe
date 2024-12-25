@@ -130,13 +130,13 @@
             "args": ["-data", "JSRT-1C:ChestXRay-nIID-1C",
                      "-m", "vit",
                      "-algo", "FedGFE",
-                     "--global_rounds", "10",
+                     "--global_rounds", "100",
                      "-did", "0",
                      "-go", "prova",
                      "-nc", "2",
                      "-nb", "3",
                      "--batch_size","64",
-                     "--local_epochs", "5",
+                     "--local_epochs", "10",
                      "-lr", "0.0001",
                      "-lam", "0.1",
                     //  "--no_wandb",
@@ -153,6 +153,9 @@
                     "--downstream_loss_operation", "sum"
 //                    , "-go", "${inputs:experimentName"
                 ],
+                "env":{
+                    "CUDA_VISIBLE_DEVICES": "1"
+                }
 
         },
 //         {
