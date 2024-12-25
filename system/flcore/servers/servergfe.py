@@ -54,6 +54,8 @@ class FedGFE(FedRewind):
         self.rewind_learning_rate_keep = args.rewind_learning_rate_keep
         self.clients = []
 
+        self.model_aggregation_weighted = args.model_aggregation_weighted
+
         if self.routing_static:
             self.routing = StaticRouting(clients_count=self.num_clients, random=self.routing_random) 
         # select slow clients
@@ -282,6 +284,24 @@ class FedGFE(FedRewind):
 
             client.send_time_cost['num_rounds'] += 1
             client.send_time_cost['total_cost'] += 2 * (time.time() - start_time)
+    
+    def aggregate_parameters(self):
+        assert (len(self.uploaded_models) > 0)
+
+        self.global_model = copy.deepcopy(self.uploaded_models[0])
+        for param in self.global_model.parameters():
+            param.data.zero_()
+
+        if self.model_aggregation_weighted: 
+            weights = self.uploaded_weights
+        else:
+            weights = [1/self.num_clients for _ in range(self.num_clients)]
+        for w, client_model in zip(weights, self.uploaded_models):
+           self.add_parameters(w, client_model)
+
+    def add_parameters(self, w, client_model):
+        for server_param, client_param in zip(self.global_model.parameters(), client_model.parameters()):
+            server_param.data += client_param.data.clone() * w
 
     def client_round_ending_hook(self, client):
 

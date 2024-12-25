@@ -136,10 +136,10 @@
                      "-nc", "2",
                      "-nb", "3",
                      "--batch_size","64",
-                     "--local_epochs", "10",
+                     "--local_epochs", "3",
                      "-lr", "0.0001",
                      "-lam", "0.1",
-                    //  "--no_wandb",
+                     "--no_wandb",
                      "--dataset_image_size", "224",
                      "--model_pretrain",
                     //  "--embedding_size", "64",
@@ -150,7 +150,8 @@
                      "--patch_size", "56",
                     //  "--debug_pretext_images",
                     //  "--limit_samples", "1000",
-                    "--downstream_loss_operation", "sum"
+                    "--downstream_loss_operation", "sum",
+                    "--model_aggregation", "fedavg"
 //                    , "-go", "${inputs:experimentName"
                 ],
                 "env":{

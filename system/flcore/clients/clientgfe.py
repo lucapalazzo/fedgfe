@@ -553,6 +553,16 @@ class clientGFE(clientRewind):
         auc = metrics.roc_auc_score(y_true, y_prob, average='micro')
         
         return test_acc, test_num, auc, y_true, y_prob
+    
+    def set_parameters(self, model):
+        for new_param, old_param in zip(model.parameters(), self.model.backbone.parameters()):
+            if ( torch.equal(new_param.data, old_param.data) == False):
+                self.log_once ( "pre parameters not equal")
+            # print ( "old_param.data", old_param.data, "new_param.data", new_param.data)
+            old_param.data = new_param.data.clone()
+            if ( torch.equal(new_param.data, old_param.data) == False):
+                self.log_once  ( "parameters not updated")
+            # print ( "old_param.data", old_param.data, "new_param.data", new_param.data)
 # https://github.com/yuetan031/fedlogit/blob/main/lib/utils.py#L205
 def agg_func(logits):
     """
