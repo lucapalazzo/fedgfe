@@ -17,7 +17,8 @@ from sklearn.utils.class_weight import compute_class_weight
 from torchvision.ops.focal_loss import sigmoid_focal_loss
 from torchvision import  transforms
 from flcore.trainmodel.downstreamclassification import DownstreamClassification
-from flcore.trainmodel.singlelayerclassification import SingleLayerClassification
+from flcore.trainmodel.downstreamfivelayerclassification import DownstreamFiveLayerClassification
+from flcore.trainmodel.downstreamsegmentation import DownstreamSegmentation
 
 from tqdm import tqdm
 
@@ -42,13 +43,14 @@ class clientGFE(clientRewind):
         self.node_data.id = 0
         self.node_data_losses = []
 
-        self.downstream_task = DownstreamClassification(self.model.backbone, num_classes=self.num_classes)
-        self.model.downstream_task_set(self.downstream_task)
-        self.downstream_tasks = args.downstream_tasks
+        self.downstream_task_name = 'none'
+        # self.downstream_task = DownstreamClassification(self.model.backbone, num_classes=self.num_classes)
+        # self.model.downstream_task_set(self.downstream_task)
+        # self.downstream_tasks = args.downstream_tasks
         self.downstream_loss_operation = args.downstream_loss_operation
         # self.downstream_task = SingleLayerClassification(self.model.inner_model.vit.embed_dim, self.num_classes)
-        self.downstream_task.to(self.device)
-        self.downstream_task.loss = nn.CrossEntropyLoss()
+        # self.downstream_task.to(self.device)
+        # self.downstream_task.loss = nn.CrossEntropyLoss()
         self.no_downstream_tasks = args.no_downstream_tasks
 
         self.model_optimizer = args.model_optimizer
@@ -60,6 +62,28 @@ class clientGFE(clientRewind):
         #      transforms.Resize([224, 224]),
         #     #  transforms.ToTensor()
         #     ])
+
+    @property
+    def downstream_task_name(self):
+        return self._downstream_task_name
+    
+    @downstream_task_name.setter
+    def downstream_task_name(self, value):
+        self._downstream_task_name = value
+
+        if value == "none":
+            self.downstream_task = None
+        elif value == "classification":
+            self.downstream_task = DownstreamClassification(self.model.backbone, num_classes=self.num_classes).to(self.device)
+        elif value == "segmentation":
+            self.downstream_task = DownstreamSegmentation(self.model.backbone, num_classes=self.num_classes).to(self.device)
+        elif value == "5lclassification":
+            self.downstream_task = DownstreamFiveLayerClassification(self.model.backbone, num_classes=self.num_classes).to(self.device)
+
+        
+        self.model.downstream_task_set(self.downstream_task)
+    
+
 
     def train(self, client_device = None, rewind_train_node = None, ):
         node_trainloader = self.load_train_data()

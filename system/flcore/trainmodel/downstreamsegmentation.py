@@ -1,15 +1,15 @@
 from flcore.trainmodel.downstream import Downstream
 import torch.nn as nn
 
-class DownstreamClassification (Downstream):
+class DownstreamSegmentation (Downstream):
     def __init__(self, backbone, num_classes=10):
-        super(DownstreamClassification, self).__init__(backbone)
+        super(DownstreamSegmentation, self).__init__(backbone)
 
-        self.input_dim = backbone.embed_dim
-        self.output_dim = num_classes
+        input_dim = backbone.embed_dim
+        output_dim = num_classes
 
         self.downstream_head = nn.Sequential(
-            nn.Linear(self.input_dim, self.output_dim),
+            nn.Linear(input_dim, num_classes),
         )
 
         self.loss = nn.CrossEntropyLoss()

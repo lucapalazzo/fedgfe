@@ -142,6 +142,7 @@
                     //  "--no_wandb",
                      "--dataset_image_size", "224",
                      "--model_pretrain",
+                     "--nodes_downstream_tasks", "classification",
                     //  "--embedding_size", "64",
                     //  "--nodes_pretext_tasks", "image_rotation",
                      "--nodes_pretext_tasks", "patch_ordering,image_rotation",

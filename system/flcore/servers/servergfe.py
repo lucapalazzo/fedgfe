@@ -316,11 +316,13 @@ class FedGFE(FedRewind):
         gpus = cycle(self.gpus)
 
         datasets = cycle(self.nodes_datasets)
+        downstream_tasks_names = cycle(self.nodes_downstream_tasks)
 
         # for i, train_slow, send_slow in zip(range(self.num_clients), self.train_slow_clients, self.send_slow_clients):
         for i, train_slow, send_slow in zip(range(self.num_clients), self.train_slow_clients, self.send_slow_clients):
 
-            dataset = next(datasets) 
+            dataset = next(datasets)
+            downstream_task_name = next(downstream_tasks_names)
             file_prefix = ""
             # if i != 2 and i != 3:
             # if i != 2:
@@ -349,6 +351,7 @@ class FedGFE(FedRewind):
             client.device = "cuda:"+str(next(gpus))
             client.available_clients = np.arange(self.num_clients)
             client.pretext_tasks = self.pretext_tasks
+            client.downstream_task_name = downstream_task_name
             # client.routing = RandomRouting(self.num_clients, id = i)
             client.transform = transforms.Compose(
             [
