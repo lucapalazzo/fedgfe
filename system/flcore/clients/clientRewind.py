@@ -18,8 +18,8 @@ from torchvision.ops.focal_loss import sigmoid_focal_loss
 from torchvision import  transforms
 
 class clientRewind(Client):
-    def __init__(self, args, id, train_samples, test_samples,is_strong = False, id_by_type=-1, rewind_epochs = 0, rewind_interval = 0, rewind_ratio = 0,**kwargs):
-        super().__init__(args, id, train_samples, test_samples, **kwargs)
+    def __init__(self, args, id, train_samples, test_samples,is_strong = False, id_by_type=-1, rewind_epochs = 0, rewind_interval = 0, rewind_ratio = 0, model=None, **kwargs):
+        super().__init__(args, id, train_samples, test_samples, model=model, **kwargs)
 
         self.node_routes = []
         self.rewind_previous_node_id = []

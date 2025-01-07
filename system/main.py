@@ -87,6 +87,8 @@ from disablrandomness import set_seed
 from datautils.dataset_generate import dataset_generate
 from torchvision.models import ResNet18_Weights
 
+from torchinfo import summary
+
 logger = logging.getLogger()
 logger.setLevel(logging.ERROR)
 
@@ -251,6 +253,8 @@ def run(args):
         num_heads=12,        # Number of attention heads
         mlp_ratio=4.0,      # MLP hidden dimension ratio
         patch_size=args.patch_size,         # Patch size
+        class_token=True,  # Prepend class token to input
+        global_pool='',  # Global pool type (one of 'cls', 'mean', 'attn')
         # qkv_bias=True,
         # representation_size=None,
         # distilled=False,
@@ -631,6 +635,7 @@ if __name__ == "__main__":
     parser.add_argument('-reer', "--rewind_end_epoch_ratio", type=float, default=1, help="Epoch ratio count number of epoch for starting rewind before and of round")
 
     #FedGFE
+    parser.add_argument('-nbm', '--nodes_backbone_model', type=str, default='cifar10', help="Backbone model for federation")
     parser.add_argument('-nds', '--nodes_datasets', type=str, default='cifar10', help="Datasets for federation")
     parser.add_argument('-ndst', '--nodes_downstream_tasks', type=str, default='classification', help="Downstream tasks for federation")
     parser.add_argument('-nodst', '--no_downstream_tasks', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Use original head for downstram tasks for federation")
@@ -720,6 +725,7 @@ if __name__ == "__main__":
     if args.seed != -1:
         print ("Setting seed to",args.seed)
         set_seed(args.seed)
+
 
 
         

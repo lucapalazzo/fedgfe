@@ -74,6 +74,8 @@ def generate_jsrt(args, dir_path, num_clients, num_classes, niid, balance, parti
     dataset_image.extend(traindata.cpu().detach().numpy())
     dataset_image.extend(testdata.cpu().detach().numpy())
     # dataset_label.extend(trainset.targets.cpu().detach().numpy())
+    # train_nodules = torch.stack(traintargets[3]).permute(1,0)
+    # test_nodules = torch.stack(testtargets[3]).permute(1,0)
     traintargets = torch.stack(traintargets)
     testtargets = torch.stack(testtargets)
     # dataset_label.extend(testset.targets.cpu().detach().numpy())

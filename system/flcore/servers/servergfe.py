@@ -24,9 +24,20 @@ from flcore.routing.scoredrouting import ScoredRouting
 from flcore.routing.randomrouting import RandomRouting
 from flcore.routing.staticrouting import StaticRouting
 
+from transformers import ViTMAEConfig, ViTMAEModel, ViTConfig, ViTModel
+from timm.models.vision_transformer import VisionTransformer
+
+from flcore.trainmodel.vitfc import VITFC
+
+from torchinfo import summary
+
+
 class FedGFE(FedRewind):
     def __init__(self, args, times, pretext_tasks=None):
         super().__init__(args, times, create_clients=False)
+
+        self.nodes_backbone_model = self.create_nodes_model(args.nodes_backbone_model)
+
 
         self.global_model = None
 
@@ -78,6 +89,36 @@ class FedGFE(FedRewind):
         self.num_classes = args.num_classes
         self.statistics_dataframe = None
         #self.global_logits = [None for _ in range(args.num_classes)]
+
+    def create_nodes_model ( self, model_string ):
+        model = None
+        if model_string == "hf_vit":
+            config = ViTConfig()
+            config.loss_type = "cross_entropy"
+            config.patch_size = self.args.patch_size
+            model = ViTModel(config)
+        elif model_string == "timm_vit":
+            model = VisionTransformer(
+        # img_size=img_size,
+        # patch_size=patch_size,
+        in_chans=3,
+        num_classes=self.args.num_classes,
+        embed_dim=self.args.embedding_size,       # d_model = 16
+        depth=12,            # Number of transformer layers = 2
+        num_heads=12,        # Number of attention heads
+        mlp_ratio=4.0,      # MLP hidden dimension ratio
+        patch_size=args.patch_size,         # Patch size
+        class_token=True,  # Prepend class token to input
+        global_pool='',  # Global pool type (one of 'cls', 'mean', 'attn')
+        # qkv_bias=True,
+        # representation_size=None,
+        # distilled=False,
+        # drop_rate=0.0,
+        # attn_drop_rate=0.0,
+        # drop_path_rate=0.0,
+        # pretrained=args.model_pretrain,
+    ) 
+        return model
 
     def statistics_init(self):
         # init pandas dataframe for nodes and model statistics per round
@@ -334,6 +375,9 @@ class FedGFE(FedRewind):
             train_data_len = -1
             test_data_len = -1
 
+            node_inner_model = copy.deepcopy(self.nodes_backbone_model)
+            node_model = VITFC(node_inner_model, self.args.num_classes,patch_size=self.args.patch_size,debug_images=self.args.debug_pretext_images).to(self.args.device)
+
             client = clientObj(self.args, 
                             model_id=i, 
                             dataset=dataset,
@@ -346,6 +390,7 @@ class FedGFE(FedRewind):
                             rewind_ratio=self.rewind_ratio,
                             train_data=train_data,
                             test_data=test_data,
+                            model=node_model,
                             dataset_limit=self.dataset_limit)
             client.prefix=file_prefix
             client.device = "cuda:"+str(next(gpus))
@@ -359,6 +404,8 @@ class FedGFE(FedRewind):
              transforms.Resize([224, 224]),
             #  transforms.ToTensor()
             ])
+
+            # summary(client.model, input_size=(1, 3, 224, 224))
             # if self.args.routing_scored:
             #     client.routing = ScoredRouting(self.num_clients, id = i, average=self.routing_scored_average)
             # if self.args.routing_static:

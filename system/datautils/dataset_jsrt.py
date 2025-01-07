@@ -8,6 +8,7 @@ from pathlib import Path
 from datautils.jsrtparser.jsrt import Jsrt, JsrtImage
 import re
 from collections import OrderedDict
+from torchvision import transforms
 
 class JSRTDataset(Dataset):
     def __init__(self, dataset = None, is_train=True, test_ratio = 0.2, validate_ratio=0, train=None, transform=None, download=False, root=".", dataset_path = "dataset", datafile = "All247images/"):
@@ -72,8 +73,29 @@ class JSRTDataset(Dataset):
         sample_tensor = sample_tensor/4095
         sample_tensor = sample_tensor.unsqueeze(0).expand(3, -1, -1)
 
-        image_sample = self.transform(sample_tensor)
+
+        if ( self.transform is not None):
+            target_size = 0
+            original_size = sample_tensor.shape[1]
+            image_sample = self.transform(sample_tensor)
+            for t in range(len(self.transform.transforms)):
+                if isinstance(self.transform.transforms[t], transforms.Resize):
+                    target_size = self.transform.transforms[t].size
+                    break
+            if target_size != 0:
+                nodule_size = 0 if image.nodule_size == None else image.nodule_size*target_size/original_size
+                nodule_position_x = int(image.x*target_size/original_size)
+                nodule_position_y = int(image.y*target_size/original_size)
+                self.labels[index][3] = nodule_size
+                self.labels[index][4] = nodule_position_x
+                self.labels[index][5] = nodule_position_y
+
         image_label = self.labels[index]
+        # tensor_image_label = []
+        # tensor_image_label.append(torch.tensor(image_label[0]))
+        # tensor_image_label.append(torch.tensor(image_label[1]))
+        # tensor_image_label.append(torch.tensor(image_label[2]))
+        # tensor_image_label.append(torch.tensor(image_label[3]))
         # sample = {'image': image_sample, 'label': image_label, 'mask': mask_sample}
         sample = [image_sample, image_label]
         print ( f"Id {index} Benign: {image._malignant_or_benign} Nodule: {image._image_type} Zone: {image._position} {image_label}")
@@ -148,7 +170,10 @@ class JSRTDataset(Dataset):
             image_type = image._malignant_or_benign
             image_zone = image._position
             image_nodule = image._image_type
-            label = [images_types_keys.index(image_type), images_nodules_keys.index(image_nodule), images_zones_keys.index(image_zone)]
+            nodule_size = 0 if image.nodule_size == None else image.nodule_size
+            nodule_position_x = image.x
+            nodule_position_y = image.y
+            label = [images_types_keys.index(image_type), images_nodules_keys.index(image_nodule), images_zones_keys.index(image_zone), nodule_size, nodule_position_x, nodule_position_y]
             self.labels.append(label)
             print("Label %s" %(label))
         return self.labels

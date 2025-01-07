@@ -5,6 +5,9 @@ from modelutils.patchorderloss import PatchOrderLoss
 from modelutils.custompatchembedding import CustomPatchEmbed
 from typing import Iterator
 
+from timm.models.vision_transformer import VisionTransformer
+from transformers import ViTModel
+
 
 class PatchOrdering (PatchPretextTask):
     def __init__(self, backbone=None, input_dim = 768, output_dim = 768, debug_images=False, img_size=224, patch_size=-1, patch_count = -1):
@@ -19,9 +22,10 @@ class PatchOrdering (PatchPretextTask):
         self.pretext_loss = nn.CrossEntropyLoss()
         # self.pretext_head = nn.Sequential( nn.Linear(output_dim, self.patch_count) ).to(self.device)
         self.pretext_head = nn.ModuleList(
-            nn.Sequential( nn.Linear(output_dim, 64).requires_grad_(False),
-            # nn.ReLU(),
-            nn.Linear(64, self.patch_count)
+            nn.Sequential(
+                # nn.Linear(output_dim, 64).requires_grad_(False),
+                # nn.ReLU(),
+                nn.Linear(output_dim, self.patch_count)
             ) for _ in range(patch_count)
         ).to(self.device)
 
@@ -96,6 +100,11 @@ class PatchOrdering (PatchPretextTask):
             # self.backbone.logits_only = True
             x = self.backbone(x)
 
+        if self.cls_token_only:
+            if isinstance(self.backbone, VisionTransformer):
+                x = x[:,0,:]
+            elif isinstance(self.backbone, ViTModel):
+                x = x.last_hidden_state[:,0,:]
         predictions = [classifier(x) for classifier in self.pretext_head]
         return predictions 
         

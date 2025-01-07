@@ -37,9 +37,10 @@ class Client(object):
     Base class for clients in federated learning.
     """
 
-    def __init__(self, args, node_id, train_samples, test_samples, train_data = None, test_data = None, val_data = None, **kwargs):
+    def __init__(self, args, node_id, train_samples, test_samples, train_data = None, test_data = None, val_data = None, model = None, **kwargs):
         self.args = args
-        self.model = FLModel(args, node_id)
+        self.model = FLModel(args, node_id, model=model)
+        self.optimizer = None
 
         # self.model = copy.deepcopy(args.model)
         self.starting_model = self.model.inner_model
@@ -105,7 +106,7 @@ class Client(object):
         #     self.model.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.local_learning_rate)
             
         self.loss = self.model.loss
-        self.optimizer = self.model.optimizer
+        # self.optimizer = self.model.optimizer
         
         self.learning_rate_schedule = args.learning_rate_schedule
         if self.optimizer != None:

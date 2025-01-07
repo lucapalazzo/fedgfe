@@ -3,7 +3,10 @@ import torch
 from flcore.trainmodel.patchpretexttask import PatchPretextTask
 from typing import Iterator
 from torchvision import transforms
-import numpy as np 
+import numpy as np
+
+from timm.models.vision_transformer import VisionTransformer
+from transformers import ViTModel
 
 
 class ImageRotation (PatchPretextTask):
@@ -55,6 +58,13 @@ class ImageRotation (PatchPretextTask):
         if self.backbone is not None:
             # self.backbone.logits_only = True
             x = self.backbone(x)
+            
+        if self.cls_token_only:
+            if isinstance(self.backbone, VisionTransformer):
+                x = x[:,0,:]
+            elif isinstance(self.backbone, ViTModel):
+                x = x.last_hidden_state[:,0,:]
+
         return self.pretext_head(x)
 
     def rotate_images(self, imgs, image_rotation_angles = None):

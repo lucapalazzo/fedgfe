@@ -4,13 +4,17 @@ from torch.optim import SGD
 import copy
 
 class FLModel(nn.Module):
-    def __init__(self,args, model_id) -> None:
+    def __init__(self, args, model_id, model = None) -> None:
         super(FLModel,self).__init__()
         self.id = model_id
-        self.inner_model = copy.deepcopy(args.model)
+        if model != None:
+            self.inner_model = model
+        else:
+            self.inner_model = copy.deepcopy(args.model)
+
         self.loss = None
-        print ( "Optimizer: ", hex(id(self.inner_model.optimizer)))
-        self.optimizer = self.inner_model.optimizer
+        # print ( "Optimizer: ", hex(id(self.inner_model.optimizer)))
+        # self.optimizer = self.inner_model.optimizer
         # self.pretext_task = None
         self.pretext_train = False
         self.downstream_task = None

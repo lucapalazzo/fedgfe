@@ -33,9 +33,13 @@ from flcore.trainmodel.patchrotation import PatchRotation
 from flcore.trainmodel.patchmasking import PatchMasking
 
 
+
+
 from modelutils.patchmaskloss import PatchMaskLoss
 
 from timm.models.vision_transformer import Block
+from timm.models.vision_transformer import VisionTransformer
+from transformers import ViTMAEModel
 from utils.variablewatcher import VariableWatcher
 from torchvision import transforms
 from utils.image_utils import plot_image, plot_grid_images, save_grid_images
@@ -49,14 +53,23 @@ class VITFC(nn.Module):
     def __init__(self, model, num_classes, pretext_task=None, downstream_task = None, img_size=224, patch_count=16, patch_size=16, mask_ratio=0.15, pretrained=True, in_chans=3, decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,mlp_ratio=4., norm_layer=nn.LayerNorm, downstream_loss=None, debug_images = False):
         super(VITFC, self).__init__()
         self.backbone = model
-        self.vit = model
-        self.original_head = self.vit.head
-        self.vit.head = nn.Identity()
-        self.starting_head = self.vit.head
-        self.starting_patch_embed = self.vit.patch_embed
+        # self.vit = model
+        # if isinstance(model, VisionTransformer):
+        #     model.global_pool = "avg"
+        #     model.class_token
+
+        if isinstance(model, VisionTransformer):
+            self.original_head = self.backbone.head
+            self.backbone.head = nn.Identity()
+            self.starting_head = self.backbone.head
+            self.starting_patch_embed = self.backbone.patch_embed
+            self.embedding_size = model.embed_dim
+        else:
+            self.original_head = None
+            self.embedding_size = model.config.hidden_size
+        
         self.num_classes = num_classes
 
-        self.embedding_size = model.embed_dim
 
         self.debug_pretext_images = False
 
@@ -71,13 +84,12 @@ class VITFC(nn.Module):
             self.patch_count = patch_count
             self.patch_size = img_size // int(self.num_patches ** 0.5)
 
-        self.original_patch_embed = self.vit.patch_embed
-        self.custom_patch_embed = None
-        self.patch_position_predictor = None
-        self.custom_order = None
-        self.custom_order_tensor = None
-        self.pretext_loss = None
-        self.patch_embedding = None
+       # self.custom_patch_embed = None
+       # self.patch_position_predictor = None
+       # self.custom_order = None
+       # self.custom_order_tensor = None
+       # self.pretext_loss = None
+       # self.patch_embedding = None
         self.optimizer = None
 
         self.downstream_loss = nn.CrossEntropyLoss()
@@ -100,16 +112,16 @@ class VITFC(nn.Module):
         # self.heads_size = self.vit.head.size
 
         # Rotation
-        self.rotation_angles = [0, 90, 180, 270]
-        self.image_rotation_angles = self.rotation_angles
+        # self.rotation_angles = [0, 90, 180, 270]
+        # self.image_rotation_angles = self.rotation_angles
 
         # self.image_rotation_angles = [0, 45, 90, 135, 180, 225, 270, 315]
-        self.image_rotation_labels = None
+        # self.image_rotation_labels = None
 
 
         # Masking
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, self.vit.embed_dim))
-        self.mask_ratio = mask_ratio
+        # self.mask_token = nn.Parameter(torch.zeros(1, 1, self.vit.embed_dim))
+        # self.mask_ratio = mask_ratio
         self.img_size = img_size
 
 
@@ -119,18 +131,19 @@ class VITFC(nn.Module):
         self.pretext_task = None
         self.pretext_head = None
 
-        self.patch_rotation_head = None
-        self.patch_mask_head = None
-        self.patch_order_head = None
-        self.image_rotation_head = None
+        # self.patch_rotation_head = None
+        # self.patch_mask_head = None
+        # self.patch_order_head = None
+        # self.image_rotation_head = None
 
         print ( "Created VITFC model %s optimizer %s" %( hex(id(self)), hex(id(self.optimizer)) ) )
 
     def parameters(self, recurse: bool = True) -> Iterator[nn.Parameter]:
         modules = nn.ModuleList()
-        modules.add_module("vit", self.vit)
+        modules.add_module("vit", self.backbone)
         if self.pretext_train == False:
-            modules.add_module("head", self.vit.head)
+            if isinstance(self.backbone, VisionTransformer):
+                modules.add_module("head", self.backbone.head)
         # modules.add_module("vit_head", self.vit.head)
 
         parameters = modules.parameters(recurse)
@@ -180,7 +193,7 @@ class VITFC(nn.Module):
                 task = pretext_task
         
         if task is None:
-            task = PatchOrdering(backbone=self.vit, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images)
+            task = PatchOrdering(backbone=self.backbone, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images)
             self.pretext_tasks.append(task)
 
         
@@ -210,7 +223,7 @@ class VITFC(nn.Module):
                 task = pretext_task
         
         if task is None:
-            task = PatchRotation(backbone=self.vit, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images)
+            task = PatchRotation(backbone=self.backbone, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images)
             self.pretext_tasks.append(task)
         
         return task
@@ -222,7 +235,7 @@ class VITFC(nn.Module):
                 task = pretext_task
         
         if task is None:
-            task = ImageRotation(backbone=self.vit, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images)
+            task = ImageRotation(backbone=self.backbone, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images)
             self.pretext_tasks.append(task)
         
         return task
@@ -282,99 +295,99 @@ class VITFC(nn.Module):
         # outputs = logits.permute(0, 2, 1)
         return output
     
-    def forward_patch_rotation(self, x):
+    # def forward_patch_rotation(self, x):
 
-        patches, self.patch_rotation_labels = self.rotate_patches(x)
-        self.save_images(x, patches,1)
+    #     patches, self.patch_rotation_labels = self.rotate_patches(x)
+    #     self.save_images(x, patches,1)
 
-        x = patches
+    #     x = patches
 
-        B = x.shape[0]
-        x = self.vit.patch_embed(x)
-        x = x + self.vit.pos_embed[:, 1:, :]
-        cls_tokens = self.vit.cls_token.expand(B, -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
-        x = x + self.vit.pos_embed[:, :1, :]
-        x = self.vit.pos_drop(x)
-        x = self.vit.blocks(x)
-        x = self.vit.norm(x)
-        patch_tokens = x[:, 1:, :].to(x.device)
-        self.head = self.head.to(x.device)
-        logits = self.head(patch_tokens)
+    #     B = x.shape[0]
+    #     x = self.vit.patch_embed(x)
+    #     x = x + self.vit.pos_embed[:, 1:, :]
+    #     cls_tokens = self.vit.cls_token.expand(B, -1, -1)
+    #     x = torch.cat((cls_tokens, x), dim=1)
+    #     x = x + self.vit.pos_embed[:, :1, :]
+    #     x = self.vit.pos_drop(x)
+    #     x = self.vit.blocks(x)
+    #     x = self.vit.norm(x)
+    #     patch_tokens = x[:, 1:, :].to(x.device)
+    #     self.head = self.head.to(x.device)
+    #     logits = self.head(patch_tokens)
 
-        # B, num_patches, num_classes = logits.shape
-        outputs = logits.permute(0, 2, 1)
-        return outputs
+    #     # B, num_patches, num_classes = logits.shape
+    #     outputs = logits.permute(0, 2, 1)
+    #     return outputs
 
-    def forward_classify(self, x):
-        x = self.vit(x)
-        return x
+    # def forward_classify(self, x):
+    #     x = self.vit(x)
+    #     return x
 
-    def forward_patch_ordering(self, x):
-        images = x
-        x, order = self.shuffle_patches(x, self.custom_order)
+    # def forward_patch_ordering(self, x):
+    #     images = x
+    #     x, order = self.shuffle_patches(x, self.custom_order)
 
-        B, C, H, W = x.size()
-        x = self.vit.patch_embed(x)  # [B, num_patches, embed_dim]
+    #     B, C, H, W = x.size()
+    #     x = self.vit.patch_embed(x)  # [B, num_patches, embed_dim]
         
-        # Riordina le patch se custom_order è definito
-        if self.custom_order is not None:
-            self.custom_order_tensor = torch.tensor(self.custom_order).to(x.device)
-            # x = x[:, self.custom_order_tensor, :]
-            # Riordina anche gli embeddings posizionali
-            pos_embed = self.vit.pos_embed[:, 1:, :][:, self.custom_order_tensor, :]
-        else:
-            pos_embed = self.vit.pos_embed[:, 1:, :]
+    #     # Riordina le patch se custom_order è definito
+    #     if self.custom_order is not None:
+    #         self.custom_order_tensor = torch.tensor(self.custom_order).to(x.device)
+    #         # x = x[:, self.custom_order_tensor, :]
+    #         # Riordina anche gli embeddings posizionali
+    #         pos_embed = self.vit.pos_embed[:, 1:, :][:, self.custom_order_tensor, :]
+    #     else:
+    #         pos_embed = self.vit.pos_embed[:, 1:, :]
         
 
-        # Aggiungi l'embedding posizionale
-        cls_token = self.vit.cls_token.expand(B, -1, -1)  # [B, 1, embed_dim]
-        x = x + pos_embed
-        x = torch.cat((cls_token, x), dim=1)  # [B, 1 + num_patches, embed_dim]
+    #     # Aggiungi l'embedding posizionale
+    #     cls_token = self.vit.cls_token.expand(B, -1, -1)  # [B, 1, embed_dim]
+    #     x = x + pos_embed
+    #     x = torch.cat((cls_token, x), dim=1)  # [B, 1 + num_patches, embed_dim]
         
-        # Passa attraverso i Transformer Encoder layers
-        x = self.vit.pos_drop(x)
-        x = self.vit.blocks(x)
-        x = self.vit.norm(x)
+    #     # Passa attraverso i Transformer Encoder layers
+    #     x = self.vit.pos_drop(x)
+    #     x = self.vit.blocks(x)
+    #     x = self.vit.norm(x)
         
-        self.patch_embedding = x[:, 1:].to(x.device)  # Ignora il token di classificazione
-        # logits = self.vit.head(x[:, 0])
-        return x
+    #     self.patch_embedding = x[:, 1:].to(x.device)  # Ignora il token di classificazione
+    #     # logits = self.vit.head(x[:, 0])
+    #     return x
 
-    def forward_mask(self, x):
-        # Encoder
-        x_encoded, mask, ids_restore = self.forward_encoder_mask(x, self.mask_ratio)
+    # def forward_mask(self, x):
+    #     # Encoder
+    #     x_encoded, mask, ids_restore = self.forward_encoder_mask(x, self.mask_ratio)
 
-        # Decoder
-        preds = self.forward_decoder_mask(x_encoded, ids_restore)  # Reconstructed patches
+    #     # Decoder
+    #     preds = self.forward_decoder_mask(x_encoded, ids_restore)  # Reconstructed patches
 
-        B, C, H, W = x.shape
+    #     B, C, H, W = x.shape
 
-        # Correctly retrieve patch_size
-        if isinstance(self.vit.patch_embed.patch_size, tuple):
-            patch_size = self.vit.patch_embed.patch_size[0]  # Assuming square patches
-        else:
-            patch_size = self.patch_embed.patch_size
+    #     # Correctly retrieve patch_size
+    #     if isinstance(self.vit.patch_embed.patch_size, tuple):
+    #         patch_size = self.vit.patch_embed.patch_size[0]  # Assuming square patches
+    #     else:
+    #         patch_size = self.patch_embed.patch_size
 
-        # Extract patches from images
-        patches = x.unfold(2, patch_size, patch_size).unfold(3, patch_size, patch_size)
-        patches = patches.contiguous().view(B, C, -1, patch_size, patch_size)
-        patches = patches.permute(0, 2, 1, 3, 4)  # [B, num_patches, C, patch_size, patch_size]
-        patches = patches.reshape(B, -1, C * patch_size * patch_size)  # [B, num_patches, patch_dim]
+    #     # Extract patches from images
+    #     patches = x.unfold(2, patch_size, patch_size).unfold(3, patch_size, patch_size)
+    #     patches = patches.contiguous().view(B, C, -1, patch_size, patch_size)
+    #     patches = patches.permute(0, 2, 1, 3, 4)  # [B, num_patches, C, patch_size, patch_size]
+    #     patches = patches.reshape(B, -1, C * patch_size * patch_size)  # [B, num_patches, patch_dim]
 
-        target = patches  # [B, num_patches, patch_dim]
+    #     target = patches  # [B, num_patches, patch_dim]
 
-        # Print shapes for debugging
-        # print(f"patch_size: {patch_size}")
-        # print(f"preds shape: {preds.shape}")
-        # print(f"target shape: {target.shape}")
-        # print(f"mask shape: {mask.shape}")
-        # Compute loss
-        # loss = self.pretext_loss(patches, preds, mask)
-        self.patches = patches
-        self.mask = mask
-        self.preds = preds
-        return preds
+    #     # Print shapes for debugging
+    #     # print(f"patch_size: {patch_size}")
+    #     # print(f"preds shape: {preds.shape}")
+    #     # print(f"target shape: {target.shape}")
+    #     # print(f"mask shape: {mask.shape}")
+    #     # Compute loss
+    #     # loss = self.pretext_loss(patches, preds, mask)
+    #     self.patches = patches
+    #     self.mask = mask
+    #     self.preds = preds
+    #     return preds
 
 
 

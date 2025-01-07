@@ -4,7 +4,7 @@ import os
 from utils.image_utils import plot_image, plot_grid_images, save_grid_images
 
 class PretextTask (nn.Module):
-    def __init__(self, backbone=None, input_dim = 768, output_dim = 768, debug_images=False, image_output_directory = 'output_images', embedding_size = 768, img_size=224, patch_size=-1, patch_count = -1):
+    def __init__(self, backbone=None, input_dim = 768, output_dim = 768, debug_images=False, image_output_directory = 'output_images', embedding_size = 768, img_size=224, patch_size=-1, patch_count = -1, cls_token_only = True):
         super(PretextTask, self).__init__()
 
         self.img_size = img_size
@@ -20,6 +20,8 @@ class PretextTask (nn.Module):
             self.patch_size = img_size // int(self.num_patches ** 0.5)
 
         self.patch_count_per_row = int(self.img_size / self.patch_size)
+
+        self.cls_token_only = cls_token_only
 
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

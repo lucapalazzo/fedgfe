@@ -23,8 +23,8 @@ from flcore.trainmodel.downstreamsegmentation import DownstreamSegmentation
 from tqdm import tqdm
 
 class clientGFE(clientRewind):
-    def __init__(self, args, model_id, train_samples, test_samples, dataset = None, is_strong = False, id_by_type=-1, rewind_epochs = 0, rewind_interval = 0, rewind_ratio = 0, pretext_tasks = [], **kwargs):
-        super().__init__(args, model_id, train_samples, test_samples, **kwargs)
+    def __init__(self, args, model_id, train_samples, test_samples, dataset = None, is_strong = False, id_by_type=-1, rewind_epochs = 0, rewind_interval = 0, rewind_ratio = 0, pretext_tasks = [], model=None, **kwargs):
+        super().__init__(args, model_id, train_samples, test_samples, model=model, **kwargs)
 
         self.node_routes = []
      
@@ -204,7 +204,7 @@ class clientGFE(clientRewind):
                 losses = 0
                 downstream_losses = 0
 
-                print ( "Round %d Epoch %d Optimizer: %s " % ( self.round, step, hex(id(self.model.optimizer))), end='')
+                print ( "Round %d Epoch %d" % ( self.round, step), end='')
                 # with tqdm(total=local_epochs, desc=f"Epoch {step+1}/{local_epochs}", unit='epoch') as pbarepoch:
 
                     # print ( "Samples worked: ", end='') 
