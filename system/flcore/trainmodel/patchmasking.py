@@ -26,6 +26,7 @@ class PatchMasking (PatchPretextTask):
             
             self.mask_model = ViTMAEForPreTraining(self.mask_model_config).to(self.device)
             self.mask_model.vit.encoder = self.backbone.encoder
+            self.pretext_head = self.mask_model.decoder
             # self.mask_model.encoder = self.backbone.encoder
         else:
             self.pretext_head = nn.Sequential( nn.Linear(self.output_dim, self.masked_count * self.patch_size * 3 ) ).to(self.device)
