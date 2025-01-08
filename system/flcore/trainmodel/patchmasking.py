@@ -6,6 +6,7 @@ from typing import Iterator
 import numpy as np
 
 from timm.models.vision_transformer import Block
+from transformers import ViTMAEModel, ViTMAEForPreTraining, ViTMAEConfig, ViTModel
 
 class PatchMasking (PatchPretextTask):
     def __init__(self, backbone=None, input_dim = 768, output_dim = 768, debug_images=False, img_size=224, patch_size=-1, patch_count = -1, mask_ratio = 0.15):
@@ -19,7 +20,15 @@ class PatchMasking (PatchPretextTask):
         self.masked_count = int(self.mask_ratio * self.patch_count)
         self.masked_indices = []
         self.pretext_loss = nn.MSELoss(reduction='none')
-        self.pretext_head = nn.Sequential( nn.Linear(self.output_dim, self.masked_count * self.patch_size * 3 ) ).to(self.device)
+        if isinstance(self.backbone, ViTModel):
+            self.mask_model_config = ViTMAEConfig()
+            self.mask_model_config.hidden_size = input_dim
+            
+            self.mask_model = ViTMAEForPreTraining(self.mask_model_config).to(self.device)
+            self.mask_model.vit.encoder = self.backbone.encoder
+            # self.mask_model.encoder = self.backbone.encoder
+        else:
+            self.pretext_head = nn.Sequential( nn.Linear(self.output_dim, self.masked_count * self.patch_size * 3 ) ).to(self.device)
 
     def parameters(self, recurse: bool = True) -> Iterator[nn.Parameter]:
         modules = nn.ModuleList()
@@ -27,25 +36,36 @@ class PatchMasking (PatchPretextTask):
         parameters = modules.parameters(recurse)
         return parameters
 
+    def accuracy(self, x, target):
+        return 0
+        return super().accuracy(x, target)
+    
     def preprocess_sample(self, x):
         
-        images, self.masked_indices = self.random_masking(x, self.mask_ratio) 
-        self.save_images(x, images, max_saved=1)
-        return images 
+        # images, self.masked_indices = self.random_masking(x, self.mask_ratio) 
+        # self.save_images(x, images, max_saved=1)
+        return x 
     
     def loss(self, x, y = None):
-        target = torch.tensor(self.patch_rotation_labels).long().to(x.device)
+        loss = x.loss
+        return loss
+        self.mask_model.loss_function(x)
+        # target = torch.tensor(self.patch_rotation_labels).long().to(x.device)
         return self.pretext_loss(x, target)
 
     
     def forward(self, x):
         x = self.preprocess_sample(x)
-        if self.backbone is not None:
+
+        if isinstance(self.backbone, ViTModel):
+            x = self.mask_model(x)
+        elif self.backbone is not None:
             # self.backbone.logits_only = True
             x = self.backbone(x)
+            x = self.pretext_head(x)
 
 
-        return self.pretext_head(x)
+        return x
     
     def decoder_create(self, x):
         self.decoder_embed = nn.Linear(self.vit.embed_dim, self.decoder_embed_dim, bias=True)

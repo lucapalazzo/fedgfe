@@ -66,6 +66,7 @@ class FedGFE(FedRewind):
         self.clients = []
 
         self.model_aggregation_weighted = args.model_aggregation_weighted
+        self.vit_config = None
 
         if self.routing_static:
             self.routing = StaticRouting(clients_count=self.num_clients, random=self.routing_random) 
@@ -93,10 +94,10 @@ class FedGFE(FedRewind):
     def create_nodes_model ( self, model_string ):
         model = None
         if model_string == "hf_vit":
-            config = ViTConfig()
-            config.loss_type = "cross_entropy"
-            config.patch_size = self.args.patch_size
-            model = ViTModel(config)
+            self.vit_config = ViTConfig()
+            self.vit_config.loss_type = "cross_entropy"
+            self.vit_config.patch_size = self.args.patch_size
+            model = ViTModel(self.vit_config)
         elif model_string == "timm_vit":
             model = VisionTransformer(
         # img_size=img_size,

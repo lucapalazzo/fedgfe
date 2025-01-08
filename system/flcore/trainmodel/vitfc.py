@@ -159,7 +159,7 @@ class VITFC(nn.Module):
                 task = pretext_task
         
         if task is None:
-            task = PatchMasking(backbone=self.vit, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images)
+            task = PatchMasking(backbone=self.backbone, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images)
             self.pretext_tasks.append(task)
 
         return task
