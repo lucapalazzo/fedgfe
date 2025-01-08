@@ -192,7 +192,7 @@ class clientGFE(clientRewind):
             # self.downstream_task.backbone = self.model.inner_model
 
             self.optimizer.add_param_group({'params': self.model.pretext_task.parameters(), 'lr': self.learning_rate})
-            
+            round_loss = 0 
             for step in range(local_epochs):
                 if ( ( self.rewind_strategy == "halfway" or self.rewind_strategy == "interval" or self.rewind_strategy == "atend_pre"  ) and len(self.rewind_previous_node) > 0 ):
                     self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
@@ -253,10 +253,11 @@ class clientGFE(clientRewind):
                     pbarbatch.update(1)
                     if ( self.args.limit_samples_number > 0 and i*trainloader.batch_size > self.args.limit_samples_number ):
                         break
+                round_loss += losses
 
                 # pbarepoch.update(1)
                 # print ( f"loss {losses/i:.2f} downstream loss {downstream_losses/i:2f}")
-                self.data_log({f"train/node_{self.id}/pretext_train_loss_{pretext_task_name}": losses/i, "round": self.round})
+            self.data_log({f"train/node_{self.id}/pretext_train_loss_{pretext_task_name}": round_loss/local_epochs, "round": self.round})
 
             pbarbatch.close()
             print()

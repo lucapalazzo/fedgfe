@@ -39,7 +39,7 @@ from modelutils.patchmaskloss import PatchMaskLoss
 
 from timm.models.vision_transformer import Block
 from timm.models.vision_transformer import VisionTransformer
-from transformers import ViTMAEModel
+from transformers import ViTModel
 from utils.variablewatcher import VariableWatcher
 from torchvision import transforms
 from utils.image_utils import plot_image, plot_grid_images, save_grid_images
@@ -144,6 +144,8 @@ class VITFC(nn.Module):
         if self.pretext_train == False:
             if isinstance(self.backbone, VisionTransformer):
                 modules.add_module("head", self.backbone.head)
+            elif isinstance(self.backbone, ViTModel):
+                modules.add_module("head", self.backbone.encoder)
         # modules.add_module("vit_head", self.vit.head)
 
         parameters = modules.parameters(recurse)

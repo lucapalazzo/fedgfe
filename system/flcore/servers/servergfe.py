@@ -108,7 +108,7 @@ class FedGFE(FedRewind):
         depth=12,            # Number of transformer layers = 2
         num_heads=12,        # Number of attention heads
         mlp_ratio=4.0,      # MLP hidden dimension ratio
-        patch_size=args.patch_size,         # Patch size
+        patch_size=self.args.patch_size,         # Patch size
         class_token=True,  # Prepend class token to input
         global_pool='',  # Global pool type (one of 'cls', 'mean', 'attn')
         # qkv_bias=True,
