@@ -48,21 +48,10 @@ class FedGFE(FedRewind):
 
         self.nodes_datasets = self.args.dataset.split(":")
         self.nodes_downstream_tasks = self.args.nodes_downstream_tasks.split(":")
+        self.nodes_training_sequence = self.args.nodes_training_sequence
         
         self.model_aggregation = self.args.model_aggregation
 
-        self.rewind_ratio = args.rewind_ratio
-        self.rewind_epochs = args.rewind_epochs
-        self.rewind_interval = args.rewind_interval
-        self.rewind_rotate = args.rewind_rotate
-        self.global_rounds = args.global_rounds
-        self.rewind_random = args.rewind_random
-        self.rewind_noise = args.rewind_noise
-        self.rewind_donkey = args.rewind_donkey
-        self.rewind_donkey_count = args.rewind_donkey_count
-        self.rewind_learning_rate_decay = args.rewind_learning_rate_decay
-        self.rewind_learning_rate_decay_ratio = args.rewind_learning_rate_decay_ratio
-        self.rewind_learning_rate_keep = args.rewind_learning_rate_keep
         self.clients = []
 
         self.model_aggregation_weighted = args.model_aggregation_weighted
@@ -129,25 +118,109 @@ class FedGFE(FedRewind):
         # update pandas dataframe with statistics
         self.statistics_dataframe = self.statistics_dataframe.append({'round': round, 'node': node, 'model': model, 'train_loss': train_loss, 'train_acc': train_acc, 'test_acc': test_acc, 'test_auc': test_auc, 'rewind_loss': rewind_loss, 'rewind_acc': rewind_acc, 'rewind_auc': rewind_auc}, ignore_index=True)
         
-    def train_thread(self, client, device=-1, future = None, previous_node = None):
+    def train_thread(self, client, device=-1, future = None, previous_node = None, training_task = "both"):
 
         if (device != -1):
             client.device = device
-        thread = Thread(target=self.client_thread, args=(client, device, future, previous_node))
+        thread = Thread(target=self.client_thread, args=(client, device, future, previous_node, training_task))
         thread.start()
         
         return thread
 
-    def client_thread(self, client, device=-1, future = None, previous_node = None):
+    def client_thread(self, client, device=-1, future = None, previous_node = None, training_task = "both"):
 
         if (device != -1):
             client.device = device
-        target=client.train( rewind_train_node = previous_node )
+        target=client.train( rewind_train_node = previous_node, training_task = training_task )
         if future != None:
             future.set_result(-1)
+    
+    def train_run(self, round, training_task = "both"):
+        # importante commentare questa riga per avere i client sempre ordinati
+        #self.selected_clients = self.select_clients()
+        self.selected_clients = self.clients
+
+        running_threads = { 0: None, 1: None }
+        running_futures = { 0: None, 1: None }
+        running_clients = { 0: None, 1: None }
+        running_start_times = { 0: 0, 1: 0 }
+        # with concurrent.futures.ProcessPoolExecutor(max_workers=2) as executor:a
+        client_count = len(self.clients)
+        client_index = 0
+        # availables_gpus = [ 0 , 1]
+        availables_gpus = self.gpus
+        while client_index < client_count:
+            client = self.clients[client_index]
+            client.round = round
+            client.thread = None
+            client.federation_size = len(self.clients)
+        # while client.thread == None:
+            for gpu in availables_gpus:
+                if running_threads[gpu] == None:
+                    # print("Starting training of node %d on GPU %d" % (client.id, gpu))
+
+                    device = "cuda:"+str(gpu)
+                    # executor.map(client.train, device)
+                    running_futures[gpu] = futures.Future()
+                    future = running_futures[gpu]
+                    node_previous_length = len(client.rewind_previous_node_id)
+                    previous_node = None
+                    if ( node_previous_length > 0 ):
+                        previous_node_index = client.rewind_previous_node_id[node_previous_length-1]
+                        for previous_client in self.clients:
+                            if previous_client.id == previous_node_index:
+                                previous_node = previous_client
+                                break
+                    running_threads[gpu] = self.train_thread(client, device, future, previous_node, training_task = training_task)
+                    running_start_times[gpu] = time.time()
+                    running_clients[gpu] = client
+                    # running_threads[gpu] = self.train_thread (client, device)
+                    client.thread = running_threads[gpu]
+                    client_index += 1
+                    break
+            for gpu in availables_gpus:
+                if running_futures[gpu] != None:
+                    # print(running_futures[0].done())
+                    if running_futures[gpu].done():
+                        elapsed = time.time() - running_start_times[gpu]
+                        client_type = "standard"
+                        running_client = running_clients[gpu]
+                        running_client_id = running_client.id
+                        # client_model_name = str(running_client.model).split( "(", 1)[0]
+                        running_threads[gpu] = None
+                        running_futures[gpu] = None
+                        
+                        # print ( "Calling ending hook from main")
+                        self.client_round_ending_hook( running_client )
+            time.sleep(0.1)
+        
+        
+        while running_futures[0] != None or running_futures[1] != None:
+            for gpu in availables_gpus:
+                if running_futures[gpu] != None:
+                    running_client = running_clients[gpu]
+                    # print(running_futures[0].done())
+                    if running_futures[gpu].done():
+                        elapsed = time.time() - running_start_times[gpu]
+                        client_type = "standard"
+                        running_client_id = running_client.id
+                        # if self.clients[running_client_id].is_strong:
+                        #     client_type = "strong"
+                        client_model_name = str(running_client.model).split( "(", 1)[0]
+                        running_client.model
+                        running_threads[gpu] = None
+                        running_futures[gpu] = None
+                        # print ( "Calling ending hook from loop")
+                        self.client_round_ending_hook( running_client )
+            time.sleep(0.1)
 
     def train(self):
-       
+        
+        train_type = self.nodes_training_sequence
+
+        if self.nodes_training_sequence == "sslfirst":
+            training_task = "pretext"
+
         for i in range(self.global_rounds+1):
             self.round = i
             s_t = time.time()
@@ -155,84 +228,92 @@ class FedGFE(FedRewind):
             #self.selected_clients = self.select_clients()
             self.selected_clients = self.clients
 
+
             if i%self.eval_gap == 0:
                 print(f"\n-------------Round number: {i}-------------")
                 print("\nEvaluate personalized models")
                 self.evaluate()
-            running_threads = { 0: None, 1: None }
-            running_futures = { 0: None, 1: None }
-            running_clients = { 0: None, 1: None }
-            running_start_times = { 0: 0, 1: 0 }
-            # with concurrent.futures.ProcessPoolExecutor(max_workers=2) as executor:a
-            client_count = len(self.clients)
-            client_index = 0
-            # availables_gpus = [ 0 , 1]
-            availables_gpus = self.gpus
-            while client_index < client_count:
-                client = self.clients[client_index]
-                client.round = i
-                client.thread = None
-                client.federation_size = len(self.clients)
-            # while client.thread == None:
-                for gpu in availables_gpus:
-                    if running_threads[gpu] == None:
-                        # print("Starting training of node %d on GPU %d" % (client.id, gpu))
+            
+            self.train_run( i, training_task = training_task )
 
-                        device = "cuda:"+str(gpu)
-                        # executor.map(client.train, device)
-                        running_futures[gpu] = futures.Future()
-                        future = running_futures[gpu]
-                        node_previous_length = len(client.rewind_previous_node_id)
-                        previous_node = None
-                        if ( node_previous_length > 0 ):
-                            previous_node_index = client.rewind_previous_node_id[node_previous_length-1]
-                            for previous_client in self.clients:
-                                if previous_client.id == previous_node_index:
-                                    previous_node = previous_client
-                                    break
-                        running_threads[gpu] = self.train_thread(client, device, future, previous_node)
-                        running_start_times[gpu] = time.time()
-                        running_clients[gpu] = client
-                        # running_threads[gpu] = self.train_thread (client, device)
-                        client.thread = running_threads[gpu]
-                        client_index += 1
-                        break
-                for gpu in availables_gpus:
-                    if running_futures[gpu] != None:
-                        # print(running_futures[0].done())
-                        if running_futures[gpu].done():
-                            elapsed = time.time() - running_start_times[gpu]
-                            client_type = "standard"
-                            running_client = running_clients[gpu]
-                            running_client_id = running_client.id
-                            # client_model_name = str(running_client.model).split( "(", 1)[0]
-                            running_threads[gpu] = None
-                            running_futures[gpu] = None
+            # running_threads = { 0: None, 1: None }
+            # running_futures = { 0: None, 1: None }
+            # running_clients = { 0: None, 1: None }
+            # running_start_times = { 0: 0, 1: 0 }
+            # # with concurrent.futures.ProcessPoolExecutor(max_workers=2) as executor:a
+            # client_count = len(self.clients)
+            # client_index = 0
+            # # availables_gpus = [ 0 , 1]
+            # availables_gpus = self.gpus
+            # while client_index < client_count:
+            #     client = self.clients[client_index]
+            #     client.round = i
+            #     client.thread = None
+            #     client.federation_size = len(self.clients)
+            # # while client.thread == None:
+            #     for gpu in availables_gpus:
+            #         if running_threads[gpu] == None:
+            #             # print("Starting training of node %d on GPU %d" % (client.id, gpu))
+
+            #             device = "cuda:"+str(gpu)
+            #             # executor.map(client.train, device)
+            #             running_futures[gpu] = futures.Future()
+            #             future = running_futures[gpu]
+            #             node_previous_length = len(client.rewind_previous_node_id)
+            #             previous_node = None
+            #             if ( node_previous_length > 0 ):
+            #                 previous_node_index = client.rewind_previous_node_id[node_previous_length-1]
+            #                 for previous_client in self.clients:
+            #                     if previous_client.id == previous_node_index:
+            #                         previous_node = previous_client
+            #                         break
+            #             running_threads[gpu] = self.train_thread(client, device, future, previous_node, train_type = self.nodes_training_sequence)
+            #             running_start_times[gpu] = time.time()
+            #             running_clients[gpu] = client
+            #             # running_threads[gpu] = self.train_thread (client, device)
+            #             client.thread = running_threads[gpu]
+            #             client_index += 1
+            #             break
+            #     for gpu in availables_gpus:
+            #         if running_futures[gpu] != None:
+            #             # print(running_futures[0].done())
+            #             if running_futures[gpu].done():
+            #                 elapsed = time.time() - running_start_times[gpu]
+            #                 client_type = "standard"
+            #                 running_client = running_clients[gpu]
+            #                 running_client_id = running_client.id
+            #                 # client_model_name = str(running_client.model).split( "(", 1)[0]
+            #                 running_threads[gpu] = None
+            #                 running_futures[gpu] = None
                             
-                            # print ( "Calling ending hook from main")
-                            self.client_round_ending_hook( running_client )
-                time.sleep(0.1)
+            #                 # print ( "Calling ending hook from main")
+            #                 self.client_round_ending_hook( running_client )
+            #     time.sleep(0.1)
             
             
-            while running_futures[0] != None or running_futures[1] != None:
-                for gpu in availables_gpus:
-                    if running_futures[gpu] != None:
-                        running_client = running_clients[gpu]
-                        # print(running_futures[0].done())
-                        if running_futures[gpu].done():
-                            elapsed = time.time() - running_start_times[gpu]
-                            client_type = "standard"
-                            running_client_id = running_client.id
-                            # if self.clients[running_client_id].is_strong:
-                            #     client_type = "strong"
-                            client_model_name = str(running_client.model).split( "(", 1)[0]
-                            running_client.model
-                            running_threads[gpu] = None
-                            running_futures[gpu] = None
-                            # print ( "Calling ending hook from loop")
-                            self.client_round_ending_hook( running_client )
-                time.sleep(0.1)
+            # while running_futures[0] != None or running_futures[1] != None:
+            #     for gpu in availables_gpus:
+            #         if running_futures[gpu] != None:
+            #             running_client = running_clients[gpu]
+            #             # print(running_futures[0].done())
+            #             if running_futures[gpu].done():
+            #                 elapsed = time.time() - running_start_times[gpu]
+            #                 client_type = "standard"
+            #                 running_client_id = running_client.id
+            #                 # if self.clients[running_client_id].is_strong:
+            #                 #     client_type = "strong"
+            #                 client_model_name = str(running_client.model).split( "(", 1)[0]
+            #                 running_client.model
+            #                 running_threads[gpu] = None
+            #                 running_futures[gpu] = None
+            #                 # print ( "Calling ending hook from loop")
+            #                 self.client_round_ending_hook( running_client )
+            #     time.sleep(0.1)
             
+
+
+            ## Routing
+
             # self.routes = self.get_routes()
             # # self.routes = get_routes(self.num_clients, self.clients)
             # self.distribute_routes(self.routes)
@@ -262,6 +343,14 @@ class FedGFE(FedRewind):
                 self.send_models()
 
             self.save_checkpoint()
+
+        if self.nodes_training_sequence == "sslfirst":
+            for round in range(self.global_rounds+1):
+                self.train_run( round, training_task = "downstream" )
+
+
+
+
 
 
         # print("Node routes\n")

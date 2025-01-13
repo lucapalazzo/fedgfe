@@ -85,7 +85,7 @@ class clientGFE(clientRewind):
     
 
 
-    def train(self, client_device = None, rewind_train_node = None, ):
+    def train(self, client_device = None, rewind_train_node = None, training_task = "both"):
         node_trainloader = self.load_train_data()
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
         # if self.next_train_model_id != self.id:
@@ -183,37 +183,83 @@ class clientGFE(clientRewind):
         # self.downstream_task.backbone = self.model.backbone
         # self.model.downstream_task_set( self.downstream_task)
         self.model.pretext_train = True
+        if training_task == "both" or training_task == "pretext":
 
-        for pretext_task_name in self.pretext_tasks:
-            self.model.pretext_task_name = pretext_task_name
-            print ( f"Node {self.id} training on pretext task {pretext_task_name}")
-        
-            self.freeze(backbone=False, pretext=False, downstream=True)
-            # self.downstream_task.backbone = self.model.inner_model
+            for pretext_task_name in self.pretext_tasks:
+                self.model.pretext_task_name = pretext_task_name
+                print ( f"Node {self.id} training on pretext task {pretext_task_name}")
+            
+                self.freeze(backbone=False, pretext=False, downstream=True)
 
-            self.optimizer.add_param_group({'params': self.model.pretext_task.parameters(), 'lr': self.learning_rate})
-            round_loss = 0 
-            for step in range(local_epochs):
-                if ( ( self.rewind_strategy == "halfway" or self.rewind_strategy == "interval" or self.rewind_strategy == "atend_pre"  ) and len(self.rewind_previous_node) > 0 ):
-                    self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
+                self.optimizer.add_param_group({'params': self.model.pretext_task.parameters(), 'lr': self.learning_rate})
+                round_loss = 0 
+                for step in range(local_epochs):
+                    if ( ( self.rewind_strategy == "halfway" or self.rewind_strategy == "interval" or self.rewind_strategy == "atend_pre"  ) and len(self.rewind_previous_node) > 0 ):
+                        self.rewind(step, max_local_epochs, rewind_epochs, rewind_nodes_count)
 
-                trainloader = node_trainloader
-                if trainloader == None:
-                    print ( f"Node {self.id} has no data")
-                    return
-                losses = 0
-                downstream_losses = 0
+                    trainloader = node_trainloader
+                    if trainloader == None:
+                        print ( f"Node {self.id} has no data")
+                        return
+                    losses = 0
+                    downstream_losses = 0
 
-                print ( "Round %d Epoch %d" % ( self.round, step), end='')
-                # with tqdm(total=local_epochs, desc=f"Epoch {step+1}/{local_epochs}", unit='epoch') as pbarepoch:
+                    print ( "Round %d Epoch %d" % ( self.round, step), end='')
+                    # with tqdm(total=local_epochs, desc=f"Epoch {step+1}/{local_epochs}", unit='epoch') as pbarepoch:
 
-                    # print ( "Samples worked: ", end='') 
-                pbarbatch = tqdm(total=num_batches, desc=f"Batch ", unit='batch', leave=False) 
-                # pbarbatch = tqdm(total=num_batches, desc=f"Batch {i+1}/{num_batches}", unit='batch', leave=False) 
-                for i, (x, y) in enumerate(trainloader):
-                    if self.check_batch(x, y) == False:
-                        continue
+                        # print ( "Samples worked: ", end='') 
+                    pbarbatch = tqdm(total=num_batches, desc=f"Batch ", unit='batch', leave=False) 
+                    # pbarbatch = tqdm(total=num_batches, desc=f"Batch {i+1}/{num_batches}", unit='batch', leave=False) 
+                    for i, (x, y) in enumerate(trainloader):
+                        if self.check_batch(x, y) == False:
+                            continue
 
+                        if type(x) == type([]):
+                            x[0] = x[0].to(device)
+                            # x[0] = self.transform(x[0])
+                        else:
+                            x = x.to(device)
+                            # x= self.transform(x)
+                        y = y.to(device)
+                        
+                        output = self.model(x)
+                        # output = heads(output)
+                        # loss = self.model.loss(output, y).to(device)
+                        loss = self.model.loss( output, y )
+                        losses += loss.item()
+                        
+                        self.downstream_task.backbone_enabled = True
+                        downstream_output = self.downstream_task(x)
+                        downstream_loss = self.downstream_task.loss ( downstream_output, y)
+                        downstream_losses += downstream_loss.item()
+                        self.downstream_task.backbone_enabled = False
+
+                        self.optimizer.zero_grad()
+
+                        summed_loss = loss
+                        if self.downstream_loss_operation == "sum":
+                            summed_loss = loss + downstream_loss
+                        
+                        summed_loss.backward()
+
+                        self.optimizer.step()
+
+                        pbarbatch.set_postfix({'Loss': f'{loss.item():.2f}', 'DSLoss': f'{downstream_loss.item():.2f}', 'Epoch': f'{step+1}/{local_epochs}'})
+                        pbarbatch.update(1)
+                        if ( self.args.limit_samples_number > 0 and i*trainloader.batch_size > self.args.limit_samples_number ):
+                            break
+                    round_loss += losses
+
+                    # pbarepoch.update(1)
+                    # print ( f"loss {losses/i:.2f} downstream loss {downstream_losses/i:2f}")
+                self.data_log({f"train/node_{self.id}/pretext_train_loss_{pretext_task_name}": round_loss/local_epochs, "round": self.round})
+
+                pbarbatch.close()
+                print()
+
+                pretext_accuracy = 0
+                testloader = self.load_test_data()
+                for i, (x, y) in enumerate(testloader):
                     if type(x) == type([]):
                         x[0] = x[0].to(device)
                         # x[0] = self.transform(x[0])
@@ -221,66 +267,15 @@ class clientGFE(clientRewind):
                         x = x.to(device)
                         # x= self.transform(x)
                     y = y.to(device)
-                    
                     output = self.model(x)
-                    # output = heads(output)
-                    # loss = self.model.loss(output, y).to(device)
-                    loss = self.model.loss( output, y )
-                    losses += loss.item()
+                    pretext_accuracy += self.model.accuracy(output)
+                
+                i += 1
+                pretext_accuracy = pretext_accuracy/i
+                print ( f"Pretext {pretext_task_name} accuracy {pretext_accuracy/i:.3f}")
+                self.data_log({f"test/node_{self.id}/pretext_test_acc_{pretext_task_name}": pretext_accuracy, "round": self.round})
 
-
-                    
-
-                    # downstream_loss = loss
-                    # with torch.no_grad():
-                    self.downstream_task.backbone_enabled = True
-                    downstream_output = self.downstream_task(x)
-                    downstream_loss = self.downstream_task.loss ( downstream_output, y)
-                    downstream_losses += downstream_loss.item()
-                    self.downstream_task.backbone_enabled = False
-
-                    self.optimizer.zero_grad()
-
-                    summed_loss = loss
-                    if self.downstream_loss_operation == "sum":
-                        summed_loss = loss + downstream_loss
-                    
-                    summed_loss.backward()
-
-                    self.optimizer.step()
-
-                    pbarbatch.set_postfix({'Loss': f'{loss.item():.2f}', 'DSLoss': f'{downstream_loss.item():.2f}', 'Epoch': f'{step+1}/{local_epochs}'})
-                    pbarbatch.update(1)
-                    if ( self.args.limit_samples_number > 0 and i*trainloader.batch_size > self.args.limit_samples_number ):
-                        break
-                round_loss += losses
-
-                # pbarepoch.update(1)
-                # print ( f"loss {losses/i:.2f} downstream loss {downstream_losses/i:2f}")
-            self.data_log({f"train/node_{self.id}/pretext_train_loss_{pretext_task_name}": round_loss/local_epochs, "round": self.round})
-
-            pbarbatch.close()
-            print()
-
-            pretext_accuracy = 0
-            testloader = self.load_test_data()
-            for i, (x, y) in enumerate(testloader):
-                if type(x) == type([]):
-                    x[0] = x[0].to(device)
-                    # x[0] = self.transform(x[0])https://www.federbridge.it/Simultanei/Classifica.asp?simdate=18/12/2024&simcode=NSTNFIGB1
-                else:
-                    x = x.to(device)
-                    # x= self.transform(x)
-                y = y.to(device)
-                output = self.model(x)
-                pretext_accuracy += self.model.accuracy(output)
-            
-            i += 1
-            pretext_accuracy = pretext_accuracy/i
-            print ( f"Pretext {pretext_task_name} accuracy {pretext_accuracy/i:.3f}")
-            self.data_log({f"test/node_{self.id}/pretext_test_acc_{pretext_task_name}": pretext_accuracy, "round": self.round})
-
-        if self.downstream_task != None:
+        if self.downstream_task != None and ( training_task == "both" or training_task == "downstream"):
             backbone_grad = False
             if len(self.pretext_tasks) == 0:
                 print ( f"No pretext task, not freezing backbone parameters")

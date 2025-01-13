@@ -641,6 +641,7 @@ if __name__ == "__main__":
     parser.add_argument('-nodst', '--no_downstream_tasks', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Use original head for downstram tasks for federation")
     parser.add_argument('-nptt', '--nodes_pretext_tasks', type=str, default='', help="Pretext tasks for federation")
     parser.add_argument('-npttp', '--nodes_pretext_tasks_parallel', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Parallel pretext task training")
+    parser.add_argument('-nts', '--nodes_training_sequence', type=str, default="sslfirst", help="Nodes training sequence for federation [sslfirst traing on pretext task and downstram at end]")
     parser.add_argument('-es', '--embedding_size', type=int, default=768, help="embedding size for transformer")
     parser.add_argument('-ps', '--patch_size', type=int, default=16, help="patch size for transformer")
     parser.add_argument('-lsn', '--limit_samples_number', type=int, default=0, help="Limit the first n samples for each node")
@@ -649,6 +650,7 @@ if __name__ == "__main__":
     parser.add_argument('-dpti', '--debug_pretext_images', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Save images after pretext tasks")
     parser.add_argument('-ma', '--model_aggregation', type=str, default="none", help="Model aggregation method")
     parser.add_argument('-maw', '--model_aggregation_weighted', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Model aggregation weighted")
+
 
 
     # Routing algos
