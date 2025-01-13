@@ -191,7 +191,8 @@ class FedGFE(FedRewind):
                         running_futures[gpu] = None
                         
                         # print ( "Calling ending hook from main")
-                        self.client_round_ending_hook( running_client )
+                        if training_task == "both" or training_task == "downstream":
+                            self.client_round_ending_hook( running_client )
             time.sleep(0.1)
         
         
@@ -216,8 +217,6 @@ class FedGFE(FedRewind):
 
     def train(self):
         
-        train_type = self.nodes_training_sequence
-
         if self.nodes_training_sequence == "sslfirst":
             training_task = "pretext"
 

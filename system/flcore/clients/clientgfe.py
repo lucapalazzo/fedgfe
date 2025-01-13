@@ -355,7 +355,7 @@ class clientGFE(clientRewind):
         pretext_head_grad = not pretext
         downstream_grad = not downstream
 
-        print ( f"Freezing backbone parameters {backbone_grad} pretext head {pretext_head_grad} downstream {downstream_grad}")   
+        print ( f"Gradients: backbone {backbone_grad} pretext head {pretext_head_grad} downstream {downstream_grad}")   
         for param in self.model.parameters():
             param.requires_grad = backbone_grad
 
@@ -365,112 +365,6 @@ class clientGFE(clientRewind):
         
         for param in self.downstream_task.parameters():
             param.requires_grad = downstream_grad
-
-
-    def prepare_rewind(self, max_local_epochs, rewind_train_node = None):
-        rewind_nodes_count = len(self.rewind_previous_node)
-
-        if rewind_nodes_count == 0:
-            return max_local_epochs, max_local_epochs, rewind_nodes_count
-
-        if ( self.rewind_epochs > 0 and rewind_train_node != None ):
-            rewind_epochs = self.rewind_epochs
-        else:
-            rewind_epochs = math.ceil ( max_local_epochs * self.rewind_ratio )
-        local_epochs = max_local_epochs - rewind_epochs
-        
-        return rewind_epochs, local_epochs, rewind_nodes_count
-    
-    def rewind(self, step, max_local_epochs = 0, rewind_epochs = 0, rewind_node_count = 0, device = 0):
-
-        if self.rewind_donkey:
-            rewind_nodes = unique_node ( self.rewind_previous_node[-self.rewind_donkey_count::] )
-        else:
-            rewind_nodes = [self.rewind_previous_node[-1]]
-        rewind_node_count = len(rewind_nodes)
-
-        if rewind_epochs == 0:
-            return
-        
-        noise = self.rewind_noise
-        
-        rewind_start_epoch = -1
-        if ( self.rewind_strategy == "atend_pre" ):
-            rewind_ending_epochs_count = math.ceil(rewind_epochs * self.rewind_end_epoch_ratio)
-            rewind_start_epoch = ( max_local_epochs - rewind_epochs - rewind_ending_epochs_count)
-           
-        elif ( self.rewind_strategy == "halfway" ):
-            rewind_start_epoch = max_local_epochs//2
-        elif ( self.rewind_strategy == "interval" ):
-            rewind_start_epoch = max_local_epochs / rewind_epochs // 2
-        
-        if ( step == rewind_start_epoch or self.rewind_strategy == "atend" ) and rewind_node_count > 0:
-                if self.rewind_random:
-                    rewind_nodes = [self.rewind_random_clients[np.random.randint(0, rewind_node_count)]]
-                for teacher in rewind_nodes:
-                    if ( teacher != None ):
-                        local_loss, rw_loss = self.rewind_train_metrics(teacher)
-                        if not self.no_wandb:
-                            wandb.log({f"train/model_{self.model.id}/pre_rewind_loss_on_local": local_loss, "round": self.round})
-                            wandb.log({f"train/model_{self.model.id}/pre_rewind_loss_on_previous": rw_loss, "round": self.round})
-                        self.rewind_train ( rewind_epochs, teacher, device, noise = noise )
-                        
-                        local_loss, rw_loss = self.rewind_train_metrics(teacher)
-                        if not self.no_wandb:
-                            wandb.log({f"train/model_{self.model.id}/post_rewind_loss_on_local": local_loss, "round": self.round})
-                            wandb.log({f"train/model_{self.model.id}/post_rewind_loss_on_previous": rw_loss, "round": self.round})
-
-    def rewind_train(self, rewind_epochs = 0, rewind_train_node = None, device = 0, noise = False):
-
-        # rewind_optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
-        if ( rewind_epochs == 0 or rewind_train_node == None):
-            return
-        
-        print ( "\nStep on node %d, %s rewinding to node %d for %d epochs" % (self.id, self.rewind_strategy, rewind_train_node.id, rewind_epochs ), end='' )
-        
-        dataloader = rewind_train_node.load_train_data()
-        start_time = time.time()
-        device = self.model.device
-        # self.model.to(device)
-        starting_lr = self.model.optimizer.param_groups[0]['lr']
-        if ( self.rewind_learning_rate_decay ):
-            rewind_lr = starting_lr * self.rewind_learning_rate_decay_ratio
-            self.model.optimizer.param_groups[0]['lr'] = rewind_lr
-            print ( f"(original LR: {starting_lr} new LR: {rewind_lr},", end='' )
-            print ( f"rewind loss: ", end='')
-        for step in range(rewind_epochs):
-            for i, (x, y) in enumerate(dataloader):
-                if type(x) == type([]):
-                    x[0] = x[0].to(device)
-                    self.transform(x[0])
-                else:
-                    x = x.to(device)
-                    self.transform(x)
-                if noise == True:
-                    y = torch.randint(0, self.num_classes, (y.shape[0],)).to(device) 
-                y = y.to(device)
-                if self.train_slow:
-                    time.sleep(0.1 * np.abs(np.random.rand()))
-                output = self.model(x)
-                if ( torch.isnan(output).any() ):
-                    self.log_once ( f'\nrewind_train: nan in output {self.id}\n' )
-                loss = self.model.loss(output, y)
-
-                self.model.optimizer.zero_grad()
-                
-                loss.backward()
-                # end_lr = self.optimizer.param_groups[0]['lr']
-                self.model.optimizer.step()
-            print ( f" {loss} ", end='')
-        if not self.rewind_learning_rate_keep and self.rewind_learning_rate_decay:
-            print ( "\nRestoring LR to ", starting_lr)
-            self.model.optimizer.param_groups[0]['lr'] = starting_lr
-            
-
-
-        # self.rewind_step += 1
-        # self.train_time_cost['num_rounds'] += 1
-        self.train_time_cost['total_cost'] += time.time() - start_time
 
     def train_metrics(self, trainloader=None):
         if ( trainloader == None):
@@ -504,22 +398,6 @@ class clientGFE(clientRewind):
             # print ( f"Downstream task loss {losses/train_num}")
 
         return losses, train_num
-
-    def rewind_train_metrics(self, rewind_train_node = None):
-        self.rewind_step += 1
-        losses, train_num = self.train_metrics()
-        loss = losses / train_num
-       
-        print(f"\n** REWIND: rewind loss on node's {self.id} dataset: ", loss)
-        if ( rewind_train_node != None ):
-            rewind_loader = rewind_train_node.load_train_data()
-            rw_losses, rw_train_num = self.train_metrics(rewind_loader)
-            rw_loss = rw_losses / rw_train_num
-            if math.isnan(rw_loss):
-                print(f"** REWIND: rewind loss on rewind {rewind_train_node.id} dataset is NAN!!")
-            else:
-                print(f"** REWIND: rewind loss on rewind {rewind_train_node.id} dataset: ", rw_loss)
-        return loss, rw_loss
 
     def test_metrics_other(self, test_client = None):
         if ( test_client == None and test_client.id != self.id):

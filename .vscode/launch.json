@@ -146,7 +146,7 @@
                      "--nodes_backbone_model", "hf_vit",
                     //  "--embedding_size", "64",
                     //  "--nodes_pretext_tasks", "patch_masking",
-                    //  "--nodes_pretext_tasks", "patch_ordering,image_rotation",
+                     "--nodes_pretext_tasks", "patch_ordering,image_rotation",
                     //  "--nodes_pretext_tasks", "image_rotation,patch_rotation,patch_ordering,patch_mask",
                     // "--no_downstream_task",
                      "--patch_size", "56",
