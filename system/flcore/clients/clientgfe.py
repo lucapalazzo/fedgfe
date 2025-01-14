@@ -40,7 +40,7 @@ class clientGFE(clientRewind):
             self.dataset = args.dataset
         
         self.node_data.dataset = self.dataset
-        self.node_data.id = 0
+        self.node_data.dataset_id = 0
         self.node_data_losses = []
 
         self.downstream_task_name = 'none'
@@ -94,63 +94,33 @@ class clientGFE(clientRewind):
         # if ( self.loss_weighted and self.loss_weightes == None ):
         if self.round == 0:
             self.node_data.stats_dump()
-        if ( self.loss_weighted and self.loss_weights == None ):
+        # if ( self.loss_weighted and self.loss_weights == None ):
 
-            loss_weights = [0] * self.num_classes
-            # lbls = set([l.item() for t,l in self.train_data])
-            unique =  [label for label in self.node_data.labels_get()]
-            classes = [y[1].item() for x, y in enumerate(self.node_data.train_data)]
+        #     loss_weights = [0] * self.num_classes
+        #     # lbls = set([l.item() for t,l in self.train_data])
+        #     unique =  [label for label in self.node_data.labels_get()]
+        #     classes = [y[1].item() for x, y in enumerate(self.node_data.train_data)]
             
-            # unique = np.unique(classes)
-            class_count = len(unique)
+        #     # unique = np.unique(classes)
+        #     class_count = len(unique)
             
-            lw = (compute_class_weight(class_weight='balanced', classes=unique, y=classes))
-            for i in range(class_count):
-                class_index = unique[i]
-                loss_weights[class_index] = lw[i]
-            ## I pesi per la loss sono legati al dataset e quindi al nodo e non al modello
-            self.loss_weights = torch.Tensor(loss_weights).to(self.device)
+        #     # lw = (compute_class_weight(class_weight='balanced', classes=unique, y=classes))
+        #     # for i in range(class_count):
+        #     #     class_index = unique[i]
+        #     #     loss_weights[class_index] = lw[i]
+        #     # ## I pesi per la loss sono legati al dataset e quindi al nodo e non al modello
+        #     # self.loss_weights = torch.Tensor(loss_weights).to(self.device)
 
-        # Cambia la loss del modello se se il nodo ha impostato i pesi per le classi
-        if self.loss_weights != None:        
-            # self.model.loss = nn.CrossEntropyLoss(weight=self.loss_weights)
-            self.model.loss.weight = self.loss_weights
-        # unique, counts = np.unique(self.train_data[1], return_counts=True)
-
-        # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.1)
-        # for g in self.optimizer.param_groups:
-        #     g['lr'] = 0.1
-        # self.learning_rate_scheduler.base_lrs = [0.1]
         trainloader = node_trainloader
         start_time = time.time()
         device = self.device
         if (client_device != None):
             device = client_device
-        # self.model.to(self.device)
         
         if self.loss_weights != None and self.round == 0:
             print ( f"Node {self.id} setting loss weights to {self.loss_weights}")
-        # self.node_data.stats_dump()
-        if len(self.rewind_previous_node) > 0:
-            print ( "Rewind previous:  node %s dataset %s losses %s " % (self.rewind_previous_node_id, self.rewind_previous_model_id, self.rewind_previous_node_loss))
-            # print ( "Model previous trained on ", )
-            # # self.rewind_previous_node[-1].node_data.stats_dump()
-            # print ( "Previous losses ", )
 
         self.rewind_previous_model_id.append(self.next_train_model_id)
-        # self.train_model = copy.deepcopy(self.next_train_model)
-        self.train_model = self.next_train_model
-        self.train_model_id = self.next_train_model_id
-        self.model = self.train_model
-        # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
-        # self.model.train().to(device)
-
-        # print ( "\n--------\nNode %d: training model %d (%d) on dataset %d " % ( self.id, self.train_model.id, self.model.id, self.node_data.id ) )
-        # print ( "Training on model %s loss %s optimizer %s" % ( hex(id(self.model.inner_model)), hex(id (self.model.loss)), hex(id(self.model.optimizer)) ) )
-
-        # if self.train_model_id == self.id:
-        #     print ( f"Node {self.id} training model {self.train_model_id} on self dataset")
-
         max_local_epochs = self.local_epochs
         if self.train_slow:
             max_local_epochs = np.random.randint(1, max_local_epochs // 2)
@@ -253,6 +223,7 @@ class clientGFE(clientRewind):
                     # pbarepoch.update(1)
                     # print ( f"loss {losses/i:.2f} downstream loss {downstream_losses/i:2f}")
                 self.data_log({f"train/node_{self.id}/pretext_train_loss_{pretext_task_name}": round_loss/local_epochs, "round": self.round})
+                self.data_log({f"train/node_{self.id}/pretext_train_ds_loss_{pretext_task_name}": round_loss/local_epochs, "round": self.round})
 
                 pbarbatch.close()
                 print()

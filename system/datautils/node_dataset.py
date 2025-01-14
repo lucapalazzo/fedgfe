@@ -6,6 +6,7 @@ import wandb
 class NodeData():
     def __init__(self, args, id = -1, transform=None, target_transform=None, **kwargs):
         self.id = id
+        self.dataset_id = id
         self.args = args
         self.kwargs = kwargs   
         self.train_data = None
@@ -33,8 +34,8 @@ class NodeData():
     
     def load_train_data(self, batch_size, dataset_limit=0, prefix = "",dataset_dir_prefix= ""):
         if self.train_data == None:
-            print("Loading train data for client %d" % self.id)
-            self.train_data = read_client_data(self.dataset, self.id, is_train=True,dataset_limit=dataset_limit, prefix=prefix, dataset_dir_prefix=dataset_dir_prefix)
+            print("Loading train data for client %d dataset id %d" % ( self.id, self.dataset_id ) )
+            self.train_data = read_client_data(self.dataset, self.dataset_id, is_train=True,dataset_limit=dataset_limit, prefix=prefix, dataset_dir_prefix=dataset_dir_prefix)
             if self.train_data == None:
                 return None
             memory_footprint = 0
@@ -47,8 +48,8 @@ class NodeData():
    
     def load_test_data(self, batch_size, dataset_limit=0,dataset_dir_prefix= ""):
         if self.test_data == None:
-            print("Loading test data for client %d" % self.id)
-            self.test_data = read_client_data(self.dataset, self.id, is_train=False,dataset_limit=dataset_limit, dataset_dir_prefix=dataset_dir_prefix)
+            print("Loading test data for client %d dataset id %d" % ( self.id, self.dataset_id ) )
+            self.test_data = read_client_data(self.dataset, self.dataset_id, is_train=False,dataset_limit=dataset_limit, dataset_dir_prefix=dataset_dir_prefix)
             if self.test_data == None:
                 return None
             memory_footprint = 0
