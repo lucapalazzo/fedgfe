@@ -23,7 +23,7 @@ from flcore.trainmodel.downstreamsegmentation import DownstreamSegmentation
 from tqdm import tqdm
 
 class clientGFE(clientRewind):
-    def __init__(self, args, model_id, train_samples, test_samples, dataset = None, is_strong = False, id_by_type=-1, rewind_epochs = 0, rewind_interval = 0, rewind_ratio = 0, pretext_tasks = [], model=None, **kwargs):
+    def __init__(self, args, model_id, train_samples, test_samples, dataset = None, is_strong = False, id_by_type=-1, rewind_epochs = 0, rewind_interval = 0, rewind_ratio = 0, pretext_tasks = [], model=None, patch_count = -1, img_size = 224, patch_size = -1, **kwargs):
         super().__init__(args, model_id, train_samples, test_samples, model=model, **kwargs)
 
         self.node_routes = []
@@ -33,6 +33,15 @@ class clientGFE(clientRewind):
         self.no_wandb = args.no_wandb
         self.train_dataloader = None
         self.test_dataloader = None
+
+        self.img_size = img_size
+        if patch_count > 0:
+            self.patch_count = patch_count
+            self.patch_size = self.img_size // (patch_count ** 0.5)
+        elif patch_size > 0:
+            self.patch_size = patch_size
+            self.patch_count = (self.img_size // patch_size) ** 2
+
 
         if dataset != None:
             self.dataset = dataset
@@ -44,24 +53,10 @@ class clientGFE(clientRewind):
         self.node_data_losses = []
 
         self.downstream_task_name = 'none'
-        # self.downstream_task = DownstreamClassification(self.model.backbone, num_classes=self.num_classes)
-        # self.model.downstream_task_set(self.downstream_task)
-        # self.downstream_tasks = args.downstream_tasks
         self.downstream_loss_operation = args.downstream_loss_operation
-        # self.downstream_task = SingleLayerClassification(self.model.inner_model.vit.embed_dim, self.num_classes)
-        # self.downstream_task.to(self.device)
-        # self.downstream_task.loss = nn.CrossEntropyLoss()
         self.no_downstream_tasks = args.no_downstream_tasks
 
         self.model_optimizer = args.model_optimizer
-
-
-        # self.transform = transforms.Compose(
-        #     [
-        #     # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        #      transforms.Resize([224, 224]),
-        #     #  transforms.ToTensor()
-        #     ])
 
     @property
     def downstream_task_name(self):
@@ -76,7 +71,7 @@ class clientGFE(clientRewind):
         elif value == "classification":
             self.downstream_task = DownstreamClassification(self.model.backbone, num_classes=self.num_classes).to(self.device)
         elif value == "segmentation":
-            self.downstream_task = DownstreamSegmentation(self.model.backbone, num_classes=self.num_classes).to(self.device)
+            self.downstream_task = DownstreamSegmentation(self.model.backbone, num_classes=self.num_classes, patch_size=self.patch_size).to(self.device)
         elif value == "5lclassification":
             self.downstream_task = DownstreamFiveLayerClassification(self.model.backbone, num_classes=self.num_classes).to(self.device)
 

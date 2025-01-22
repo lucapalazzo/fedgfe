@@ -5,10 +5,19 @@ from timm.models.vision_transformer import VisionTransformer
 from transformers import ViTModel
 
 class Downstream (nn.Module):
-    def __init__(self, backbone, cls_token_only = True):
+    def __init__(self, backbone, cls_token_only = True, img_size = 224, patch_count = -1, patch_size = -1):
         super(Downstream, self).__init__()
 
         self.downstream_head = nn.Identity()
+
+        self.img_size = img_size
+
+        if patch_count > 0:
+            self.patch_count = int(patch_count)
+            self.patch_size = int(img_size // (patch_count ** 0.5))
+        elif patch_size > 0:
+            self.patch_size = int(patch_size)
+            self.patch_count = int((img_size // patch_size) ** 2)
 
         self.backbone = backbone
         self.backbone_enabled = True if backbone is not None else False

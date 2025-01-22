@@ -57,6 +57,12 @@ class FedGFE(FedRewind):
         self.model_aggregation_weighted = args.model_aggregation_weighted
         self.vit_config = None
 
+        self.img_size = args.dataset_image_size
+        if args.patch_size > 0:
+            self.patch_size = args.patch_size
+            self.patch_count = (self.img_size // self.patch_size) ** 2
+
+
         if self.routing_static:
             self.routing = StaticRouting(clients_count=self.num_clients, random=self.routing_random) 
         # select slow clients
@@ -480,7 +486,11 @@ class FedGFE(FedRewind):
                             train_data=train_data,
                             test_data=test_data,
                             model=node_model,
-                            dataset_limit=self.dataset_limit)
+                            dataset_limit=self.dataset_limit,
+                            img_size=self.img_size,
+                            patch_size=self.patch_size,
+                            patch_count=self.patch_count
+                            )
             client.prefix=file_prefix
             client.device = "cuda:"+str(next(gpus))
             client.available_clients = np.arange(self.num_clients)
