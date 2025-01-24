@@ -27,6 +27,7 @@ class DownstreamSegmentation (Downstream):
         config_vit.n_skip = 3
         config_vit.pretrained_path = None
         config_vit.patches.grid = [ int(self.patch_count**0.5), int(self.patch_count**0.5) ]
+        # config_vit.resnet.width_factor = 2
         # config_vit.patches.grid = None
         config_vit.patches.size = [ self.patch_size, self.patch_size ]
         config_vit.patch_size = backbone.config.patch_size
@@ -53,9 +54,23 @@ class DownstreamSegmentation (Downstream):
         self.dice_loss = DiceLoss(num_classes)
 
     def segmentation_loss ( self, logits, labels ):
-        return torch.Tensor([1])
-        loss_ce = self.ce_loss(logits, labels)
-        loss_dice = self.dice_loss(logits, labels)
+        # return torch.Tensor([1])
+        target = labels
+        if type(labels) == dict:
+            target = labels['masks']
+
+        if target.shape[3] == 1:
+            target = target.permute(0,3,1,2)
+
+        if target.shape[2] != self.img_size or target.shape[3] != self.img_size:
+            target = nn.functional.interpolate(target, size=(self.img_size, self.img_size), mode='bilinear', align_corners=False)
+
+        if target.shape[1] == 1 :
+            target = target.squeeze(1)
+        target = target.long()
+        
+        loss_ce = self.ce_loss(logits, target)
+        loss_dice = self.dice_loss(logits, target)
         return loss_ce + loss_dice
     
     def create_segmentation_pipeline(self):
@@ -72,9 +87,13 @@ class DownstreamSegmentation (Downstream):
 
         # if self.backbone is not None:
         #     backbone_x = self.backbone(x)
+        if self.patch_size != 16:
+            print ( "Segmentation only works with patch size 16")
+            return None
 
         if x.size()[1] == 1:
             x = x.repeat(1,3,1,1)
+
         x, attn_weights, features = self.vitseg.transformer(x)  # (B, n_patch, hidden)
         x = self.vitseg.decoder(x, features)
         logits = self.vitseg.segmentation_head(x)

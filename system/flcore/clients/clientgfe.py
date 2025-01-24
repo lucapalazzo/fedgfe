@@ -182,29 +182,36 @@ class clientGFE(clientRewind):
 
                         if type(x) == type([]):
                             x[0] = x[0].to(device)
-                            # x[0] = self.transform(x[0])
                         else:
                             x = x.to(device)
-                            # x= self.transform(x)
-                        y = y.to(device)
+
+                        # if 
+                        # y = y.to(device)
+
+                        # self.prete
                         
                         output = self.model(x)
                         # output = heads(output)
                         # loss = self.model.loss(output, y).to(device)
                         loss = self.model.loss( output, y )
                         losses += loss.item()
-                        
+                        summed_loss = loss
+
                         self.downstream_task.backbone_enabled = True
                         downstream_output = self.downstream_task(x)
-                        downstream_loss = self.downstream_task.loss ( downstream_output, y)
-                        downstream_losses += downstream_loss.item()
+                        downstream_loss = torch.Tensor([0])
+                        if downstream_output != None:
+                            downstream_loss = self.downstream_task.loss ( downstream_output, y)
+                            downstream_losses += downstream_loss.item()
+                            if self.downstream_loss_operation == "sum":
+                                summed_loss = loss + downstream_loss
+
+
                         self.downstream_task.backbone_enabled = False
 
                         self.optimizer.zero_grad()
 
-                        summed_loss = loss
-                        if self.downstream_loss_operation == "sum":
-                            summed_loss = loss + downstream_loss
+                        
                         
                         summed_loss.backward()
 
@@ -234,7 +241,7 @@ class clientGFE(clientRewind):
                     else:
                         x = x.to(device)
                         # x= self.transform(x)
-                    y = y.to(device)
+                    # y = y.to(device)
                     output = self.model(x)
                     pretext_accuracy += self.model.accuracy(output)
                 
@@ -279,6 +286,12 @@ class clientGFE(clientRewind):
                     else:
                         x = x.to(device)
                         # x= self.transform(x)
+                    
+                    if self.downstream_task_name == "segmentation":
+                        y = y['masks'].to(device)
+                    elif self.downstream_task_name == "classification":
+                        y = y['labels'].to(device)
+                        
                     y = y.to(device)
                     if self.train_slow:
                         time.sleep(0.1 * np.abs(np.random.rand()))
@@ -296,8 +309,9 @@ class clientGFE(clientRewind):
                         break
 
         local_loss, num = self.train_metrics()
-        print ( f"Downstream task loss {local_loss/num}")
-        self.data_log({f"train/node_{self.id}/downstream_train_loss": local_loss/num, "round": self.round})
+        if num > 0:
+            print ( f"Downstream task loss {local_loss/num}")
+            self.data_log({f"train/node_{self.id}/downstream_train_loss": local_loss/num, "round": self.round})
         
         # self.downstream_optimizer = torch.optim.SGD(self.downstream_net.parameters(), lr=self.learning_rate)
         # for downstream_task in self.downstream_tasks:
@@ -354,8 +368,17 @@ class clientGFE(clientRewind):
                     x[0] = x[0].to(self.device)
                 else:
                     x = x.to(self.device)
+                if type(y) == dict:
+                    if self.downstream_task_name == "segmentation":
+                        y = y['masks'].to(self.device)
+                    elif self.downstream_task_name == "classification":
+                        y = y['labels'].to(self.device)
+
                 y = y.to(self.device)
                 output = self.model(x)
+
+                if output == None:
+                    continue
                 if ( torch.isnan(output).any() ):
                     self.log_once ( "Output NAN")
 
@@ -429,6 +452,73 @@ class clientGFE(clientRewind):
             if ( torch.equal(new_param.data, old_param.data) == False):
                 self.log_once  ( "parameters not updated")
             # print ( "old_param.data", old_param.data, "new_param.data", new_param.data)
+    def test_metrics_data(self, dataloader, test_model = None):
+
+        if dataloader == None:
+            return 0, 0, 0, [], []
+        test_acc = 0
+        test_num = 0
+        y_pred = []
+        y_prob = []
+        y_true = []
+        a = []   
+        model = self.model
+
+        if ( test_model != None):
+            model = test_model
+
+        model.to(self.device)
+        model.eval()
+        self.node_data.to(self.device)
+
+        with torch.no_grad():
+            for x, y in dataloader:
+                if type(x) == type([]):
+                    x[0] = x[0].to(self.device)
+                else:
+                    x = x.to(self.device)
+                if type(y) == dict:
+                    if self.downstream_task_name == 'segmentation':
+                        y = y['masks'].to(self.device)
+                    elif self.downstream_task_name == 'classification':
+                        y = y['labels'].to(self.device)
+                y = y.to(self.device)
+                output = model(x)
+                # if isinstance(output, dict):
+                #     output = output['logits']
+                
+                if self.downstream_task_name == 'classification':
+                    predictions = torch.argmax(output, dim=1)
+
+                    test_acc += (torch.sum(predictions == y)).item()
+                    test_num += y.shape[0]
+
+                    if torch.isnan(output).any().item():
+                        if not self.no_wandb:
+                            wandb.log({f'warning/{self.id}': torch.isnan(output)})
+                        # print(f'warning for client {self.id} in round {self.round}:', torch.isnan(output))
+                        self.log_once(f'warning for client {self.id} in round {self.round}: output contains nan"')
+
+                    prob = F.softmax(output, dim=1) 
+                    # y_prob.append(prob.detach().cpu().numpy()) 
+                    y_prob.append(output.detach().cpu().numpy()) 
+                    nc = self.num_classes
+                    if self.num_classes == 2:
+                        nc += 1
+                    lb = label_binarize(y.detach().cpu().numpy(), classes=np.arange(nc))
+                    if self.num_classes == 2:
+                        lb = lb[:, :2]
+                    y_true.append(y.detach().cpu().numpy())
+
+        if len(y_prob) > 0:
+            y_prob = np.concatenate(y_prob, axis=0)
+            y_true = np.concatenate(y_true, axis=0)
+            prob = prob.detach().cpu().numpy()
+        
+        auc = 0
+        
+        return test_acc, test_num, auc, y_true, y_prob
+
 # https://github.com/yuetan031/fedlogit/blob/main/lib/utils.py#L205
 def agg_func(logits):
     """

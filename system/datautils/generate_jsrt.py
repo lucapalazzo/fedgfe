@@ -57,7 +57,7 @@ def generate_jsrt(args, dir_path, num_clients, num_classes, niid, balance, parti
     transform.transforms.append(transforms.ToTensor())
 
     trainset = JSRTDataset(root=dir_path+"rawdata", train=True,  transform=transform, dataset_path=jsrt_path)
-    testset = JSRTDataset( dataset= trainset, train=False, transform=transform)
+    testset = JSRTDataset( dataset=trainset, train=False, transform=transform)
     trainloader = torch.utils.data.DataLoader(
         trainset, batch_size=len(trainset), shuffle=False)
     testloader = torch.utils.data.DataLoader(

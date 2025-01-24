@@ -54,7 +54,8 @@ def check(args, config_path, train_path, test_path, num_clients, num_classes, ni
 
     return False
 
-def separate_data(data, num_clients, num_classes, niid=False, balance=False, partition='pat', class_per_client=None, alpha = 0.1):
+def separate_data(data, num_clients, num_classes, niid=False, balance=False, partition='pat',
+                  class_per_client=None, alpha = 0.1, dataset_union=None):
     X = [[] for _ in range(num_clients)]
     y = [[] for _ in range(num_clients)]
     statistic = [[] for _ in range(num_clients)]
@@ -81,6 +82,10 @@ def separate_data(data, num_clients, num_classes, niid=False, balance=False, par
             for client in range(num_clients):
                 if class_num_per_client[client] > 0:
                     selected_clients.append(client)
+
+            if selected_clients == []:
+                continue
+
             selected_clients = selected_clients[:int(np.ceil((num_clients/num_classes)*class_per_client))]
 
             num_all_samples = len(idx_for_each_class[i])
@@ -130,10 +135,22 @@ def separate_data(data, num_clients, num_classes, niid=False, balance=False, par
         raise NotImplementedError
 
     # assign data
+
+    if dataset_union:
+        client_data = list(range(num_clients))
+
     for client in range(num_clients):
+        
         idxs = dataidx_map[client]
         X[client] = dataset_content[idxs]
         y[client] = dataset_label[idxs]
+        if dataset_union:
+            client_data[client] = { k: np.array([]) for k in dataset_union.keys() }
+            for k in dataset_union.keys():
+                dataset_union[k] = np.array(dataset_union[k])
+                client_data[client][k] = dataset_union[k][idxs]
+
+
 
         for i in np.unique(y[client]):
             statistic[client].append((int(i), int(sum(y[client]==i))))
@@ -147,22 +164,37 @@ def separate_data(data, num_clients, num_classes, niid=False, balance=False, par
         print(f"\t\t Samples of labels: ", [i for i in statistic[client]])
         print("-" * 50)
 
-    return X, y, statistic
+    return X, y, client_data, statistic
 
 
-def split_data(X, y):
+def split_data(X, y, client_data=None):
     # Split dataset
     train_data, test_data = [], []
     num_samples = {'train':[], 'test':[]}
 
     for i in range(len(y)):
-        X_train, X_test, y_train, y_test = train_test_split(
-            X[i], y[i], train_size=train_size, shuffle=True)
+        data = client_data[i] if client_data else None
 
-        train_data.append({'x': X_train, 'y': y_train})
-        num_samples['train'].append(len(y_train))
-        test_data.append({'x': X_test, 'y': y_test})
-        num_samples['test'].append(len(y_test))
+        if data:
+            keys = list(data.keys())
+            values = list(data.values())
+            split_values = train_test_split(
+                *values, train_size=train_size, shuffle=True)
+            node_train_data = {key: split_values[i*2] for i, key in enumerate(keys)}
+            node_test_data = {key: split_values[(i*2)+1] for i, key in enumerate(keys)}
+            num_samples['train'].append(len(node_train_data[list(data.keys())[0]]))
+            num_samples['test'].append(len(node_test_data[list(data.keys())[0]]))
+            train_data.append(node_train_data)
+            test_data.append(node_test_data)
+    
+        else:
+            X_train, X_test, y_train, y_test = train_test_split(
+              X[i], y[i], train_size=train_size, shuffle=True, client_data=data)
+
+            train_data.append({'x': X_train, 'y': y_train})
+            num_samples['train'].append(len(y_train))
+            test_data.append({'x': X_test, 'y': y_test})
+            num_samples['test'].append(len(y_test))
 
     print("Total number of samples:", sum(num_samples['train'] + num_samples['test']))
     print("The number of train samples:", num_samples['train'])

@@ -223,6 +223,7 @@ class FedGFE(FedRewind):
 
     def train(self):
         
+        training_task = "both" 
         if self.nodes_training_sequence == "sslfirst":
             training_task = "pretext"
 

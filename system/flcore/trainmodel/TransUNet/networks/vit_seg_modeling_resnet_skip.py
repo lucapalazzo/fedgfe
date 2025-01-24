@@ -118,6 +118,7 @@ class ResNetV2(nn.Module):
         self.width = width
 
         self.root = nn.Sequential(OrderedDict([
+            # ('conv', StdConv2d(3, width, kernel_size=28, stride=7, bias=False, padding=3)),
             ('conv', StdConv2d(3, width, kernel_size=7, stride=2, bias=False, padding=3)),
             ('gn', nn.GroupNorm(32, width, eps=1e-6)),
             ('relu', nn.ReLU(inplace=True)),
@@ -145,11 +146,12 @@ class ResNetV2(nn.Module):
         x = self.root(x)
         features.append(x)
         x = nn.MaxPool2d(kernel_size=3, stride=2, padding=0)(x)
+        # x = nn.MaxPool2d(kernel_size=3, stride=2, padding=0)(x)
         for i in range(len(self.body)-1):
             x = self.body[i](x)
             right_size = int(in_size / 4 / (i+1))
             # TODO: check this
-            # right_size = int(in_size / 7 / (i+1))
+            # right_size = int(in_size / 18 / (i+1))
             if x.size()[2] != right_size:
                 pad = right_size - x.size()[2]
                 assert pad < 3 and pad > 0, "x {} should {}".format(x.size(), right_size)

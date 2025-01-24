@@ -57,23 +57,29 @@ def read_client_data(dataset, idx, is_train=True, prefix="",dataset_dir_prefix= 
     elif dataset[:2] == "sh":
         return read_client_data_shakespeare(dataset, idx)
 
-    if is_train:
-        train_data = read_data(dataset, idx, is_train, prefix,dataset_dir_prefix=dataset_dir_prefix,dataset_limit=dataset_limit)
-        if train_data is None:
-            return None
-        X_train = torch.Tensor(train_data['x']).type(torch.float32)
-        y_train = torch.Tensor(train_data['y']).type(torch.int64)
-
-        train_data = [(x, y) for x, y in zip(X_train, y_train)]
-        return train_data
+    # if is_train:
+    data = read_data(dataset, idx, is_train, prefix,dataset_dir_prefix=dataset_dir_prefix,dataset_limit=dataset_limit)
+    if data is None:
+        return None
+    if "samples" in data.keys():
+        # X_train = torch.Tensor(train_data['samples']).type(torch.float32)
+        for k in data.keys():
+            # if k != "sample":
+            data[k] = torch.Tensor(data[k]).type(torch.float32)
     else:
-        test_data = read_data(dataset, idx, is_train, prefix,dataset_limit=dataset_limit)
-        if test_data is None:
-            return None
-        X_test = torch.Tensor(test_data['x']).type(torch.float32)
-        y_test = torch.Tensor(test_data['y']).type(torch.int64)
-        test_data = [(x, y) for x, y in zip(X_test, y_test)]
-        return test_data
+        X_train = torch.Tensor(data['x']).type(torch.float32)
+        y_train = torch.Tensor(data['y']).type(torch.int64)
+
+        data = [(x, y) for x, y in zip(X_train, y_train)]
+    return data
+    # else:
+    #     test_data = read_data(dataset, idx, is_train, prefix,dataset_limit=dataset_limit)
+    #     if test_data is None:
+    #         return None
+    #     X_test = torch.Tensor(test_data['x']).type(torch.float32)
+    #     y_test = torch.Tensor(test_data['y']).type(torch.int64)
+    #     test_data = [(x, y) for x, y in zip(X_test, y_test)]
+    #     return test_data
 
 
 def read_client_data_text(dataset, idx, is_train=True):

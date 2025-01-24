@@ -71,11 +71,16 @@ def generate_chestxray(args, dir_path, num_clients, num_classes, niid, balance, 
 
     dataset_image = []
     dataset_label = []
+    dataset_mask = []
 
     dataset_image.extend(trainset.data.cpu().detach().numpy())
     dataset_image.extend(testset.data.cpu().detach().numpy())
     dataset_label.extend(trainset.targets.cpu().detach().numpy())
     dataset_label.extend(testset.targets.cpu().detach().numpy())
+    dataset_mask.extend(trainset.masks.cpu().detach().numpy())
+    dataset_mask.extend(testset.masks.cpu().detach().numpy())
+
+    dataset_union = { 'samples': dataset_image, 'labels': dataset_label, 'masks': dataset_mask }
 
     dataset_image = np.array(dataset_image)
     dataset_label = np.array(dataset_label)
@@ -87,9 +92,9 @@ def generate_chestxray(args, dir_path, num_clients, num_classes, niid, balance, 
 
     dataset_classes = len(trainset.labels)
 
-    X, y, statistic = separate_data((dataset_image, dataset_label), num_clients, dataset_classes,  
-                                    niid, balance, partition, class_per_client, alpha=alpha)
-    train_data, test_data = split_data(X, y)
+    X, y, client_data, statistic = separate_data((dataset_image, dataset_label), num_clients, dataset_classes,  
+                                    niid, balance, partition, class_per_client, alpha=alpha, dataset_union=dataset_union)
+    train_data, test_data = split_data(X, y, client_data = client_data)
     save_file(config_path, train_path, test_path, train_data, test_data, num_clients, num_classes, 
         statistic, niid, balance, partition, alpha=alpha)
 
@@ -100,4 +105,4 @@ if __name__ == "__main__":
     partition = sys.argv[3] if sys.argv[3] != "-" else None
     args = None
 
-    generate_cifar10(args, dir_path, num_clients, num_classes, niid, balance, partition )
+    generate_chestxray(args, dir_path, num_clients, num_classes, niid, balance, partition )

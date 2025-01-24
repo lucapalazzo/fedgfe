@@ -222,6 +222,7 @@ class Client(object):
                     x[0] = x[0].to(self.device)
                 else:
                     x = x.to(self.device)
+                
                 y = y.to(self.device)
                 output = model(x)
                 # if isinstance(output, dict):

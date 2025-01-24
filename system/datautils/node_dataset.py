@@ -39,10 +39,16 @@ class NodeData():
             if self.train_data == None:
                 return None
             memory_footprint = 0
-            for i in range(len(self.train_data)):
-                memory_footprint += self.train_data[i][0].element_size() * self.train_data[i][0].nelement() + self.train_data[i][1].element_size() * self.train_data[i][1].nelement()
+            if type(self.train_data) == dict:
+                for k,v in self.train_data.items():
+                    memory_footprint += v.element_size() * v.nelement()
+                self.train_samples = len(self.train_data['samples'])
+            else:
+                self.train_samples = len(self.train_data)
+                for i in range(len(self.train_data)):
+                    memory_footprint += self.train_data[i][0].element_size() * self.train_data[i][0].nelement() + self.train_data[i][1].element_size() * self.train_data[i][1].nelement()
             print("Client %d train data memory footprint: %d" % (self.id, memory_footprint))
-            self.train_samples = len(self.train_data)
+            
         self.train_dataset = FLNodeDataset(self.train_data, transform=self.transform, target_transform=self.target_transform, device=self.device)
         return DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
    
@@ -53,8 +59,13 @@ class NodeData():
             if self.test_data == None:
                 return None
             memory_footprint = 0
-            for i in range(len(self.test_data)):
-                memory_footprint += self.test_data[i][0].element_size() * self.test_data[i][0].nelement() + self.test_data[i][1].element_size() * self.test_data[i][1].nelement()
+            if type(self.train_data) == dict:
+                for k,v in self.train_data.items():
+                    memory_footprint += v.element_size() * v.nelement()
+                self.train_samples = len(self.train_data['samples'])
+            else:
+                for i in range(len(self.test_data)):
+                    memory_footprint += self.test_data[i][0].element_size() * self.test_data[i][0].nelement() + self.test_data[i][1].element_size() * self.test_data[i][1].nelement()
             print("Client %d test data memory footprint: %d" % (self.id, memory_footprint))
             self.test_samples = len(self.test_data)
         self.test_dataset = FLNodeDataset(self.test_data, transform=self.transform, target_transform=self.target_transform, device=self.device)
@@ -79,8 +90,12 @@ class NodeData():
         labels = list(range(self.num_classes))
         if self.labels_count == None or self.labels_percent == None:
             self.labels_count = dict(zip(labels, [0]*len(labels)))
-            for _,l in self.train_data:
-                self.labels_count[l.item()] += 1
+            if type(self.train_data) == dict:
+                for l in self.train_data['labels']:
+                    self.labels_count[l.item()] += 1
+            else:
+                for _,l in self.train_data:
+                    self.labels_count[l.item()] += 1
             self.labels_percent = {k: v*100/self.train_samples for k,v in self.labels_count.items()}
 
         return self.labels_count, self.labels_percent
