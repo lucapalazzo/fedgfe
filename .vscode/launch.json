@@ -58,7 +58,9 @@
             "program": "system/main.py",
             "console": "integratedTerminal",
             "justMyCode": false,
-            "args": ["-data", "ChestXRay-nIID-1C",
+            "args": [
+                     // "-data", "ChestXRay-nIID-1C",
+                     "-data", "ChestXRay-1C-Test",
                      "-m", "vit",
                      "-algo", "FedGFE",
                      "--global_rounds", "100",
@@ -76,9 +78,11 @@
                     //  "--embedding_size", "64",
                      "--nodes_pretext_tasks", "patch_ordering",
                     //  "--nodes_pretext_tasks", "patch_rotation,patch_ordering,patch_mask",
-                     "--patch_size", "56",
+                    "--nodes_downstream_tasks", "segmentation",
+                    "--nodes_backbone_model", "hf_vit",
+                     "--patch_size", "16",
                     //  "--limit_samples", "1000"
-                    "--downstream_loss_operation", "sum"
+                    // "--downstream_loss_operation", "sum"
 //                    , "-go", "${inputs:experimentName"
                 ],
 
@@ -149,7 +153,7 @@
                      "--nodes_pretext_tasks", "patch_ordering,image_rotation",
                     //  "--nodes_pretext_tasks", "image_rotation,patch_rotation,patch_ordering,patch_mask",
                     // "--no_downstream_task",
-                     "--patch_size", "16",
+                     "--patch_size", "56",
                     //  "--debug_pretext_images",
                     //  "--limit_samples", "1000",
                     // "--downstream_loss_operation", "sum",
@@ -688,7 +692,7 @@
 //                 ],
 //         },
         {
-            "name": "Chest XRay Generate nIID 1N DIRA0.5",
+            "name": "Chest XRay Generate 1N",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/fedgfe",
@@ -701,10 +705,10 @@
                     //  "-dids", "0,1",
                     //  "-dsbalance",
                      "--dataset_niid",
-                     "--dataset_outdir", "ChestXRay-nIID-1C",
+                     "--dataset_outdir", "ChestXRay-1C-Test",
                      // "--dataset_partition", "dir",
                      "--dataset_balance",
-                     "--dataset_dir_alpha", "0.5",
+                    //  "--dataset_dir_alpha", "0.5",
                      "--num_classes_per_client", "10"
                      //                    , "-go", "${inputs:experimentName"
                 ],
@@ -723,7 +727,7 @@
                     //  "-dids", "0,1",
                     //  "-dsbalance",
                     //  "--dataset_niid",
-                     "--dataset_outdir", "JSRT-1C-ML",
+                     "--dataset_outdir", "JSRT-1C-ClaSeg",
                      // "--dataset_partition", "dir",
                      "--dataset_balance",
                      "--dataset_image_size", "224",
