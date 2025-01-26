@@ -252,7 +252,10 @@ class Transformer(nn.Module):
 
     def forward(self, input_ids):
         embedding_output, features = self.embeddings(input_ids)
-        encoded, attn_weights = self.encoder(embedding_output)  # (B, n_patch, hidden)
+        encoder_output = self.encoder(input_ids)
+        attn_weights = encoder_output.attentions
+        encoded = encoder_output.last_hidden_state
+        # encoded, attn_weights = self.encoder(embedding_output)  # (B, n_patch, hidden)
         return encoded, attn_weights, features
 
 

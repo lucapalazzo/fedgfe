@@ -92,6 +92,8 @@ class FedGFE(FedRewind):
             self.vit_config = ViTConfig()
             self.vit_config.loss_type = "cross_entropy"
             self.vit_config.patch_size = self.args.patch_size
+            self.vit_config.output_attentions = True
+            self.vit_config.output_hidden_states = True
             model = ViTModel(self.vit_config)
         elif model_string == "timm_vit":
             model = VisionTransformer(

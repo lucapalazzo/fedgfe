@@ -41,7 +41,7 @@ class DownstreamSegmentation (Downstream):
         elif isinstance(backbone, ViTModel):
             input_dim = backbone.config.hidden_size
             # self.segmentation = self.create_segmentation_pipeline()
-            # self.vitseg.encoder = backbone
+            self.vitseg.transformer.encoder = backbone
 
         output_dim = num_classes
 
@@ -95,6 +95,9 @@ class DownstreamSegmentation (Downstream):
             x = x.repeat(1,3,1,1)
 
         x, attn_weights, features = self.vitseg.transformer(x)  # (B, n_patch, hidden)
+        if x.shape[1] == self.patch_count + 1:
+            # we need to remove the cls token
+            x = x[:, 1:, :]
         x = self.vitseg.decoder(x, features)
         logits = self.vitseg.segmentation_head(x)
         return logits
