@@ -79,7 +79,14 @@ class clientGFE(clientRewind):
         self.model.downstream_task_set(self.downstream_task)
     
 
-
+    def get_label(self, y):
+        if type(y) == dict:
+            if self.downstream_task_name == "segmentation":
+                y = y['masks'].to(self.device)
+            elif self.downstream_task_name == "classification":
+                y = y['labels'].long().to(self.device)
+        return y
+    
     def train(self, client_device = None, rewind_train_node = None, training_task = "both"):
         node_trainloader = self.load_train_data()
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
@@ -153,7 +160,7 @@ class clientGFE(clientRewind):
             for pretext_task_name in self.pretext_tasks:
                 self.model.pretext_task_name = pretext_task_name
                 print ( f"Node {self.id} training on pretext task {pretext_task_name}")
-            
+
                 self.freeze(backbone=False, pretext=False, downstream=True)
 
                 self.optimizer.add_param_group({'params': self.model.pretext_task.parameters(), 'lr': self.learning_rate})
@@ -185,10 +192,7 @@ class clientGFE(clientRewind):
                         else:
                             x = x.to(device)
 
-                        # if 
-                        # y = y.to(device)
-
-                        # self.prete
+                        y = self.get_label(y)
                         
                         output = self.model(x)
                         # output = heads(output)
@@ -287,12 +291,9 @@ class clientGFE(clientRewind):
                         x = x.to(device)
                         # x= self.transform(x)
                     
-                    if self.downstream_task_name == "segmentation":
-                        y = y['masks'].to(device)
-                    elif self.downstream_task_name == "classification":
-                        y = y['labels'].to(device)
-                        
+                    y = self.get_label(y)
                     y = y.to(device)
+
                     if self.train_slow:
                         time.sleep(0.1 * np.abs(np.random.rand()))
                     

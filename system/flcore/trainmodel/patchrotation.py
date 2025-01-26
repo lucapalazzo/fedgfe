@@ -5,6 +5,9 @@ from torchvision import transforms
 from typing import Iterator
 import numpy as np
 
+from timm.models.vision_transformer import VisionTransformer
+from transformers import ViTModel
+
 
 class PatchRotation (PatchPretextTask):
     def __init__(self, backbone=None, input_dim = 768, output_dim = 768, debug_images=False, img_size=224, patch_size=-1, patch_count = -1):
@@ -36,7 +39,8 @@ class PatchRotation (PatchPretextTask):
     
     def loss(self, x, y = None):
         target = torch.tensor(self.patch_rotation_labels).long().to(x.device)
-        return self.pretext_loss(x, target)
+        loss = self.pretext_loss(x, target)
+        return loss
 
     
     def forward(self, x):
@@ -45,6 +49,11 @@ class PatchRotation (PatchPretextTask):
             # self.backbone.logits_only = True
             x = self.backbone(x)
 
+        if self.cls_token_only:
+            if isinstance(self.backbone, VisionTransformer):
+                x = x[:,0,:]
+            elif isinstance(self.backbone, ViTModel):
+                x = x.last_hidden_state[:,:1,:]
 
         return self.pretext_head(x)
 

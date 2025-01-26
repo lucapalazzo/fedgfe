@@ -77,9 +77,9 @@
                      "--model_pretrain",
                     //  "--embedding_size", "64",
                     //  "--nodes_pretext_tasks", "patch_ordering",
-                    //  "--nodes_pretext_tasks", "patch_rotation,patch_ordering,patch_mask",
-                    "--nodes_downstream_tasks", "segmentation",
-                    "--nodes_backbone_model", "hf_vit",
+                     "--nodes_pretext_tasks", "image_rotation",
+                     "--nodes_downstream_tasks", "classification",
+                     "--nodes_backbone_model", "hf_vit",
                      "--patch_size", "16",
                     //  "--limit_samples", "1000"
                     // "--downstream_loss_operation", "sum"
