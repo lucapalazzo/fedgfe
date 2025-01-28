@@ -29,6 +29,12 @@ class ImageRotation (PatchPretextTask):
         
         self.pretext_loss = nn.CrossEntropyLoss()
         self.pretext_head = nn.Sequential( nn.Linear(output_dim, self.rotation_angles_count) ).to(self.device)
+        # self.pretext_head = nn.Sequential(
+        #     nn.Linear(output_dim, 128),
+        #     nn.ReLU(),
+        #     nn.Linear(128, self.rotation_angles_count)
+            
+        #     ).to(self.device)
 
     def parameters(self, recurse: bool = True) -> Iterator[nn.Parameter]:
         modules = nn.ModuleList()
@@ -44,6 +50,10 @@ class ImageRotation (PatchPretextTask):
 
     def accuracy(self, x, y = None):
         target = torch.tensor(self.image_rotation_labels).long().to(x.device)
+        truecount = (x.argmax(dim=1) == target).float().sum()
+        print ( "true count ", truecount.item(),  x.argmax(dim=1), target, x.argmax(dim=1) == target)
+        accuracy = truecount / x.shape[0]
+        return accuracy
         return (x.argmax(dim=1) == target).float().mean()
      
     def loss(self, x, y = None):

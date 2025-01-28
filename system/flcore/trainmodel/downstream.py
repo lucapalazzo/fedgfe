@@ -23,6 +23,13 @@ class Downstream (nn.Module):
         self.backbone_enabled = True if backbone is not None else False
         self.cls_token_only = cls_token_only
 
+    def downstream_loss(self, logits, labels):
+        assert (False, "Downstream loss not implemented")
+        return None
+    
+    def loss(self, logits, labels):
+        return self.downstream_loss(logits, labels) if self.downstream_loss is not None else None
+
     def parameters(self, recurse = True):
         print ( "Warning: Downstream parameters not implemented" )
         return None

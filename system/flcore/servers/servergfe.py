@@ -726,6 +726,9 @@ class FedGFE(FedRewind):
         #     previous_accuracy, previous_test = client.test_metrics_other(previous_node)
         #     previous_accuracy = previous_accuracy/previous_test
 
+        if client.downstream_task == None:
+            return 0
+
         acc, test_num, auc, y_true, y_prob = client.test_metrics()
 
         if test_num == 0:

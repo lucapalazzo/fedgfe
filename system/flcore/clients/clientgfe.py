@@ -20,6 +20,8 @@ from flcore.trainmodel.downstreamclassification import DownstreamClassification
 from flcore.trainmodel.downstreamfivelayerclassification import DownstreamFiveLayerClassification
 from flcore.trainmodel.downstreamsegmentation import DownstreamSegmentation
 
+import torch.nn.functional as F
+
 from tqdm import tqdm
 
 class clientGFE(clientRewind):
@@ -87,6 +89,18 @@ class clientGFE(clientRewind):
                 y = y['labels'].long().to(self.device)
         return y
     
+    def train_downstream_loss(self, output, y):
+        self.downstream_task.backbone_enabled = True
+        downstream_output = self.downstream_task(x)
+        if downstream_output != None:
+            downstream_loss = self.downstream_task.loss ( downstream_output, y)
+            downstream_losses += downstream_loss.item()
+           
+
+        self.downstream_task.backbone_enabled = False
+        return downstream_loss
+    
+
     def train(self, client_device = None, rewind_train_node = None, training_task = "both"):
         node_trainloader = self.load_train_data()
         # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
@@ -149,7 +163,8 @@ class clientGFE(clientRewind):
         if self.model_optimizer == "AdamW":
             self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
 
-        self.optimizer.add_param_group({'params': self.downstream_task.parameters(), 'lr': self.learning_rate}) 
+        if self.downstream_task != None:
+            self.optimizer.add_param_group({'params': self.downstream_task.parameters(), 'lr': self.learning_rate}) 
         # Call it AFTER the optimizer is created, otherwise the optimizer will already have use pretext_task parameters
 
         # self.downstream_task.backbone = self.model.backbone
@@ -198,30 +213,30 @@ class clientGFE(clientRewind):
                         # output = heads(output)
                         # loss = self.model.loss(output, y).to(device)
                         loss = self.model.loss( output, y )
-                        losses += loss.item()
                         summed_loss = loss
 
-                        self.downstream_task.backbone_enabled = True
-                        downstream_output = self.downstream_task(x)
-                        downstream_loss = torch.Tensor([0])
-                        if downstream_output != None:
-                            downstream_loss = self.downstream_task.loss ( downstream_output, y)
-                            downstream_losses += downstream_loss.item()
+
+                        if self.downstream_task != None:
+                            self.downstream_task.backbone_enabled = True
+                            downstream_output = self.downstream_task(x)
+                            downstream_loss = self.downstream_task.loss ( downstream_output, y)                           
                             if self.downstream_loss_operation == "sum":
                                 summed_loss = loss + downstream_loss
 
-
-                        self.downstream_task.backbone_enabled = False
+                            self.downstream_task.backbone_enabled = False
 
                         self.optimizer.zero_grad()
 
-                        
-                        
                         summed_loss.backward()
+                        losses += loss.item()
 
                         self.optimizer.step()
 
-                        pbarbatch.set_postfix({'Loss': f'{loss.item():.2f}', 'DSLoss': f'{downstream_loss.item():.2f}', 'Epoch': f'{step+1}/{local_epochs}'})
+                        if self.downstream_task != None:
+                            pbarbatch.set_postfix({'Loss': f'{loss.item():.2f}', 'DSLoss': f'{downstream_loss.item():.2f}', 'Epoch': f'{step+1}/{local_epochs}'})
+                        else:
+                            pbarbatch.set_postfix({'Loss': f'{loss.item():.2f}', 'Epoch': f'{step+1}/{local_epochs}'})
+
                         pbarbatch.update(1)
                         if ( self.args.limit_samples_number > 0 and i*trainloader.batch_size > self.args.limit_samples_number ):
                             break
@@ -251,7 +266,7 @@ class clientGFE(clientRewind):
                 
                 i += 1
                 pretext_accuracy = pretext_accuracy/i
-                print ( f"Pretext {pretext_task_name} accuracy {pretext_accuracy/i:.3f}")
+                print ( f"Pretext {pretext_task_name} accuracy {pretext_accuracy:.3f}")
                 self.data_log({f"test/node_{self.id}/pretext_test_acc_{pretext_task_name}": pretext_accuracy, "round": self.round})
 
         if self.downstream_task != None and ( training_task == "both" or training_task == "downstream"):
@@ -346,10 +361,15 @@ class clientGFE(clientRewind):
             for param in self.model.inner_model.pretext_head.parameters():
                 param.requires_grad = pretext_head_grad
         
-        for param in self.downstream_task.parameters():
-            param.requires_grad = downstream_grad
+        if self.downstream_task != None:
+            for param in self.downstream_task.parameters():
+                param.requires_grad = downstream_grad
 
     def train_metrics(self, trainloader=None):
+
+        if self.downstream_task == None:
+            return 0, 0
+        
         if ( trainloader == None):
             trainloader = self.load_train_data()
         if trainloader == None:

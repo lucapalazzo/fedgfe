@@ -141,11 +141,11 @@ class VITFC(nn.Module):
     def parameters(self, recurse: bool = True) -> Iterator[nn.Parameter]:
         modules = nn.ModuleList()
         modules.add_module("vit", self.backbone)
-        if self.pretext_train == False:
-            if isinstance(self.backbone, VisionTransformer):
-                modules.add_module("head", self.backbone.head)
-            elif isinstance(self.backbone, ViTModel):
-                modules.add_module("head", self.backbone.encoder)
+        # if self.pretext_train == False:
+        #     if isinstance(self.backbone, VisionTransformer):
+        #         modules.add_module("head", self.backbone.head)
+        #     elif isinstance(self.backbone, ViTModel):
+        #         modules.add_module("head", self.backbone.encoder)
         # modules.add_module("vit_head", self.vit.head)
 
         parameters = modules.parameters(recurse)
@@ -246,14 +246,6 @@ class VITFC(nn.Module):
     def loss(self, output = None, target = None):
         if self.pretext_train:
             loss = self.pretext_task.loss(output, target)
-            # if self.pretext_task_name == "patch_mask":
-            #     loss = self.pretext_loss(self.patches, self.preds, self.mask).to("cuda")
-            # if self.pretext_task_name == "patch_ordering":
-            #     loss = self.pretext_task.loss(output).to("cuda")
-            # if self.pretext_task_name == "patch_rotation":
-            #     loss = self.pretext_loss(self.output,self.patch_rotation_labels).to("cuda")
-            # if self.pretext_task_name == "image_rotation":
-            #     loss = self.pretext_loss(self.output,self.image_rotation_labels).to("cuda")
         elif self.downstream_task is not None:
             loss = self.downstream_task.loss( output, target).to("cuda")
         return loss
@@ -272,14 +264,15 @@ class VITFC(nn.Module):
     def forward(self, x):
         self.output = None
         if self.pretext_train:
-            if self.pretext_task_name == "patch_masking":
-                self.output = self._pretext_task(x)
-            elif self.pretext_task_name == "patch_ordering":
-                self.output = self._pretext_task(x)
-            elif self.pretext_task_name == "patch_rotation":
-                self.output = self._pretext_task(x)
-            elif self.pretext_task_name == "image_rotation":
-                self.output =  self._pretext_task(x)
+            self.output = self._pretext_task(x)
+            # if self.pretext_task_name == "patch_masking":
+            #     self.output = self._pretext_task(x)
+            # elif self.pretext_task_name == "patch_ordering":
+            #     self.output = self._pretext_task(x)
+            # elif self.pretext_task_name == "patch_rotation":
+            #     self.output = self._pretext_task(x)
+            # elif self.pretext_task_name == "image_rotation":
+            #     self.output =  self._pretext_task(x)
         else: 
             # self.vit.head = self.starting_classifier
             self.output = self.downstream_task(x)

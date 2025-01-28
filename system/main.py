@@ -637,7 +637,7 @@ if __name__ == "__main__":
     #FedGFE
     parser.add_argument('-nbm', '--nodes_backbone_model', type=str, default='cifar10', help="Backbone model for federation")
     parser.add_argument('-nds', '--nodes_datasets', type=str, default='cifar10', help="Datasets for federation")
-    parser.add_argument('-ndst', '--nodes_downstream_tasks', type=str, default='classification', help="Downstream tasks for federation")
+    parser.add_argument('-ndst', '--nodes_downstream_tasks', type=str, default='none', help="Downstream tasks for federation")
     parser.add_argument('-nodst', '--no_downstream_tasks', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Use original head for downstram tasks for federation")
     parser.add_argument('-nptt', '--nodes_pretext_tasks', type=str, default='', help="Pretext tasks for federation")
     parser.add_argument('-npttp', '--nodes_pretext_tasks_parallel', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Parallel pretext task training")

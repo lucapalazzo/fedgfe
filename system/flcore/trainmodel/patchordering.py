@@ -60,20 +60,20 @@ class PatchOrdering (PatchPretextTask):
         # targets = torch.tensor(self.custom_order).long().to(self.device).unsqueeze(0).expand(x[0].shape[0],-1)
         targets = torch.tensor(self.custom_order).long().to(self.device)
 
-        accuracy = 0
+        true_order = 0
         patches = 0
         for patch_index,output in enumerate(x):
             target = targets[patch_index]
             for i,logits in enumerate(output):
                 predicted = logits.argmax(dim=0)
-                accuracy += (logits.argmax(dim=0) == target).float()
-                # print (f"{i} Predicted: {predicted}, Target: {target}")
+                true_order += (predicted == target).float()
+                print (f"{i} Predicted: {predicted}, Target: {target}")
                 patches += 1
 
-        accuracy = accuracy / patches  
+        accuracy = true_order / patches  
         return accuracy
         for output in x:
-            accuracy = (output.argmax(dim=1) == targets).float()
+            true_order = (output.argmax(dim=1) == targets).float()
         return (x.argmax(dim=1) == targets).float
 
     def loss(self, x, y = None):
@@ -92,7 +92,6 @@ class PatchOrdering (PatchPretextTask):
         loss = sum(losses)/len(losses)
         
         return loss
-        return self.pretext_loss(x, targets)
     
     def forward(self, x):
         x = self.preprocess_sample(x)

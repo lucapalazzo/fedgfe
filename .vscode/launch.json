@@ -76,9 +76,9 @@
                      "--dataset_image_size", "224",
                      "--model_pretrain",
                     //  "--embedding_size", "64",
-                    //  "--nodes_pretext_tasks", "patch_ordering",
-                     "--nodes_pretext_tasks", "image_rotation",
-                     "--nodes_downstream_tasks", "classification",
+                     "--nodes_pretext_tasks", "patch_masking,image_rotation",
+                    //  "--nodes_pretext_tasks", "image_rotation",
+                     "--nodes_downstream_tasks", "segmentation",
                      "--nodes_backbone_model", "hf_vit",
                      "--patch_size", "16",
                     //  "--limit_samples", "1000"

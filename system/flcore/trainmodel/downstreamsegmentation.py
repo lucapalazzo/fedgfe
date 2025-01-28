@@ -49,11 +49,10 @@ class DownstreamSegmentation (Downstream):
         #     UNet(input_dim, num_classes),
         # )
 
-        self.loss = self.segmentation_loss
         self.ce_loss = CrossEntropyLoss()
         self.dice_loss = DiceLoss(num_classes)
 
-    def segmentation_loss ( self, logits, labels ):
+    def downstream_loss ( self, logits, labels ):
         # return torch.Tensor([1])
         target = labels
         if type(labels) == dict:

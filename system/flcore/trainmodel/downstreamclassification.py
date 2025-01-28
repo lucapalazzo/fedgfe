@@ -20,8 +20,16 @@ class DownstreamClassification (Downstream):
             nn.Linear(self.input_dim, self.output_dim),
         )
 
-        self.loss = nn.CrossEntropyLoss()
-    
+        self.classification_loss = nn.CrossEntropyLoss()
+
+    def downstream_loss(self, logits, labels):
+
+        if isinstance(labels, dict):
+            labels = labels['labels']
+        labels = labels.long()
+
+        return self.classification_loss(logits, labels)
+
     def parameters(self, recurse=True):
         moduleList = nn.ModuleList()
         moduleList.add_module("downstream_head", self.downstream_head)
