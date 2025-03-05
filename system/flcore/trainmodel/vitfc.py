@@ -53,6 +53,7 @@ class VITFC(nn.Module):
     def __init__(self, model, num_classes, pretext_task=None, downstream_task = None, img_size=224, patch_count=16, patch_size=16, mask_ratio=0.15, pretrained=True, in_chans=3, decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,mlp_ratio=4., norm_layer=nn.LayerNorm, downstream_loss=None, debug_images = False):
         super(VITFC, self).__init__()
         self.backbone = model
+        self.round = 0
         # self.vit = model
         # if isinstance(model, VisionTransformer):
         #     model.global_pool = "avg"
@@ -137,6 +138,18 @@ class VITFC(nn.Module):
         # self.image_rotation_head = None
 
         print ( "Created VITFC model %s optimizer %s" %( hex(id(self)), hex(id(self.optimizer)) ) )
+
+    def test_metrics_calculate(self, x, Y = None, round = None):
+        if self.pretext_train:
+            return self.pretext_task.test_metrics_calculate(x, Y, round=round)
+        else:
+            return self.downstream_task.test_metrics_calculate(x, Y, round=round)
+    
+    def test_metrics_log(self, round = None):
+        if self.pretext_train:
+            return self.pretext_task.test_metrics_log(round=round)
+        else:
+            return self.downstream_task.test_metrics_log(round=round)
 
     def parameters(self, recurse: bool = True) -> Iterator[nn.Parameter]:
         modules = nn.ModuleList()
@@ -264,6 +277,7 @@ class VITFC(nn.Module):
     def forward(self, x):
         self.output = None
         if self.pretext_train:
+            self._pretext_task.round = self.round
             self.output = self._pretext_task(x)
             # if self.pretext_task_name == "patch_masking":
             #     self.output = self._pretext_task(x)
@@ -275,6 +289,7 @@ class VITFC(nn.Module):
             #     self.output =  self._pretext_task(x)
         else: 
             # self.vit.head = self.starting_classifier
+            self.downstream_task.round = self.round
             self.output = self.downstream_task(x)
         return self.output
     
@@ -530,6 +545,7 @@ class VITFC(nn.Module):
      
     
     def pretext_task_change_callback(self, new_task):
+        self.pretext_task.round = self.round
         # print ( "Setting pretext task to %s" % new_task.name )
 
 
@@ -690,4 +706,13 @@ class VITFC(nn.Module):
                 recontructed_patches.append(reconstructed)
                 count += 1
                 if max_saved != 0 and count >= max_saved:
-                    break 
+                    break
+
+    @property
+    def round(self):
+        return self._round
+    
+    @round.setter
+    def round(self, new_value):
+        self._round = new_value
+        self.backbone.round = new_value

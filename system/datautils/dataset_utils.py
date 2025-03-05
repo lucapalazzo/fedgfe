@@ -61,7 +61,10 @@ def separate_data(data, num_clients, num_classes, niid=False, balance=False, par
     statistic = [[] for _ in range(num_clients)]
 
     dataset_content, dataset_label = data
+    dataset_first_label = dataset_label
 
+    if len(dataset_label.shape) > 1:
+        dataset_first_label = dataset_label[:, 0]
     dataidx_map = {}
 
     if not niid:
@@ -70,11 +73,11 @@ def separate_data(data, num_clients, num_classes, niid=False, balance=False, par
 
     if partition == 'pat':
         # get dataset_label dimensions
-        dimensions = len(dataset_label.shape)
-        idxs = np.array(range(len(dataset_label)))
+        # dimensions = len(dataset_label.shape)
+        idxs = np.array(range(len(dataset_first_label)))
         idx_for_each_class = []
         for i in range(num_classes):
-            idx_for_each_class.append(idxs[dataset_label == i])
+            idx_for_each_class.append(idxs[dataset_first_label == i])
 
         class_num_per_client = [class_per_client for _ in range(num_clients)]
         for i in range(num_classes):
@@ -110,7 +113,7 @@ def separate_data(data, num_clients, num_classes, niid=False, balance=False, par
         # https://github.com/IBM/probabilistic-federated-neural-matching/blob/master/experiment.py
         min_size = 0
         K = num_classes
-        N = len(dataset_label)
+        N = len(dataset_first_label)
 
         try_cnt = 1
         while min_size < least_samples:
@@ -119,7 +122,7 @@ def separate_data(data, num_clients, num_classes, niid=False, balance=False, par
 
             idx_batch = [[] for _ in range(num_clients)]
             for k in range(K):
-                idx_k = np.where(dataset_label == k)[0]
+                idx_k = np.where(dataset_first_label == k)[0]
                 np.random.shuffle(idx_k)
                 proportions = np.random.dirichlet(np.repeat(alpha, num_clients))
                 proportions = np.array([p*(len(idx_j)<N/num_clients) for p,idx_j in zip(proportions,idx_batch)])
@@ -140,10 +143,11 @@ def separate_data(data, num_clients, num_classes, niid=False, balance=False, par
         client_data = list(range(num_clients))
 
     for client in range(num_clients):
-        
-        idxs = dataidx_map[client]
-        X[client] = dataset_content[idxs]
-        y[client] = dataset_label[idxs]
+
+        if len(dataidx_map):       
+            idxs = dataidx_map[client]
+            X[client] = dataset_content[idxs]
+            y[client] = dataset_first_label[idxs]
         if dataset_union:
             client_data[client] = { k: np.array([]) for k in dataset_union.keys() }
             for k in dataset_union.keys():

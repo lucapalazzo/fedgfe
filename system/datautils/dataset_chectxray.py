@@ -35,6 +35,7 @@ class ChestXrayDataset(Dataset):
         datafile_path = dataset_path + "/" + datafile
         if not os.path.exists(datafile_path):
             print ("File %s does not exist" %(dataset_path+"/"+datafile))
+            assert ( "File %s does not exist" %(dataset_path+"/"+datafile))
             return
         self.data = pd.read_excel(datafile_path, index_col=0)
         self.traindata_len = int(len(self.data) * (1 - test_ratio - validate_ratio))

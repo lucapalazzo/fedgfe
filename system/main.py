@@ -635,7 +635,7 @@ if __name__ == "__main__":
     parser.add_argument('-reer', "--rewind_end_epoch_ratio", type=float, default=1, help="Epoch ratio count number of epoch for starting rewind before and of round")
 
     #FedGFE
-    parser.add_argument('-nbm', '--nodes_backbone_model', type=str, default='cifar10', help="Backbone model for federation")
+    parser.add_argument('-nbm', '--nodes_backbone_model', type=str, default='hf_vit', help="Backbone model for federation")
     parser.add_argument('-nds', '--nodes_datasets', type=str, default='cifar10', help="Datasets for federation")
     parser.add_argument('-ndst', '--nodes_downstream_tasks', type=str, default='none', help="Downstream tasks for federation")
     parser.add_argument('-nodst', '--no_downstream_tasks', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Use original head for downstram tasks for federation")
@@ -643,6 +643,7 @@ if __name__ == "__main__":
     parser.add_argument('-npttp', '--nodes_pretext_tasks_parallel', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Parallel pretext task training")
     parser.add_argument('-nts', '--nodes_training_sequence', type=str, default="both", help="Nodes training sequence for federation [sslfirst traing on pretext task and downstram at end]")
     parser.add_argument('-es', '--embedding_size', type=int, default=768, help="embedding size for transformer")
+    parser.add_argument('-nhl', '--num_hidden_layers', type=int, default=12, help="transformer hidden layers")
     parser.add_argument('-ps', '--patch_size', type=int, default=16, help="patch size for transformer")
     parser.add_argument('-lsn', '--limit_samples_number', type=int, default=0, help="Limit the first n samples for each node")
     parser.add_argument('-dst', '--downstream_tasks', type=str, default="classification", help="Downsteam tasks list")
@@ -650,8 +651,11 @@ if __name__ == "__main__":
     parser.add_argument('-dpti', '--debug_pretext_images', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Save images after pretext tasks")
     parser.add_argument('-ma', '--model_aggregation', type=str, default="none", help="Model aggregation method")
     parser.add_argument('-maw', '--model_aggregation_weighted', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Model aggregation weighted")
-
-
+    parser.add_argument('-smt', '--segmentation_mask_threshold', type=float, default=None, help="segmentation mask visualization threshold")
+    parser.add_argument('-sslr', '--ssl_rounds', type=int, default=0, help="number of ssl rounds")
+    parser.add_argument('-mbsc', '--model_backbone_save_checkpoint', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Save backbone checkpoint")
+    parser.add_argument('-mblc', '--model_backbone_load_checkpoint', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Load backbone checkpoint")
+    parser.add_argument('-mbc', '--model_backbone_checkpoint', type=str, default="backbone.pt", help="Backbone checkpoint filename")
 
     # Routing algos
     parser.add_argument('-rora', "--routing_random", type=bool, default=False, action=argparse.BooleanOptionalAction, help="Route to random node")

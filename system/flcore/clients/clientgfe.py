@@ -6,9 +6,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import time
-import math
 
-import wandb
 from flcore.clients.clientRewind import clientRewind
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import balanced_accuracy_score
@@ -20,9 +18,18 @@ from flcore.trainmodel.downstreamclassification import DownstreamClassification
 from flcore.trainmodel.downstreamfivelayerclassification import DownstreamFiveLayerClassification
 from flcore.trainmodel.downstreamsegmentation import DownstreamSegmentation
 
+from flcore.trainmodel.imagerotation import ImageRotation
+from flcore.trainmodel.patchordering import PatchOrdering
+from flcore.trainmodel.patchmasking import PatchMasking
+
+from modelutils.model_stats import count_changed_weights
+
 import torch.nn.functional as F
 
 from tqdm import tqdm
+
+from torchviz import make_dot
+
 
 class clientGFE(clientRewind):
     def __init__(self, args, model_id, train_samples, test_samples, dataset = None, is_strong = False, id_by_type=-1, rewind_epochs = 0, rewind_interval = 0, rewind_ratio = 0, pretext_tasks = [], model=None, patch_count = -1, img_size = 224, patch_size = -1, **kwargs):
@@ -35,6 +42,8 @@ class clientGFE(clientRewind):
         self.no_wandb = args.no_wandb
         self.train_dataloader = None
         self.test_dataloader = None
+        self.ssl_round = 0
+
 
         self.img_size = img_size
         if patch_count > 0:
@@ -71,34 +80,56 @@ class clientGFE(clientRewind):
         if value == "none":
             self.downstream_task = None
         elif value == "classification":
-            self.downstream_task = DownstreamClassification(self.model.backbone, num_classes=self.num_classes).to(self.device)
+            heads = self.node_data.classification_labels_count()
+            stats = self.node_data.train_stats_get()
+            self.downstream_task = DownstreamClassification(self.model.backbone, num_classes=self.num_classes,wandb_log=(not self.no_wandb), classification_tasks_labels=stats[0]).to(self.device)
         elif value == "segmentation":
-            self.downstream_task = DownstreamSegmentation(self.model.backbone, num_classes=self.num_classes, patch_size=self.patch_size).to(self.device)
+            masks = self.node_data.segmentation_mask_count()
+            self.downstream_task = DownstreamSegmentation(self.model.backbone, num_classes=masks, patch_size=self.patch_size,wandb_log=(not self.no_wandb)).to(self.device)
+            self.downstream_task.segmentation_mask_threshold = self.args.segmentation_mask_threshold
         elif value == "5lclassification":
-            self.downstream_task = DownstreamFiveLayerClassification(self.model.backbone, num_classes=self.num_classes).to(self.device)
+            self.downstream_task = DownstreamFiveLayerClassification(self.model.backbone, num_classes=self.num_classes,wandb_log=(not self.no_wandb)).to(self.device)
 
         
         self.model.downstream_task_set(self.downstream_task)
     
+    def define_metrics(self):
+        if self.downstream_task != None:
+            self.downstream_task.define_metrics(self.metrics_path)
+        
+        for pretext_task in self.pretext_tasks:
+            module = None
+            if ( pretext_task == ImageRotation.pretext_task_name):
+                module = ImageRotation
+            elif ( pretext_task == PatchOrdering.pretext_task_name):
+                module = PatchOrdering
+            elif ( pretext_task == PatchMasking.pretext_task_name):
+                module = PatchMasking
+
+            if module != None:
+                module.define_metrics(self.metrics_path)
 
     def get_label(self, y):
         if type(y) == dict:
             if self.downstream_task_name == "segmentation":
-                y = y['masks'].to(self.device)
+                if 'semantic_masks' in y:
+                    y = y['semantic_masks'].to(self.device)
+                else:
+                    y = y['masks'].to(self.device)
             elif self.downstream_task_name == "classification":
                 y = y['labels'].long().to(self.device)
         return y
     
-    def train_downstream_loss(self, output, y):
-        self.downstream_task.backbone_enabled = True
-        downstream_output = self.downstream_task(x)
-        if downstream_output != None:
-            downstream_loss = self.downstream_task.loss ( downstream_output, y)
-            downstream_losses += downstream_loss.item()
+    # def train_downstream_loss(self, output, y):
+    #     self.downstream_task.backbone_enabled = True
+    #     downstream_output = self.downstream_task(x)
+    #     if downstream_output != None:
+    #         downstream_loss = self.downstream_task.loss ( downstream_output, y)
+    #         downstream_losses += downstream_loss.item()
            
 
-        self.downstream_task.backbone_enabled = False
-        return downstream_loss
+    #     self.downstream_task.backbone_enabled = False
+    #     return downstream_loss
     
 
     def train(self, client_device = None, rewind_train_node = None, training_task = "both"):
@@ -108,8 +139,8 @@ class clientGFE(clientRewind):
         #     self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.1)
 
         # if ( self.loss_weighted and self.loss_weightes == None ):
-        if self.round == 0:
-            self.node_data.stats_dump()
+        # if self.round <= 1:
+        #     self.node_data.stats_dump()
         # if ( self.loss_weighted and self.loss_weights == None ):
 
         #     loss_weights = [0] * self.num_classes
@@ -138,8 +169,8 @@ class clientGFE(clientRewind):
 
         self.rewind_previous_model_id.append(self.next_train_model_id)
         max_local_epochs = self.local_epochs
-        if self.train_slow:
-            max_local_epochs = np.random.randint(1, max_local_epochs // 2)
+        # if self.train_slow:
+        #     max_local_epochs = np.random.randint(1, max_local_epochs // 2)
 
         local_epochs = max_local_epochs
         if ( self.rewind_epochs > 0 and rewind_train_node != None ):
@@ -159,16 +190,17 @@ class clientGFE(clientRewind):
         pbarbatch = None
         num_batches = len(trainloader.dataset)//trainloader.batch_size
 
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
-        if self.model_optimizer == "AdamW":
+
+        if self.round == 1:
             self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
 
-        if self.downstream_task != None:
-            self.optimizer.add_param_group({'params': self.downstream_task.parameters(), 'lr': self.learning_rate}) 
-        # Call it AFTER the optimizer is created, otherwise the optimizer will already have use pretext_task parameters
+            if self.model_optimizer == "AdamW":
+                self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate)
 
-        # self.downstream_task.backbone = self.model.backbone
-        # self.model.downstream_task_set( self.downstream_task)
+            if self.downstream_task != None:
+                self.optimizer.add_param_group({'params': self.downstream_task.parameters(), 'lr': self.learning_rate}) 
+        
+        self.model.round = self.round
         self.model.pretext_train = True
         if training_task == "both" or training_task == "pretext":
 
@@ -176,9 +208,23 @@ class clientGFE(clientRewind):
                 self.model.pretext_task_name = pretext_task_name
                 print ( f"Node {self.id} training on pretext task {pretext_task_name}")
 
+                # Confronta i parametri del modello e dell'optimizer
+                # model_params = [param for name, param in self.model.named_parameters() if param.requires_grad]
+                # module_params = [p for p in model_params]
+                # optimizer_params = [p for param_group in self.optimizer.param_groups for p in param_group['params']]
+
+                # for model_param, optimizer_param in zip(model_params, optimizer_params):
+                #     if not torch.equal(model_param, optimizer_param):
+                #         print(f"Mismatch found between model and optimizer parameters: {model_param.shape}")
+                #         print(f"Model parameter name: {model_param}")
+                #         print(f"Optimizer parameter name: {optimizer_param}")
+                #         break
+
                 self.freeze(backbone=False, pretext=False, downstream=True)
 
-                self.optimizer.add_param_group({'params': self.model.pretext_task.parameters(), 'lr': self.learning_rate})
+                if self.round == 1: 
+                    self.optimizer.add_param_group({'params': self.model.pretext_task.parameters(), 'lr': self.learning_rate})
+               
                 round_loss = 0 
                 round_downstream_loss = 0
                 for step in range(local_epochs):
@@ -193,9 +239,7 @@ class clientGFE(clientRewind):
                     downstream_losses = 0
 
                     print ( "Round %d Epoch %d" % ( self.round, step), end='')
-                    # with tqdm(total=local_epochs, desc=f"Epoch {step+1}/{local_epochs}", unit='epoch') as pbarepoch:
-
-                        # print ( "Samples worked: ", end='') 
+                    
                     pbarbatch = tqdm(total=num_batches, desc=f"Batch ", unit='batch', leave=False) 
                     # pbarbatch = tqdm(total=num_batches, desc=f"Batch {i+1}/{num_batches}", unit='batch', leave=False) 
                     for i, (x, y) in enumerate(trainloader):
@@ -218,6 +262,7 @@ class clientGFE(clientRewind):
 
                         if self.downstream_task != None:
                             self.downstream_task.backbone_enabled = True
+                            # torch.cuda.empty_cache()
                             downstream_output = self.downstream_task(x)
                             downstream_loss = self.downstream_task.loss ( downstream_output, y)                           
                             if self.downstream_loss_operation == "sum":
@@ -227,10 +272,15 @@ class clientGFE(clientRewind):
 
                         self.optimizer.zero_grad()
 
+                        # pre = copy.deepcopy(list(self.model.pretext_task.parameters()))
+
                         summed_loss.backward()
+
                         losses += loss.item()
 
                         self.optimizer.step()
+                        # post = copy.deepcopy(list(self.model.pretext_task.parameters()))
+                        # count_changed_weights(pre, post)
 
                         if self.downstream_task != None:
                             pbarbatch.set_postfix({'Loss': f'{loss.item():.2f}', 'DSLoss': f'{downstream_loss.item():.2f}', 'Epoch': f'{step+1}/{local_epochs}'})
@@ -243,10 +293,8 @@ class clientGFE(clientRewind):
                     round_loss += losses
                     round_downstream_loss += downstream_losses
 
-                    # pbarepoch.update(1)
-                    # print ( f"loss {losses/i:.2f} downstream loss {downstream_losses/i:2f}")
-                self.data_log({f"train/node_{self.id}/pretext_train_loss_{pretext_task_name}": round_loss/local_epochs, "round": self.round})
-                self.data_log({f"train/node_{self.id}/pretext_train_ds_loss_{pretext_task_name}": round_downstream_loss/local_epochs, "round": self.round})
+                self.data_log({f"train/node_{self.id}/pretext_train_loss_{pretext_task_name}": round_loss/local_epochs, "ssl_round": self.ssl_round})
+                self.data_log({f"train/node_{self.id}/pretext_train_ds_loss_{pretext_task_name}": round_downstream_loss/local_epochs, "ssl_round": self.ssl_round})
 
                 pbarbatch.close()
                 print()
@@ -277,16 +325,6 @@ class clientGFE(clientRewind):
                 backbone_grad = True
             else:
                 self.freeze(backbone=True, pretext=True, downstream=False)
-
-            
-            # if len(self.pretext_tasks) < len(self.optimizer.param_groups):
-            #     self.optimizer.add_param_group({'params': self.downstream_task.parameters(), 'lr': self.learning_rate})
-
-
-
-            # if self.no_downstream_tasks != True:
-            #     self.model.inner_model.vit.head = self.downstream_task
-
             
             self.model.pretext_train = False
             # self.freeze(freeze = True)
@@ -309,13 +347,10 @@ class clientGFE(clientRewind):
                     y = self.get_label(y)
                     y = y.to(device)
 
-                    if self.train_slow:
-                        time.sleep(0.1 * np.abs(np.random.rand()))
-                    
-                    output = self.downstream_task(x).to(device)
+                    output = self.downstream_task(x)
 
                     self.optimizer.zero_grad()
-                    loss = self.downstream_task.loss(output, y).to(device)
+                    loss = self.downstream_task.loss(output, y,samples=x).to(device)
 
                     loss.backward()
                     self.optimizer.step()
@@ -324,12 +359,12 @@ class clientGFE(clientRewind):
                     if ( self.args.limit_samples_number > 0 and i*trainloader.batch_size > self.args.limit_samples_number ):
                         break
 
-        local_loss, num = self.train_metrics()
-        if num > 0:
-            print ( f"Downstream task loss {local_loss/num}")
-            self.data_log({f"train/node_{self.id}/downstream_train_loss": local_loss/num, "round": self.round})
+        # local_loss, num = self.train_metrics()
+        # if num > 0:
+        #     print ( f"Downstream task loss {local_loss/num}")
+        #     self.data_log({f"train/node_{self.id}/downstream_train_loss": local_loss/num, "round": self.round})
         
-        # self.downstream_optimizer = torch.optim.SGD(self.downstream_net.parameters(), lr=self.learning_rate)
+        # self.downstream_optimizer = torch.opt/test_meim.SGD(self.downstream_net.parameters(), lr=self.learning_rate)
         # for downstream_task in self.downstream_tasks:
         #     self.model.pretext_train = False
         #     self.model.pretext_task = None
@@ -353,7 +388,7 @@ class clientGFE(clientRewind):
         pretext_head_grad = not pretext
         downstream_grad = not downstream
 
-        print ( f"Gradients: backbone {backbone_grad} pretext head {pretext_head_grad} downstream {downstream_grad}")   
+        # print ( f"Gradients: backbone {backbone_grad} pretext head {pretext_head_grad} downstream {downstream_grad}")   
         for param in self.model.parameters():
             param.requires_grad = backbone_grad
 
@@ -377,6 +412,8 @@ class clientGFE(clientRewind):
             return 0, 0
         self.model.eval()
 
+        self.downstream_task.train_metrics( trainloader )
+
         train_num = 0
         losses = 0
         self.model.to(self.device)
@@ -391,7 +428,10 @@ class clientGFE(clientRewind):
                     x = x.to(self.device)
                 if type(y) == dict:
                     if self.downstream_task_name == "segmentation":
-                        y = y['masks'].to(self.device)
+                        if 'semantic_masks' in y:
+                            y = y['semantic_masks'].to(self.device)
+                        else:
+                            y = y['masks'].to(self.device)
                     elif self.downstream_task_name == "classification":
                         y = y['labels'].to(self.device)
 
@@ -400,14 +440,16 @@ class clientGFE(clientRewind):
 
                 if output == None:
                     continue
-                if ( torch.isnan(output).any() ):
-                    self.log_once ( "Output NAN")
+                # if ( torch.isnan(output).any() ):
+                #     self.log_once ( "Output NAN")
 
                 loss = self.model.loss(output, y)
                 train_num += y.shape[0]
                 losses += loss.item() * y.shape[0]
 
             # print ( f"Downstream task loss {losses/train_num}")
+            # self.downstream_task.train_metrics_log( round = self.round )
+
 
         return losses, train_num
 
@@ -419,10 +461,10 @@ class clientGFE(clientRewind):
        
         self.model.eval()
 
-        test_acc = 0
-        test_num = 0
-        y_prob = []
-        y_true = []
+        # test_acc = 0
+        # test_num = 0
+        # y_prob = []
+        # y_true = []
         
         with torch.no_grad():
             for x, y in testloaderfull:
@@ -473,6 +515,8 @@ class clientGFE(clientRewind):
             if ( torch.equal(new_param.data, old_param.data) == False):
                 self.log_once  ( "parameters not updated")
             # print ( "old_param.data", old_param.data, "new_param.data", new_param.data)
+
+
     def test_metrics_data(self, dataloader, test_model = None):
 
         if dataloader == None:
@@ -500,37 +544,44 @@ class clientGFE(clientRewind):
                     x = x.to(self.device)
                 if type(y) == dict:
                     if self.downstream_task_name == 'segmentation':
-                        y = y['masks'].to(self.device)
+                        if 'semantic_masks' in y:
+                            y = y['semantic_masks'].to(self.device)
+                        else:
+                            y = y['masks'].to(self.device)
                     elif self.downstream_task_name == 'classification':
                         y = y['labels'].to(self.device)
+
                 y = y.to(self.device)
                 output = model(x)
                 # if isinstance(output, dict):
                 #     output = output['logits']
+
+                self.model.test_metrics_calculate(output, y)
                 
-                if self.downstream_task_name == 'classification':
-                    predictions = torch.argmax(output, dim=1)
+                # if self.downstream_task_name == 'classification':
+                    # predictions = torch.argmax(output, dim=1)
 
-                    test_acc += (torch.sum(predictions == y)).item()
-                    test_num += y.shape[0]
+                    # test_acc += (torch.sum(predictions == y)).item()
+                    # test_num += y.shape[0]
 
-                    if torch.isnan(output).any().item():
-                        if not self.no_wandb:
-                            wandb.log({f'warning/{self.id}': torch.isnan(output)})
-                        # print(f'warning for client {self.id} in round {self.round}:', torch.isnan(output))
-                        self.log_once(f'warning for client {self.id} in round {self.round}: output contains nan"')
+                    # if torch.isnan(output).any().item():
+                    #     # if not self.no_wandb:
+                    #         # wandb.log({f'warning/{self.id}': torch.isnan(output)})
+                    #     # print(f'warning for client {self.id} in round {self.round}:', torch.isnan(output))
+                    #     self.log_once(f'warning for client {self.id} in round {self.round}: output contains nan"')
 
-                    prob = F.softmax(output, dim=1) 
-                    # y_prob.append(prob.detach().cpu().numpy()) 
-                    y_prob.append(output.detach().cpu().numpy()) 
-                    nc = self.num_classes
-                    if self.num_classes == 2:
-                        nc += 1
-                    lb = label_binarize(y.detach().cpu().numpy(), classes=np.arange(nc))
-                    if self.num_classes == 2:
-                        lb = lb[:, :2]
-                    y_true.append(y.detach().cpu().numpy())
+                    # prob = F.softmax(output, dim=1) 
+                    # # y_prob.append(prob.detach().cpu().numpy()) 
+                    # y_prob.append(output.detach().cpu().numpy()) 
+                    # nc = self.num_classes
+                    # if self.num_classes == 2:
+                    #     nc += 1
+                    # lb = label_binarize(y.detach().cpu().numpy(), classes=np.arange(nc))
+                    # if self.num_classes == 2:
+                    #     lb = lb[:, :2]
+                    # y_true.append(y.detach().cpu().numpy())
 
+        self.model.test_metrics_log( round = self.round)
         if len(y_prob) > 0:
             y_prob = np.concatenate(y_prob, axis=0)
             y_true = np.concatenate(y_true, axis=0)

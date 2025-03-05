@@ -9,6 +9,8 @@ from datautils.jsrtparser.jsrt import Jsrt, JsrtImage
 import re
 from collections import OrderedDict
 from torchvision import transforms
+from pathlib import Path
+from PIL import Image
 
 class JSRTDataset(Dataset):
     def __init__(self, dataset = None, is_train=True, test_ratio = 0.2, validate_ratio=0, train=None, transform=None, download=False, root=".", dataset_path = "dataset", datafile = "All247images/"):
@@ -23,6 +25,15 @@ class JSRTDataset(Dataset):
         self.traindata = None
         self.testdata = None
         self.valdata = None
+       
+        self.semantic_segmentation_labels_path = dataset_path + "/SemanticSegmentation/label"
+        self.semantic_segmentation_image_path = dataset_path + "/SemanticSegmentation/org"
+        self.semantic_segmentation_images = []
+        self.semantic_segmentation_labels = []
+
+        if Path(self.semantic_segmentation_labels_path).exists() == True:
+            self.semantic_segmentation_labels = os.listdir(self.semantic_segmentation_labels_path)
+
 
         if dataset is not None and isinstance(dataset, JSRTDataset):
             self.data = dataset.data
@@ -35,18 +46,19 @@ class JSRTDataset(Dataset):
             self.sample_ids = dataset.sample_ids
             self.labels = dataset.labels
             return
-
+        
         datafile_path = dataset_path + "/" + datafile
 
-        jsrt = Jsrt()
-        jsrt.load_images(images_path=dataset_path)
+        self.jsrt = Jsrt()
+        self.jsrt.load_images(images_path=dataset_path)
+
 
         
         if not os.path.exists(datafile_path):
             print ("File %s does not exist" %(dataset_path+"/"+datafile))
             return
         
-        self.data = jsrt._has_nodule_image_list + jsrt._non_nodule_image_list
+        self.data = self.jsrt._has_nodule_image_list + self.jsrt._non_nodule_image_list
         self.fix_data(self.data)
         # self.data.append(jsrt._non_nodule_image_list)
 
@@ -65,9 +77,42 @@ class JSRTDataset(Dataset):
         sample_ids = [i for i in sample_ids if i not in self.valdata_ids]
 
         self.populate_labels()
-    
+
+    def get_semantic_segmentation_image(self, index):
+        image = self.data[index]
+        image_path = Path(image.image_path)
+        image_index = re.search(r'\d+', image_path.name).group()
+        segmentation_mask_file = self.semantic_segmentation_labels_path + "/case" + image_index + "_label.png"
+        segmentation_image_file = self.semantic_segmentation_image_path + "/case" + image_index + ".bmp"
+        image = Image.open(segmentation_image_file)
+        image = torch.from_numpy(np.array(image))
+        # image = self.transform(image)
+        
+        # Cuore 85
+        # Polmone 255
+        # Esterno campo polmonare 170
+        # Esterno corpo 0
+        colors = [255, 170, 85, 0]
+
+        mask = Image.open(segmentation_mask_file)
+        mask = np.array(mask)
+        orginal_mask_tensor = mask
+        mask = torch.from_numpy(mask).unsqueeze(0).repeat(4,1,1)
+        
+        for i in range(mask.shape[0]):
+            if colors[i] == 0:
+                mask[i] = torch.logical_not(mask[i])
+            else:
+                mask[i] *= (mask[i] == colors[i])
+                mask[i][mask[i] == colors[i]] = 1
+        mask = self.transform(mask)
+        return image, mask    
+
+
     def get_sample(self, index):
         image = self.data[index]
+
+        semantic_image, semantic_mask = self.get_semantic_segmentation_image(index)
 
         sample_tensor = torch.from_numpy(image.image.astype(np.float32))
         sample_tensor = sample_tensor/4095
@@ -97,7 +142,7 @@ class JSRTDataset(Dataset):
         # tensor_image_label.append(torch.tensor(image_label[2]))
         # tensor_image_label.append(torch.tensor(image_label[3]))
         # sample = {'image': image_sample, 'label': image_label, 'mask': mask_sample}
-        sample = [image_sample, image_label]
+        sample = [image_sample, image_label, semantic_mask]
         print ( f"Id {index} Benign: {image._malignant_or_benign} Nodule: {image._image_type} Zone: {image._position} {image_label}")
         return sample
     
@@ -197,7 +242,7 @@ class JSRTDataset(Dataset):
                 self.get_data('test')
             item = self.testdata[idx]
 
-        return item, {'image': item[0], 'label': item[1]}
+        return item, {'image': item[0], 'label': item[1], 'semantic_masks': item[2]}
 
         splitted = col['images_path'].split('/')
         label = splitted[-3]

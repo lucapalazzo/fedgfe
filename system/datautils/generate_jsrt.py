@@ -49,37 +49,42 @@ def generate_jsrt(args, dir_path, num_clients, num_classes, niid, balance, parti
         
     transform = None
     image_size = args.dataset_image_size
-    transform = transforms.Compose([ transforms.ToPILImage()])
+    # transform = transforms.Compose([ transforms.ToPILImage()])
+    transform = transforms.Compose([])
     if args.dataset_transform:
         transform.transforms.append(transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)))
     if image_size != -1:
         transform.transforms.append(transforms.Resize(image_size))
-    transform.transforms.append(transforms.ToTensor())
+    # transform.transforms.append(transforms.ToTensor())
 
     trainset = JSRTDataset(root=dir_path+"rawdata", train=True,  transform=transform, dataset_path=jsrt_path)
-    testset = JSRTDataset( dataset=trainset, train=False, transform=transform)
+    testset = JSRTDataset( dataset=trainset, train=False, transform=transform,dataset_path=jsrt_path)
     trainloader = torch.utils.data.DataLoader(
         trainset, batch_size=len(trainset), shuffle=False)
     testloader = torch.utils.data.DataLoader(
         testset, batch_size=len(testset), shuffle=False)
 
     for _, train_data in enumerate(trainloader, 0):
-        traindata, traintargets, trainsamples = train_data[0][0], train_data[0][1], train_data[1]
+        traindata, traintargets, trainmasks = train_data[0][0], train_data[0][1], train_data[1]['semantic_masks']
     for _, test_data in enumerate(testloader, 0):
-        testdata, testtargets, testsamples = test_data[0][0], test_data[0][1], test_data[1]
+        testdata, testtargets, testmasks = test_data[0][0], test_data[0][1], test_data[1]['semantic_masks']
 
     dataset_image = []
     dataset_label = []
+    dataset_mask = []
 
     dataset_image.extend(traindata.cpu().detach().numpy())
     dataset_image.extend(testdata.cpu().detach().numpy())
+    dataset_mask.extend(trainmasks.cpu().detach().numpy())
+    dataset_mask.extend(testmasks.cpu().detach().numpy())
     # dataset_label.extend(trainset.targets.cpu().detach().numpy())
     # train_nodules = torch.stack(traintargets[3]).permute(1,0)
     # test_nodules = torch.stack(testtargets[3]).permute(1,0)
-    traintargets = torch.stack(traintargets)
-    testtargets = torch.stack(testtargets)
+    traintargets = torch.stack(traintargets).permute(1,0)
+    testtargets = torch.stack(testtargets).permute(1,0)
+    
     # dataset_label.extend(testset.targets.cpu().detach().numpy())
-    dataset_label = torch.cat( (traintargets, testtargets),1)
+    dataset_label = torch.cat( (traintargets, testtargets),0)
     # dataset_label.append(testtargets)
 
     chosen_label = 0
@@ -87,13 +92,17 @@ def generate_jsrt(args, dir_path, num_clients, num_classes, niid, balance, parti
 
     dataset_image = np.array(dataset_image)
     dataset_label = np.array(dataset_label)
+    dataset_mask = np.array(dataset_mask)
 
     dataset_classes = len(traintargets)
+    dataset_classes = 2
+
+    dataset_union = { 'samples': dataset_image, 'labels': dataset_label, 'semantic_masks': dataset_mask }
 
 
-    X, y, statistic = separate_data((dataset_image, dataset_label[chosen_label]), num_clients, dataset_classes,  
-                                    niid, balance, partition, class_per_client, alpha=alpha)
-    train_data, test_data = split_data(X, y)
+    X, y, client_data, statistic = separate_data((dataset_image, dataset_label), num_clients, dataset_classes,  
+                                    niid, balance, partition, class_per_client, alpha=alpha, dataset_union=dataset_union)
+    train_data, test_data = split_data(X, y, client_data = client_data)
     save_file(config_path, train_path, test_path, train_data, test_data, num_clients, num_classes, 
         statistic, niid, balance, partition, alpha=alpha)
 

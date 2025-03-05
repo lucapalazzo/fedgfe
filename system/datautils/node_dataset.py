@@ -2,6 +2,8 @@ from utils.data_utils import read_client_data
 from torch.utils.data import DataLoader, Dataset
 from datautils.flnode_dataset import FLNodeDataset
 
+import torch
+
 import wandb
 class NodeData():
     def __init__(self, args, id = -1, transform=None, target_transform=None, **kwargs):
@@ -31,6 +33,46 @@ class NodeData():
         if self.test_dataset != None:
             self.test_dataset.to(device)
         return self
+    
+    def classification_labels_count(self):
+        dataloader = self.load_train_data(1)
+        if self.train_data == None:
+            return None
+        
+        tasks_count = 0
+        for _,l in dataloader:
+            if type(l) == dict:
+                if 'labels' in l:
+                    tasks_count = l['labels'].shape[0]
+                else:
+                    tasks_count = 1
+            else:
+                tasks_count = l.shape[1]
+            break
+        return tasks_count
+    
+    def segmentation_mask_count(self):
+        dataloader = self.load_train_data(1)
+        if self.train_data == None:
+            return None
+        mask_count = 0
+        for _,l in dataloader:
+            if type(l) == dict:
+                    if 'semantic_masks' in l:
+                        mask_count = l['semantic_masks'].shape[1]
+                    elif 'masks' in l:
+                        shape = len(l['masks'].shape)
+                        if shape == 4:
+                            for s in range(1,shape):
+                                if l['masks'].shape[s] < 32:
+                                    mask_count = l['masks'].shape[s]
+                                    break
+                        else:
+                            mask_count = 1
+            else:
+                mask_count += l.shape[2]
+            break
+        return mask_count
     
     def load_train_data(self, batch_size, dataset_limit=0, prefix = "",dataset_dir_prefix= ""):
         if self.train_data == None:
@@ -79,60 +121,127 @@ class NodeData():
     def unload_test_data(self):
         self.test_data = None
         self.test_dataset = None
-         
-    def stats_get(self):
-        # labels = self.labels_get()
-        self.load_train_data(1)
 
-        if self.train_data == None:
-            return None
+    def dataset_stats_get(self):
 
-        labels = list(range(self.num_classes))
-        if self.labels_count == None or self.labels_percent == None:
-            self.labels_count = dict(zip(labels, [0]*len(labels)))
-            if type(self.train_data) == dict:
-                for l in self.train_data['labels']:
-                    self.labels_count[l.item()] += 1
+        train_stats = self.train_stats_get()
+        test_stats = self.test_stats_get()
+        task_count = len(train_stats[0])
+
+        # print ( "Dataset stats: ")
+        # for task in range(task_count):
+        #     print ( f"Task {task} train: {train_stats[0][task]} test: {test_stats[0][task]}" )
+        return train_stats, test_stats
+    
+    def stats_get(self, data = None):
+
+        if data == None:
+            return [],[]
+        
+        if type(data) == dict:
+            if 'labels' in data:
+                labels = data['labels']
             else:
-                for _,l in self.train_data:
-                    self.labels_count[l.item()] += 1
-            self.labels_percent = {k: v*100/self.train_samples for k,v in self.labels_count.items()}
+                return [],[]
+        else:
+            labels = data
+        if 'labels' in data:
+            labels = data['labels']
+        else:
+            labels = data
+            return [],[]
 
-        return self.labels_count, self.labels_percent
+        if len(data['labels'].shape) == 1:
+            labels = data['labels'].unsqueeze(1)
+        else:
+            labels = data['labels']
+
+        self.classification_tasks_count = labels.shape[1]
+
+        self.classification_labels_count = [0]*self.classification_tasks_count
+        self.labels_percent = [0]*self.classification_tasks_count
+
+        for task_labels in range(self.classification_tasks_count):
+            if self.classification_tasks_count > 1:
+                unique_labels = torch.unique(labels[:,task_labels]).long()
+            else:
+                unique_labels = torch.unique(labels).long()
+            self.classification_labels_count[task_labels] = dict(zip(unique_labels.long().numpy(), [0]*len(unique_labels.long().numpy())))
+
+            for label in unique_labels:
+                count = torch.sum(labels[:,task_labels] == label)
+                self.classification_labels_count[task_labels][label.long().item()] = count.item()
+
+            # self.classification_labels_count[classification_label] = dict(zip(labels[classification_label], [0]*len(labels)))
+            # if type(self.train_data) == dict:
+            #     if 'labels' in self.train_data:
+            #         for l in self.train_data['labels']:
+            #             if self.classification_labels_count > 1:
+            #                 self.labels_count[classification_label][l[classification_label].long().item()] += 1
+            #             else:
+            #                 self.labels_count[classification_label][l.long().item()] += 1
+            # else:
+            #     for _,l in self.train_data:
+            #         self.labels_count[l.item()] += 1
+            self.labels_percent = {k: v*100/self.train_samples for k,v in self.classification_labels_count[task_labels].items()}
+
+        return self.classification_labels_count, self.labels_percent
+    
+    def train_stats_get(self):
+        if self.train_data == None:
+            self.load_train_data(1)
+        
+        return self.stats_get( self.train_data )
     
     def test_stats_get(self):
-        # labels = self.labels_get()
-        self.load_test_data(1)
-        labels = list(range(self.num_classes))
-        if self.labels_count == None or self.labels_percent == None:
-            self.labels_count = dict(zip(labels, [0]*len(labels)))
-            for _,l in self.test_data:
-                self.labels_count[l.item()] += 1
-            self.labels_percent = {k: v*100/self.test_samples for k,v in self.labels_count.items()}
-
-        return self.labels_count, self.labels_percent
-    
-    # def stats_wandb_define(self):
-    #     wandb.define_metric(f"dataset/client_{self.id}_train_labels", step_metric="class")
-    #     wandb.define_metric(f"dataset/client_{self.id}_test_labels", step_metric="class")
+        if self.test_data == None:
+            self.load_test_data(1)
+        
+        return self.stats_get( self.test_data )
        
     def stats_wandb_log(self):
-        labels_count, labels_percent = self.stats_get()
+        train_labels_count, labels_percent = self.train_stats_get()
         test_labels_count, test_labels_percent = self.test_stats_get()
+
+        if train_labels_count == 0 or train_labels_count == 0:
+            return
         # labels = len(labels_count)
         # data = []
 
         # for label in range(labels):
         #     data.append([label, labels_count[label], test_labels_count[label]])
-        data = [[label, count] for (label, count) in labels_count.items()]
-        table = wandb.Table(data=data, columns=["class", "count"])
-        wandb.log({f"dataset/client_{self.id}_train_labels" : wandb.plot.bar(table, "class",
-            "count", title=f"Client {self.id} Train class count")})
+        tasks_count = len(train_labels_count)
+        for task_labels in range(tasks_count):
+            task_data = []
+            for label in train_labels_count[task_labels].keys():
+                if label not in test_labels_count[task_labels]:
+                    test_labels_count[task_labels][label] = 0
+                else:
+                    test_labels_count[task_labels][label] = test_labels_count[task_labels][label]
+                task_data.append([label, train_labels_count[task_labels][label], test_labels_count[task_labels][label]])
+            # data = [[label, train_labels_count[task_labels][label], test_labels_count[task_labels][label]] for label in train_labels_count[task_labels].keys()]
+            table = wandb.Table(data=task_data, columns=["class", "train_count", "test_count"])
+
+            train_bar = wandb.plot.bar(table, "class", "train_count", title=f"Client {self.id} task {task_labels} class count")
+            test_bar = wandb.plot.bar(table, "class", "test_count", title=f"Client {self.id} task {task_labels} class count")
+            # wandb.log({f"dataset/client_{self.id}_labels_{task_labels}" : {train_bar, test_bar}})
+            # wandb.log({f"dataset/client_{self.id}_labels_{task_labels}" : 
+            #            { wandb.plot.bar(table, "class", "train_count", title=f"Client {self.id} task {task_labels} class count"),
+            #              wandb.plot.bar(table, "class", "test_count", title=f"Client {self.id} task {task_labels} class count")}})
+                                                                                         
+            # wandb.log({f"dataset/client_{self.id}_labels_{task_labels}" : wandb.plot.bar(table, "class",
+            #     "train_count", title=f"Client {self.id} task {task_labels} class count")})
+            # wandb.log({f"dataset/client_{self.id}_labels_{task_labels}" : wandb.plot.bar(table, "class",
+            #     "test_count", title=f"Client {self.id} task {task_labels} class count")})
+        # data = [[label, count] for (label, count) in train_labels_count.items()]
+        # table = wandb.Table(data=data, columns=["class", "count"])
+        # wandb.log({f"dataset/client_{self.id}_train_labels" : wandb.plot.bar(table, "class",
+        #     "count", title=f"Client {self.id} Train class count")})
         
-        data = [[label, count] for (label, count) in test_labels_count.items()]
-        table = wandb.Table(data=data, columns=["class", "count"])
-        wandb.log({f"dataset/client_{self.id}_test_labels" : wandb.plot.bar(table, "class",
-           "count", title=f"Client {self.id} Test class count")})
+        # data = [[label, count] for (label, count) in test_labels_count.items()]
+        # table = wandb.Table(data=data, columns=["class", "count"])
+        # wandb.log({f"dataset/client_{self.id}_test_labels" : wandb.plot.bar(table, "class",
+        #    "count", title=f"Client {self.id} Test class count")})
         # for k,v in labels_count.items():
         #     wandb.log({f"dataset/client_{self.id}_train_labels": v, "class":k})
         # labels_count, labels_percent = self.test_stats_get()
@@ -140,11 +249,22 @@ class NodeData():
         #     wandb.log({f"dataset/client_{self.id}_test_labels": v, "class":k})
 
     def stats_dump(self):
-        if self.stats_get() == None:
+        # return
+        if self.train_data == None:
+            self.load_train_data(1)
+        if self.test_data == None:
+            self.load_test_data(1)
+
+        if self.dataset_stats_get() == None:
             print("No data to dump")
             return
-        labels_count, labels_percent = self.stats_get()
-        print("Dataset %d stats: %s" % (self.id,labels_count))
+        
+        train_stats, test_stats = self.dataset_stats_get()
+        if type(train_stats) == tuple:
+            for task in range(len(train_stats[0])):
+                print(f"Task {task} labels count train {train_stats[0][task]} test {test_stats[0][task]}")
+        else:
+            print("Dataset %d stats: %s" % (self.id,train_stats))
         # print("Labels percent: %s" % labels_percent)
 
     def labels_get(self):

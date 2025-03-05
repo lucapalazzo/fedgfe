@@ -1,0 +1,37 @@
+{
+    "description": "5 Nodi",
+    "federation": 
+    {
+        "nodes_count": "5",
+        "request": "launch",
+        "name": "Launch Program",
+        "nodes": [
+            {
+                "dataset": "dataset1",
+                "id": "1",
+                "dataset_id": "1",
+                "downstream": [
+                    "classification",
+                    "segmentation"
+                ]
+            },
+            {
+                "name": "Node 2",
+                "port": 9230
+            },
+            {
+                "name": "Node 3",
+                "port": 9231
+            },
+            {
+                "name": "Node 4",
+                "port": 9232
+            },
+            {
+                "name": "Node 5",
+                "port": 9233
+            }
+        ]
+    
+    }
+}

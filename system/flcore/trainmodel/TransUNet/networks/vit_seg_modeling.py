@@ -367,6 +367,8 @@ class DecoderCup(nn.Module):
             else:
                 skip = None
             x = decoder_block(x, skip=skip)
+        if torch.isnan(x).any():
+            print('nan')
         return x
 
 

@@ -1,4 +1,5 @@
 import copy
+import os
 import wandb
 from flcore.clients.clientgfe import clientGFE
 from flcore.servers.serverrewind import FedRewind
@@ -37,20 +38,36 @@ class FedGFE(FedRewind):
         super().__init__(args, times, create_clients=False)
 
         self.nodes_backbone_model = self.create_nodes_model(args.nodes_backbone_model)
+        self.model_backbone_load_checkpoint = args.model_backbone_load_checkpoint
+        self.model_backbone_save_checkpoint = args.model_backbone_save_checkpoint
 
 
         self.global_model = None
+        self.ssl_rounds = args.ssl_rounds if args.ssl_rounds > 0 else args.global_rounds
+
+        self.ssl_round = 0
+        self.downstream_round = 0
 
         if pretext_tasks is not None:
             self.pretext_tasks = pretext_tasks
         else:
             self.pretext_tasks = list(filter(len,self.args.nodes_pretext_tasks.split(",")))
 
-        self.nodes_datasets = self.args.dataset.split(":")
-        self.nodes_downstream_tasks = self.args.nodes_downstream_tasks.split(":")
+        self.nodes_datasets = self.args.dataset.split(",")
+        self.nodes_downstream_tasks = self.args.nodes_downstream_tasks.split(",")
         self.nodes_training_sequence = self.args.nodes_training_sequence
+        if self.nodes_training_sequence == "sslfirst":
+            self.global_rounds -= self.ssl_rounds
         
         self.model_aggregation = self.args.model_aggregation
+        self.model_backbone_save_checkpoint = args.model_backbone_save_checkpoint
+        self.model_backbone_load_checkpoint = args.model_backbone_load_checkpoint
+        self.model_backbone_checkpoint = args.model_backbone_checkpoint
+
+        if self.model_backbone_load_checkpoint:
+            self.load_checkpoint()
+            if self.global_model != None:
+                self.nodes_backbone_model = self.global_model
 
         self.clients = []
 
@@ -68,6 +85,12 @@ class FedGFE(FedRewind):
         # select slow clients
         self.set_slow_clients()
         self.set_clients(clientGFE)
+
+        for client in self.clients:
+            print ( "\n*** Client %d dataset %s id %d" % (client.id, client.dataset, client.node_data.dataset_id) )
+            client.node_data.stats_dump()
+
+
         if self.no_wandb == False:
             self.define_metrics()
 
@@ -94,6 +117,7 @@ class FedGFE(FedRewind):
             self.vit_config.patch_size = self.args.patch_size
             self.vit_config.output_attentions = True
             self.vit_config.output_hidden_states = True
+            self.vit_config.num_hidden_layers = self.args.num_hidden_layers
             model = ViTModel(self.vit_config)
         elif model_string == "timm_vit":
             model = VisionTransformer(
@@ -160,6 +184,7 @@ class FedGFE(FedRewind):
         while client_index < client_count:
             client = self.clients[client_index]
             client.round = round
+            client.ssl_round = self.ssl_round
             client.thread = None
             client.federation_size = len(self.clients)
         # while client.thread == None:
@@ -224,13 +249,29 @@ class FedGFE(FedRewind):
             time.sleep(0.1)
 
     def train(self):
-        
         training_task = "both" 
         if self.nodes_training_sequence == "sslfirst":
             training_task = "pretext"
 
-        for i in range(self.global_rounds+1):
+        for i in range(1,self.global_rounds+1):
             self.round = i
+            if self.round > self.ssl_rounds:
+                training_task = "downstream"
+
+            if training_task == "both":
+                self.ssl_round += 1
+                self.downstream_round += 1
+                self.data_log({"ssl_round": self.ssl_round, "downstream_round": self.downstream_round})
+            elif training_task == "downstream":
+                self.downstream_round += 1
+                self.data_log({"downstream_round": self.downstream_round})
+            elif training_task == "pretext":
+                self.ssl_round += 1
+                self.data_log({"ssl_round": self.ssl_round})
+
+            if self.no_wandb == False:
+                self.data_log({"round": self.round})
+
             s_t = time.time()
             # importante commentare questa riga per avere i client sempre ordinati
             #self.selected_clients = self.select_clients()
@@ -350,7 +391,8 @@ class FedGFE(FedRewind):
                 self.aggregate_parameters()
                 self.send_models()
 
-            self.save_checkpoint()
+            if self.model_backbone_save_checkpoint:
+                self.save_checkpoint()
 
         if self.nodes_training_sequence == "sslfirst":
             for round in range(self.global_rounds+1):
@@ -387,6 +429,29 @@ class FedGFE(FedRewind):
 
         self.save_results()
         wandb.finish()
+
+    def save_checkpoint(self):
+        if self.save_checkpoint_enable != True and self.model_backbone_save_checkpoint != True:
+            return
+        if self.save_folder_name == None:
+            self.save_folder_name = os.path.join(self.uuid)
+        if not os.path.exists(self.save_folder_name):
+            os.makedirs(self.save_folder_name)
+        
+        filename = self.model_backbone_checkpoint
+        torch.save(self.global_model, os.path.join(self.save_folder_name, filename))
+
+    def load_checkpoint(self):
+        if self.model_backbone_load_checkpoint != True:
+            return
+        
+        filename = self.model_backbone_checkpoint
+        if os.path.exists(filename):
+            self.global_model = torch.load(filename)
+        else:
+            print(f"Checkpoint {filename} not found")
+
+
 
     def receive_models(self):
         assert (len(self.selected_clients) > 0)
@@ -449,92 +514,180 @@ class FedGFE(FedRewind):
 
         print ( "Node %d orig loss %02f accuracy %02f last lost %02f" % ( client.id, round_loss, round_accuracy, previous_loss ) )
 
+    def create_clients(self, clientObj, node_id, dataset, client_dataset_id):
+        file_prefix = dataset 
+        # if i != 2 and i != 3:
+        # if i != 2:
+            # continue 
+        # train_data = read_client_data(self.dataset, i, is_train=True, prefix=file_prefix)
+        # test_data = read_client_data(self.dataset, i, is_train=False, prefix=file_prefix)
+        train_data = None
+        test_data = None
+        train_data_len = -1
+        test_data_len = -1
+
+        node_inner_model = copy.deepcopy(self.nodes_backbone_model)
+        node_model = VITFC(node_inner_model, self.args.num_classes,patch_size=self.args.patch_size,debug_images=self.args.debug_pretext_images).to(self.args.device)
+
+        client = clientObj(self.args, 
+                        model_id=node_id, 
+                        dataset=dataset,
+                        train_samples=train_data_len, 
+                        test_samples=test_data_len,
+                        train_slow=-1, 
+                        send_slow=-1,
+                        rewind_epochs=self.rewind_epochs,
+                        rewind_interval=self.rewind_interval,
+                        rewind_ratio=self.rewind_ratio,
+                        train_data=train_data,
+                        test_data=test_data,
+                        model=node_model,
+                        dataset_limit=self.dataset_limit,
+                        img_size=self.img_size,
+                        patch_size=self.patch_size,
+                        patch_count=self.patch_count
+                        )
+        client.node_data.dataset_id = client_dataset_id
+        return client
+   
     def set_clients(self, clientObj):
         # n_strong = 0
         # n_weak = 0
         gpus = cycle(self.gpus)
 
         datasets = cycle(self.nodes_datasets)
+        dataset_clients = {}
+        for dataset in self.nodes_datasets:
+            splitted = dataset.split(":")
+            if len(splitted) == 1:
+                dataset_client_count = 1
+            else:
+                dataset_client_count = int(splitted[1])
+            dataset_name = splitted[0]
+            dataset_clients[dataset_name] = dataset_client_count
+
+        # downstream_tasks_names = self.nodes_downstream_tasks.split(":")
+
+        for dataset_name_id,dataset_name in enumerate(dataset_clients.keys()):
+            dataset_name_clients_count = dataset_clients[dataset_name]
+            node_downstream_tasks = self.nodes_downstream_tasks[dataset_name_id]
+            downstream_tasks_names = node_downstream_tasks.split(":")
+            client_dataset_id = 0
+            for i in range(dataset_name_clients_count):
+                for downstream_task_name in downstream_tasks_names:
+                    client_id = len(self.clients)
+                    client = self.create_clients(clientObj, client_id, dataset_name, client_dataset_id)
+
+                    # client.prefix=file_psefix
+                    client.device = "cuda:"+str(next(gpus))
+                    client.available_clients = np.arange(self.num_clients)
+                    client.pretext_tasks = self.pretext_tasks
+                    client.downstream_task_name = downstream_task_name
+                    client.downstream_task.parameters_count()
+                    metric_dataset_oath = dataset_name.lower()
+                    client.metrics_path = f"node_{client.id}_{metric_dataset_oath}_{client_dataset_id}"
+                    # client.routing = RandomRouting(self.num_clients, id = i)
+                    client.transform = transforms.Compose(
+                    [
+                    # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                    transforms.Resize([224, 224]),
+                    #  transforms.ToTensor()
+                    ])
+
+                    if self.no_wandb == False:
+                        client.node_data.stats_wandb_log()
+
+                    client.data_log = self.data_log
+                    self.clients.append(client)
+
+                client_dataset_id += 1
         downstream_tasks_names = cycle(self.nodes_downstream_tasks)
-
+        
+        
         # for i, train_slow, send_slow in zip(range(self.num_clients), self.train_slow_clients, self.send_slow_clients):
-        for i, train_slow, send_slow in zip(range(self.num_clients), self.train_slow_clients, self.send_slow_clients):
 
-            dataset = next(datasets)
-            downstream_task_name = next(downstream_tasks_names)
-            file_prefix = ""
-            # if i != 2 and i != 3:
-            # if i != 2:
-                # continue 
-            # train_data = read_client_data(self.dataset, i, is_train=True, prefix=file_prefix)
-            # test_data = read_client_data(self.dataset, i, is_train=False, prefix=file_prefix)
-            train_data = None
-            test_data = None
-            train_data_len = -1
-            test_data_len = -1
+        #     dataset = next(datasets)
+        #     downstream_task_name = next(downstream_tasks_names)
+        #     file_prefix = ""
+        #     # if i != 2 and i != 3:
+        #     # if i != 2:
+        #         # continue 
+        #     # train_data = read_client_data(self.dataset, i, is_train=True, prefix=file_prefix)
+        #     # test_data = read_client_data(self.dataset, i, is_train=False, prefix=file_prefix)
+        #     train_data = None
+        #     test_data = None
+        #     train_data_len = -1
+        #     test_data_len = -1
 
-            node_inner_model = copy.deepcopy(self.nodes_backbone_model)
-            node_model = VITFC(node_inner_model, self.args.num_classes,patch_size=self.args.patch_size,debug_images=self.args.debug_pretext_images).to(self.args.device)
+        #     node_inner_model = copy.deepcopy(self.nodes_backbone_model)
+        #     node_model = VITFC(node_inner_model, self.args.num_classes,patch_size=self.args.patch_size,debug_images=self.args.debug_pretext_images).to(self.args.device)
 
-            client = clientObj(self.args, 
-                            model_id=i, 
-                            dataset=dataset,
-                            train_samples=train_data_len, 
-                            test_samples=test_data_len, 
-                            train_slow=train_slow, 
-                            send_slow=send_slow,
-                            rewind_epochs=self.rewind_epochs,
-                            rewind_interval=self.rewind_interval,
-                            rewind_ratio=self.rewind_ratio,
-                            train_data=train_data,
-                            test_data=test_data,
-                            model=node_model,
-                            dataset_limit=self.dataset_limit,
-                            img_size=self.img_size,
-                            patch_size=self.patch_size,
-                            patch_count=self.patch_count
-                            )
-            client.prefix=file_prefix
-            client.device = "cuda:"+str(next(gpus))
-            client.available_clients = np.arange(self.num_clients)
-            client.pretext_tasks = self.pretext_tasks
-            client.downstream_task_name = downstream_task_name
-            # client.routing = RandomRouting(self.num_clients, id = i)
-            client.transform = transforms.Compose(
-            [
-            # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-             transforms.Resize([224, 224]),
-            #  transforms.ToTensor()
-            ])
+        #     client = clientObj(self.args, 
+        #                     model_id=i, 
+        #                     dataset=dataset,
+        #                     train_samples=train_data_len, 
+        #                     test_samples=test_data_len, 
+        #                     train_slow=train_slow, 
+        #                     send_slow=send_slow,
+        #                     rewind_epochs=self.rewind_epochs,
+        #                     rewind_interval=self.rewind_interval,
+        #                     rewind_ratio=self.rewind_ratio,
+        #                     train_data=train_data,
+        #                     test_data=test_data,
+        #                     model=node_model,
+        #                     dataset_limit=self.dataset_limit,
+        #                     img_size=self.img_size,
+        #                     patch_size=self.patch_size,
+        #                     patch_count=self.patch_count
+        #                     )
+        #     client.prefix=file_prefix
+        #     client.device = "cuda:"+str(next(gpus))
+        #     client.available_clients = np.arange(self.num_clients)
+        #     client.pretext_tasks = self.pretext_tasks
+        #     client.downstream_task_name = downstream_task_name
+        #     client.downstream_task.parameters_count()
 
-            # summary(client.model, input_size=(1, 3, 224, 224))
-            # if self.args.routing_scored:
-            #     client.routing = ScoredRouting(self.num_clients, id = i, average=self.routing_scored_average)
-            # if self.args.routing_static:
-            #     client.routing = self.routing
-            #     client.routing.create_routes(self.clients)
-            # else:
-            #     client.routing = RandomRouting(self.num_clients, id = i)
+
+        #     client.metrics_path = f"node_{client.id}"
+        #     # client.routing = RandomRouting(self.num_clients, id = i)
+        #     client.transform = transforms.Compose(
+        #     [
+        #     # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        #      transforms.Resize([224, 224]),
+        #     #  transforms.ToTensor()
+        #     ])
+
+        #     # summary(client.model, input_size=(1, 3, 224, 224))
+        #     # if self.args.routing_scored:
+        #     #     client.routing = ScoredRouting(self.num_clients, id = i, average=self.routing_scored_average)
+        #     # if self.args.routing_static:
+        #     #     client.routing = self.routing
+        #     #     client.routing.create_routes(self.clients)
+        #     # else:
+        #     #     client.routing = RandomRouting(self.num_clients, id = i)
             
-            if self.no_wandb == False:
-                client.node_data.stats_wandb_log()
+        #     if self.no_wandb == False:
+        #         client.node_data.stats_wandb_log()
 
-            client.data_log = self.data_log
+        #     client.data_log = self.data_log
             
-            # if is_strong:
-            #     n_strong += 1
-            # else:
-            #     n_weak += 1
-            self.clients.append(client)
-        if self.rewind_random:
-            for client in self.clients:
-                client.rewind_random_clients = self.clients
-                client.rewind_random = True
+        #     # if is_strong:
+        #     #     n_strong += 1
+        #     # else:
+        #     #     n_weak += 1
+        #     self.clients.append(client)
+        # if self.rewind_random:
+        #     for client in self.clients:
+        #         client.rewind_random_clients = self.clients
+        #         client.rewind_random = True
 
     def define_metrics(self):
-        super().define_metrics()
+        wandb.define_metric(f"round")
+        wandb.define_metric(f"ssl_round")
+        wandb.define_metric(f"downstream_round")
   
         for client in self.clients:
+            client.define_metrics()
             wandb.define_metric(f"test/node_{client.id}/acc", step_metric="round")
             wandb.define_metric(f"test/node_{client.id}/bal", step_metric="round")
             wandb.define_metric(f"train/node_{client.id}/round_train_loss", step_metric="round")
@@ -543,10 +696,10 @@ class FedGFE(FedRewind):
             wandb.define_metric(f"test/node_{client.id}/test_std", step_metric="round")
             wandb.define_metric(f"test/node_{client.id}/test_std_on_train", step_metric="round")
             wandb.define_metric(f"train/node_{client.id}/round_train_loss_{client.id}", step_metric="round")
-            for pretext_task in self.pretext_tasks:
-                wandb.define_metric(f"train/node_{client.id}/pretext_train_loss_{pretext_task}", step_metric="round")
-                wandb.define_metric(f"train/node_{client.id}/pretext_train_ds_loss_{pretext_task}", step_metric="round")
-                wandb.define_metric(f"test/node_{client.id}/pretext_test_acc_{pretext_task}", step_metric="round")
+            # for pretext_task in self.pretext_tasks:
+            #     wandb.define_metric(f"train/node_{client.id}/pretext_train_loss_{pretext_task}", step_metric="round")
+            #     wandb.define_metric(f"train/node_{client.id}/pretext_train_ds_loss_{pretext_task}", step_metric="round")
+            #     wandb.define_metric(f"test/node_{client.id}/pretext_test_acc_{pretext_task}", step_metric="round")
             for other_client in self.clients:
                 wandb.define_metric(f"test/node_{client.model.id}/round_test_acc_{client.model.id}_on_{other_client.model.id}", step_metric="round")
                 wandb.define_metric(f"test/node_{client.model.id}/round_test_acc_on_train_{client.model.id}_on_{other_client.model.id}", step_metric="round")
@@ -686,6 +839,9 @@ class FedGFE(FedRewind):
 
     def round_train_metrics(self, client):
         losses, train = client.train_metrics()
+        if client.downstream_task != None:
+            client.downstream_task.train_metrics_log( losses/train, round = self.round )
+
 
         # print ( "Getting train metrics on model %s loss %s " % ( hex(id(client.train_model)), hex(id(client.loss) ) ))
         previous_loss = -1

@@ -7,14 +7,16 @@ from typing import Iterator
 
 from timm.models.vision_transformer import VisionTransformer
 from transformers import ViTModel
+import wandb
 
 
 class PatchOrdering (PatchPretextTask):
+    pretext_task_name = "patch_ordering"
     def __init__(self, backbone=None, input_dim = 768, output_dim = 768, debug_images=False, img_size=224, patch_size=-1, patch_count = -1):
         super(PatchOrdering, self).__init__(backbone=backbone, input_dim = input_dim, output_dim = output_dim, debug_images=debug_images, img_size=img_size, patch_size=patch_size, patch_count = patch_count)
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.name = "patch_ordering"
+        self.name = PatchOrdering.pretext_task_name
         self.patch_ordering = None
         self.head_hidden_size = output_dim
         self.custom_order = self.patch_order_create()
@@ -42,7 +44,18 @@ class PatchOrdering (PatchPretextTask):
         #     device = self.device
         # )
 
+    @staticmethod
+    def define_metrics( metrics_path = None ):
+        pretext_task_name = PatchOrdering.pretext_task_name
 
+        path = "/" if metrics_path is None else "/"+metrics_path+"/"
+        metrics = []
+        metrics.append(f"train{path}pretext_train_loss_{pretext_task_name}")
+        metrics.append(f"test{path}pretext_train_ds_loss_{pretext_task_name}")
+        metrics.append(f"test{path}pretext_test_acc_{pretext_task_name}")
+
+        for metric in metrics:
+           a = wandb.define_metric(metric, step_metric="ssl_round")
     def patch_embed ( self, x ):
         return self.custom_patch_embed(x)
     

@@ -58,22 +58,23 @@ class PretextTask (nn.Module):
         image = image.view(C, num_patches_per_row * patch_size, num_patches_per_row * patch_size)
         return image
     
-    def save_images ( self, images, patches, max_saved = 0 ):
+    def save_images ( self, images, patches = None, max_saved = 0 ):
 
-        if self.debug_images:
-
-            B, C, H, W = images.shape
-            # saved_order = np.random(0, ) 
-            num_patches_per_row = H // self.patch_size
-            recontructed_patches = []
-            count = 0
-            for batch_id in range(B):
-                reconstructed = patches[batch_id]
-                if ( patches[batch_id].shape[1] != images[batch_id].shape[1] ):
+        B, C, H, W = images[0].shape
+        # saved_order = np.random(0, ) 
+        num_patches_per_row = H // self.patch_size
+        reconstructed_patches = []
+        count = 0
+        for batch_id in range(B):
+            output_filename = os.path.join(self.image_output_directory, f"reconstructed_{batch_id}.png")
+            if patches is not None:
+                for patch in patches:
                     reconstructed = self.reconstruct_image_from_patches(patches[batch_id], num_patches_per_row, self.patch_size)
-                output_filename = os.path.join(self.image_output_directory, f"reconstructed_{batch_id}.png")
-                save_grid_images([images[batch_id], reconstructed], nrow=2, output_path=output_filename)
-                recontructed_patches.append(reconstructed)
-                count += 1
-                if max_saved != 0 and count >= max_saved:
-                    break 
+                    reconstructed_patches.append(reconstructed)
+
+            save_images = [image[batch_id] for image in images]
+            save_images += [reconstructed_patches[i][batch_id] for i in range(len(reconstructed_patches))]
+            save_grid_images(save_images, nrow=len(images), output_path=output_filename)
+            count += 1
+            if max_saved != 0 and count >= max_saved:
+                break 

@@ -34,6 +34,12 @@ class FLModel(nn.Module):
     def accuracy(self, x, Y = None):
         return self.inner_model.accuracy(x, Y)
     
+    def test_metrics_calculate(self, x, Y = None, round = None):
+        return self.inner_model.test_metrics_calculate(x, Y, round=round)
+    
+    def test_metrics_log(self, round = None):
+        return self.inner_model.test_metrics_log(round=round)
+    
     def train(self):
         self.inner_model.pretext_train = self.pretext_train
         return self.inner_model.train()
@@ -75,3 +81,11 @@ class FLModel(nn.Module):
             return self.inner_model.backbone
         else:
             return None
+        
+    @property
+    def round(self):
+        return self.inner_model.round
+    
+    @round.setter
+    def round(self, round):
+        self.inner_model.round = round

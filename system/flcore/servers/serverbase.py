@@ -108,8 +108,22 @@ class Server(object):
     def data_log(self, data):
         if not self.no_wandb:
             wandb.log(data)
-            
+    
     def save_checkpoint(self):
+        if self.save_checkpoint_enable != True:
+            return
+        if self.save_folder_name == None:
+            self.save_folder_name = os.path.join(self.uuid)
+        if not os.path.exists(self.save_folder_name):
+            os.makedirs(self.save_folder_name)
+        
+        # torch.save(self, os.path.join(self.save_folder_name, "server.pt"))
+
+        for client in self.clients:
+            torch.save(self.global_model, os.path.join(self.save_folder_name, "global" + str(client.model.id) + ".pt"))
+            # torch.save(client.node_data, os.path.join(self.save_folder_name, "client_data_" + str(client.id) + ".pt"))
+        
+    def save_clients_checkpoint(self):
         if self.save_checkpoint_enable != True:
             return
         if self.save_folder_name == None:

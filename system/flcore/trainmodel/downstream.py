@@ -4,13 +4,17 @@ import torch
 from timm.models.vision_transformer import VisionTransformer
 from transformers import ViTModel
 
+
+
 class Downstream (nn.Module):
-    def __init__(self, backbone, cls_token_only = True, img_size = 224, patch_count = -1, patch_size = -1):
+    def __init__(self, backbone, cls_token_only = False, img_size = 224, patch_count = -1, patch_size = -1, wandb_log = False):
         super(Downstream, self).__init__()
 
         self.downstream_head = nn.Identity()
+        self.round = 0
 
         self.img_size = img_size
+        self.wandb_log = wandb_log
 
         if patch_count > 0:
             self.patch_count = int(patch_count)
@@ -21,14 +25,30 @@ class Downstream (nn.Module):
 
         self.backbone = backbone
         self.backbone_enabled = True if backbone is not None else False
+        self.test_running_round = -1
         self.cls_token_only = cls_token_only
+        self.metrics_last_round = -1
+        self.metrics_round_epochs_count = 0
+
+
+
+    def define_metrics(self, metrics_path=None):
+        self.metrics_path = metrics_path
+
+        return None
+    
+    def test_metrics_accuracy(self, logits, labels):
+        return None
+    
+    def test_metrics(self, logits, labels):
+        return None
 
     def downstream_loss(self, logits, labels):
         assert (False, "Downstream loss not implemented")
         return None
     
-    def loss(self, logits, labels):
-        return self.downstream_loss(logits, labels) if self.downstream_loss is not None else None
+    def loss(self, logits, labels, samples = None):
+        return self.downstream_loss(logits, labels, samples=samples) if self.downstream_loss is not None else None
 
     def parameters(self, recurse = True):
         print ( "Warning: Downstream parameters not implemented" )
@@ -45,6 +65,9 @@ class Downstream (nn.Module):
             elif isinstance(self.backbone, ViTModel):
                 x = x.last_hidden_state[:,0,:]
             # x = x[:,0,:]
+        else:
+            if isinstance(self.backbone, ViTModel):
+                x = x.last_hidden_state
         return x
     
     def backbone_forward(self,x):
