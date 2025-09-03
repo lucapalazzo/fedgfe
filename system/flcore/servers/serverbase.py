@@ -56,7 +56,7 @@ class Server(object):
         self.algorithm = args.algorithm
         self.time_select = args.time_select
         self.goal = args.goal
-        self.time_threthold = args.time_threthold
+        self.time_threshold = args.time_threthold
         self.top_cnt = 100
         self.auto_break = args.auto_break
         self.reduce_memory_footprint = args.reduce_memory_footprint
@@ -209,7 +209,7 @@ class Server(object):
                         client.send_time_cost['total_cost'] / client.send_time_cost['num_rounds']
             except ZeroDivisionError:
                 client_time_cost = 0
-            if client_time_cost <= self.time_threthold:
+            if client_time_cost <= self.time_threshold:
                 tot_samples += client.train_samples
                 self.uploaded_ids.append(client.id)
                 self.uploaded_weights.append(client.train_samples)
@@ -322,7 +322,7 @@ class Server(object):
         # metric = ConfusionMatrix(num_classes=10)
         # metric.attach(default_evaluator, 'cm')
         for client_index,c in enumerate(self.clients):
-            if c.test_data == None:
+            if c.node_data.test_data == None:
                 print ( "Client %d test data is None" % c.id)
                 continue
             tested_clients += 1
@@ -332,11 +332,11 @@ class Server(object):
                 self.clients[client_index+1].node_data.load_test_data(self.args.batch_size)
             for t in self.clients:
                 test = []
-                if c.test_data == None:
+                if c.node_data.test_data == None:
                     print ( "Client %d test data is None" % c.id)
                     continue
-                test_ct, test_ns, test_auc, test_y_true, test_y_prob = c.test_metrics(t)
-                train_ct, train_ns, train_auc, train_y_true, train_y_prob = c.test_metrics(t, on_train=True)
+                test_metrics = c.test_metrics(t)
+                # train_ct, train_ns, train_auc, train_y_true, train_y_prob = c.test_metrics(t, on_train=True)
                 test_tot_correct.append(test_ct*1.0)
                 test_tot_auc.append(test_auc*test_ns)
                 test_num_samples.append(test_ns)
@@ -389,7 +389,7 @@ class Server(object):
         losses = []
         tested_clients = 0
         for c in self.clients:
-            if c.train_data == None:
+            if c.node_data.train_data == None:
                 print ( "Client %d train data is None" % c.id)
                 continue
             tested_clients += 1

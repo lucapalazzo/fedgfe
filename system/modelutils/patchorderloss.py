@@ -2,10 +2,11 @@ import torch
 from torch import nn
 
 class PatchOrderLoss(nn.Module):
-    def __init__(self, num_patches, hidden_dim):
+    def __init__(self, num_patches, hidden_dim, device=None):
         super(PatchOrderLoss, self).__init__()
         self.num_patches = num_patches
-        self.order_predictor = nn.Linear(hidden_dim, num_patches).to("cuda")
+        self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.order_predictor = nn.Linear(hidden_dim, num_patches).to(self.device)
         self.loss_fn = nn.CrossEntropyLoss()
     
     def forward(self, patch_embeddings, patch_positions = None):

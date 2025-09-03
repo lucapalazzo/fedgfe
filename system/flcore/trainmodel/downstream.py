@@ -7,11 +7,16 @@ from transformers import ViTModel
 
 
 class Downstream (nn.Module):
-    def __init__(self, backbone, cls_token_only = False, img_size = 224, patch_count = -1, patch_size = -1, wandb_log = False):
+    def __init__(self, backbone, cls_token_only = False, img_size = 224, patch_count = -1, patch_size = -1, wandb_log = False, device = None):
         super(Downstream, self).__init__()
 
+        self.task_name = "downstream"
         self.downstream_head = nn.Identity()
         self.round = 0
+        self.id = 0
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu") if device == None else device
+
 
         self.img_size = img_size
         self.wandb_log = wandb_log
@@ -30,7 +35,20 @@ class Downstream (nn.Module):
         self.metrics_last_round = -1
         self.metrics_round_epochs_count = 0
 
+        self.task_test_metrics = None
+        self.task_test_metrics_aggregated = None
+    
+    def train(self, mode: bool = True) -> None:
+        super(Downstream, self).train(mode)
+        if self.backbone is not None:
+            self.backbone.train(mode)
+    
+    def eval(self, mode: bool = True) -> None:
+        super(Downstream, self).eval()
 
+    def metrics_reset(self):
+        self.test_running_round = -1
+        self.init_metrics()
 
     def define_metrics(self, metrics_path=None):
         self.metrics_path = metrics_path
@@ -40,7 +58,7 @@ class Downstream (nn.Module):
     def test_metrics_accuracy(self, logits, labels):
         return None
     
-    def test_metrics(self, logits, labels):
+    def task_test_metrics(self, logits, labels):
         return None
 
     def downstream_loss(self, logits, labels):
@@ -64,10 +82,9 @@ class Downstream (nn.Module):
                 x = x[:,0,:]
             elif isinstance(self.backbone, ViTModel):
                 x = x.last_hidden_state[:,0,:]
-            # x = x[:,0,:]
         else:
             if isinstance(self.backbone, ViTModel):
-                x = x.last_hidden_state
+                x = x.last_hidden_state[:,1:,:]
         return x
     
     def backbone_forward(self,x):

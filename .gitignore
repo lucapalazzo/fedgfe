@@ -2,6 +2,9 @@
 wandb/*
 models/*
 dataset/*
+output_images/
+# Ignore directories with UUID names (8-4-4-4-12 format)
+[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]/
 *.png
 34257c06-45e4-45ad-b351-fbe52c9ab4e6/client_0.pt
 *.pt

@@ -30,6 +30,7 @@ import logging
 import timm
 from timm.models.vision_transformer import VisionTransformer as timmVisionTransformer
 
+
 from flcore.servers.serveravg import FedAvg
 from flcore.servers.serverpFedMe import pFedMe
 from flcore.servers.serverperavg import PerAvg
@@ -238,35 +239,11 @@ def run(args):
                 args.model = HARCNN(9, dim_hidden=3712, num_classes=args.num_classes, conv_kernel_size=(1, 9), pool_kernel_size=(1, 2)).to(args.device)
 
         elif model_str == "vit":
-            weights = torchvision.models.ViT_B_16_Weights.DEFAULT
-            if args.model_pretrain:
-                weights = torchvision.models.ViT_B_16_Weights.IMAGENET1K_V1
-
-            # model = timm.create_model('vit_base_patch16_224', pretrained=False, num_classes=args.num_classes)
-            model = timmVisionTransformer(
-        # img_size=img_size,
-        # patch_size=patch_size,
-        in_chans=3,
-        num_classes=args.num_classes,
-        embed_dim=args.embedding_size,       # d_model = 16
-        depth=12,            # Number of transformer layers = 2
-        num_heads=12,        # Number of attention heads
-        mlp_ratio=4.0,      # MLP hidden dimension ratio
-        patch_size=args.patch_size,         # Patch size
-        class_token=True,  # Prepend class token to input
-        global_pool='',  # Global pool type (one of 'cls', 'mean', 'attn')
-        # qkv_bias=True,
-        # representation_size=None,
-        # distilled=False,
-        # drop_rate=0.0,
-        # attn_drop_rate=0.0,
-        # drop_path_rate=0.0,
-        # pretrained=args.model_pretrain,
-    ) 
-            # model = torchvision.models.VisionTransformer(image_size=224, patch_size=16, num_layers=2, num_heads=16, hidden_dim=64, mlp_dim=1,num_classes=args.num_classes).to(args.device)
-            # model = torchvision.models.vit_b_16(weights=weights).to(args.device)
-        
-            args.model = VITFC(model, args.num_classes,patch_size=args.patch_size,debug_images=args.debug_pretext_images).to(args.device)
+            if args.nodes_backbone_model == "hf_vit":
+                from transformers import ViTModel, ViTConfig
+                args.model = ViTModel(ViTConfig(), add_pooling_layer=False).to(args.device)
+            elif args.nodes_backbone_model == "timm_vit":
+                args.model = timmVisionTransformer(img_size=224, patch_size=16, num_classes=args.num_classes).to(args.device)
         else:
             raise NotImplementedError
         
@@ -507,13 +484,15 @@ if __name__ == "__main__":
     parser.add_argument('-m', "--model", type=str, default="cnn")
     parser.add_argument('-mpt', "--model_pretrain", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-mopt', "--model_optimizer", type=str, default='SGD')
+    parser.add_argument('-mowd', "--model_optimizer_weight_decay", type=float, default=0.001)
+    parser.add_argument('-mowm', "--model_optimizer_momentum", type=float, default=0.9)
     parser.add_argument('-lw', "--loss_weighted", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-lbs', "--batch_size", type=int, default=10)
     parser.add_argument('-lr', "--local_learning_rate", type=float, default=0.005,
                         help="Local learning rate")
     parser.add_argument('-lrs', "--learning_rate_schedule", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-lrsg', "--learning_rate_schedule_gamma", type=float, default=0.99)
-    parser.add_argument('-gr', "--global_rounds", type=int, default=2000)
+    parser.add_argument('-gr', "--global_rounds", type=int, default=100)
     parser.add_argument('-ls', "--local_epochs", type=int, default=1, 
                         help="Multiple update steps in one local epoch.")
     parser.add_argument('-algo', "--algorithm", type=str, default="FedAvg")
@@ -650,14 +629,17 @@ if __name__ == "__main__":
     parser.add_argument('-dslo', '--downstream_loss_operation', type=str, default="none", help="Operation for pretext task loss")
     parser.add_argument('-dpti', '--debug_pretext_images', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Save images after pretext tasks")
     parser.add_argument('-ma', '--model_aggregation', type=str, default="none", help="Model aggregation method")
+    parser.add_argument('-mar', '--model_aggregation_random', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Global model aggregation random")
     parser.add_argument('-maw', '--model_aggregation_weighted', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Model aggregation weighted")
-    parser.add_argument('-smt', '--segmentation_mask_threshold', type=float, default=None, help="segmentation mask visualization threshold")
+    parser.add_argument('-smt', '--segmentation_mask_threshold', type=float, default=0.5, help="segmentation mask visualization threshold")
     parser.add_argument('-sslr', '--ssl_rounds', type=int, default=0, help="number of ssl rounds")
     parser.add_argument('-mbsc', '--model_backbone_save_checkpoint', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Save backbone checkpoint")
     parser.add_argument('-mblc', '--model_backbone_load_checkpoint', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Load backbone checkpoint")
     parser.add_argument('-mbc', '--model_backbone_checkpoint', type=str, default="backbone.pt", help="Backbone checkpoint filename")
+    parser.add_argument('-ssuct', '--cls_token_only', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Use cls token only")
+    parser.add_argument('-fgm', '--federation_grid_metrics', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Node metrics for all datasets")
 
-    # Routing algos
+
     parser.add_argument('-rora', "--routing_random", type=bool, default=False, action=argparse.BooleanOptionalAction, help="Route to random node")
     parser.add_argument('-rosc', "--routing_scored", type=bool, default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('-rost', "--routing_static", type=bool, default=False, action=argparse.BooleanOptionalAction, help="Don't change routing after first round")

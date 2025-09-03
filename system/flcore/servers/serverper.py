@@ -96,7 +96,7 @@ class FedPer(Server):
         for client in active_clients:
             client_time_cost = client.train_time_cost['total_cost'] / client.train_time_cost['num_rounds'] + \
                     client.send_time_cost['total_cost'] / client.send_time_cost['num_rounds']
-            if client_time_cost <= self.time_threthold:
+            if client_time_cost <= self.time_threshold:
                 tot_samples += client.train_samples
                 self.uploaded_weights.append(client.train_samples)
                 self.uploaded_models.append(client.model.base)

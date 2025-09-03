@@ -50,31 +50,30 @@ import math
 
 class VITFC(nn.Module):
 
-    def __init__(self, model, num_classes, pretext_task=None, downstream_task = None, img_size=224, patch_count=16, patch_size=16, mask_ratio=0.15, pretrained=True, in_chans=3, decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,mlp_ratio=4., norm_layer=nn.LayerNorm, downstream_loss=None, debug_images = False):
+    def __init__(self, backbone, num_classes, pretext_task=None, downstream_task = None, img_size=224, patch_count=16, patch_size=16, mask_ratio=0.15, pretrained=True, in_chans=3, decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,mlp_ratio=4., norm_layer=nn.LayerNorm, downstream_loss=None, debug_images = False):
         super(VITFC, self).__init__()
-        self.backbone = model
+       
+        self.backbone = backbone
         self.round = 0
-        # self.vit = model
-        # if isinstance(model, VisionTransformer):
-        #     model.global_pool = "avg"
-        #     model.class_token
+        self.id = 0
+        self.device = backbone.device if hasattr(backbone, 'device') else 'cpu'
 
-        if isinstance(model, VisionTransformer):
+        if isinstance(backbone, VisionTransformer):
             self.original_head = self.backbone.head
             self.backbone.head = nn.Identity()
             self.starting_head = self.backbone.head
             self.starting_patch_embed = self.backbone.patch_embed
-            self.embedding_size = model.embed_dim
+            self.embedding_size = backbone.embed_dim
+        elif isinstance(backbone, ViTModel):
+            self.backbone.head = nn.Identity()
+            self.embedding_size = backbone.config.hidden_size
         else:
             self.original_head = None
-            self.embedding_size = model.config.hidden_size
+            self.embedding_size = backbone.config.hidden_size
         
-        self.num_classes = num_classes
+        # self.num_classes = num_classes
 
-
-        self.debug_pretext_images = False
-
-        if ( patch_size == -1  and patch_count == -1 ):
+        if ( patch_size == -1 and patch_count == -1 ):
             raise ValueError("At least one of patch_size or patch_count must be defined")
         elif (patch_size != -1):
             self.patch_size = patch_size
@@ -102,8 +101,8 @@ class VITFC(nn.Module):
         # self.mlp_ratio = mlp_ratio
         # self.norm_layer = norm_layer
         # self.in_chans = in_chans
+        self.debug_pretext_images = False
         self.image_output_directory = "output_images"
-
         self.debug_images = debug_images
 
         
@@ -139,6 +138,35 @@ class VITFC(nn.Module):
 
         print ( "Created VITFC model %s optimizer %s" %( hex(id(self)), hex(id(self.optimizer)) ) )
 
+    def to(self, device):
+        if self.backbone != None:
+            self.backbone.to(device)
+        
+        for pt in self.pretext_tasks:
+            pt.to(device)
+        
+        if self.downstream_task != None:
+            self.downstream_task.to(device)
+
+        self.device = device
+
+        return self
+
+    def train(self, mode: bool = True) -> None: 
+        if self.pretext_train:
+            self.pretext_task.train(mode)
+        else:
+            self.downstream_task.train(mode)
+
+    def eval(self, mode: bool = True) -> None: 
+        super(VITFC, self).eval()
+
+    def test_metrics(self, x, Y = None, samples = None,  round = None, metrics = None, task = 0):
+        if self.pretext_train:
+            return self.pretext_task.test_metrics(x, Y, samples=samples, metrics=metrics )
+        else:
+            return self.downstream_task.test_metrics(x, Y, samples = samples, round=round, metrics=metrics, task=task)
+
     def test_metrics_calculate(self, x, Y = None, round = None):
         if self.pretext_train:
             return self.pretext_task.test_metrics_calculate(x, Y, round=round)
@@ -166,6 +194,12 @@ class VITFC(nn.Module):
         # for param in parameters:
         #     yield param 
         return parameters
+
+    def named_parameters(self, prefix = '', recurse = True, remove_duplicate = True):
+        modules = nn.ModuleList()
+        modules.add_module("backbone", self.backbone)
+        modules.add_module("downstream_task", self.downstream_task)
+        return modules.named_parameters(prefix, recurse, remove_duplicate)
     
     def prepare_masking(self):
         task = None
@@ -175,6 +209,7 @@ class VITFC(nn.Module):
         
         if task is None:
             task = PatchMasking(backbone=self.backbone, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images)
+            task.id = self.id
             self.pretext_tasks.append(task)
 
         return task
@@ -208,14 +243,15 @@ class VITFC(nn.Module):
                 task = pretext_task
         
         if task is None:
-            task = PatchOrdering(backbone=self.backbone, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images)
+            task = PatchOrdering(backbone=self.backbone, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images )
+            task.id = self.id
             self.pretext_tasks.append(task)
 
-        
+        task.custom_order = task.patch_order_create()        
         # if task.custom_patch_embed is not None:
         #     self.vit.patch_embed = task.custom_patch_embed
 
-        task.custom_order = np.random.permutation(self.num_patches)
+        # task.custom_order = np.random.permutation(self.num_patches)
         self.custom_order = torch.Tensor(task.custom_order).to(device)
         # self.patch_position_predictor = nn.Linear(self.vit.head_hidden_size, self.patch_count)
 
@@ -250,7 +286,20 @@ class VITFC(nn.Module):
                 task = pretext_task
         
         if task is None:
-            task = ImageRotation(backbone=self.backbone, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images)
+            task = ImageRotation(backbone=self.backbone, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images, cls_token_only=False)
+            self.pretext_tasks.append(task)
+        
+        return task
+    
+    def prepare_simclr(self):   
+        task = None
+        for pretext_task in self.pretext_tasks:
+            if pretext_task.name == "simclr":
+                task = pretext_task
+        
+        if task is None:
+            from flcore.trainmodel.simclr import SimCLR
+            task = SimCLR(backbone=self.backbone, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images)
             self.pretext_tasks.append(task)
         
         return task
@@ -260,7 +309,7 @@ class VITFC(nn.Module):
         if self.pretext_train:
             loss = self.pretext_task.loss(output, target)
         elif self.downstream_task is not None:
-            loss = self.downstream_task.loss( output, target).to("cuda")
+            loss = self.downstream_task.loss(output, target).to("cuda")
         return loss
 
 
@@ -592,10 +641,22 @@ class VITFC(nn.Module):
             self._pretext_task = self.prepare_patch_rotation()
         elif self._pretext_task_name == "image_rotation":
             self._pretext_task = self.prepare_image_rotation()
+        elif self._pretext_task_name == "simclr":
+            self._pretext_task = self.prepare_simclr()
         else:
-            # print ( "Pretext task not recognized" )
+            print ( "Pretext task not recognized" )
             return
         self.pretext_task_change_callback(self._pretext_task)
+
+    @property
+    def task_learning_rate(self):
+        if self._pretext_task is None or not hasattr(self._pretext_task, 'task_learning_rate'):
+            return 0
+        return self._pretext_task.task_learning_rate
+
+    @property
+    def task_weight_decay(self):
+        return self._pretext_task.task_weight_decay
 
     def rotate_images(self, imgs):
         B, C, H, W = imgs.shape
@@ -716,3 +777,16 @@ class VITFC(nn.Module):
     def round(self, new_value):
         self._round = new_value
         self.backbone.round = new_value
+
+    @property
+    def defined_test_metrics(self):
+        if self.pretext_train:
+            return self.pretext_task.defined_test_metrics
+        else:
+            return self.downstream_task.defined_test_metrics
+    @property
+    def defined_train_metrics(self):
+        if self.pretext_train:
+            return self.pretext_task.defined_train_metrics
+        else:
+            return self.downstream_task.defined_train_metrics

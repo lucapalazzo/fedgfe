@@ -27,7 +27,7 @@ from sklearn import metrics
 import wandb
 from utils.data_utils import read_client_data
 from datautils.node_dataset import NodeData
-from modelutils.modelwrapper import FLModel
+from modelutils.flmodel import FLModel
 from torchvision import transforms
 from sklearn.metrics import confusion_matrix
 
@@ -136,14 +136,20 @@ class Client(object):
         if batch_size == None:
             batch_size = self.batch_size
         loader = self.node_data.load_train_data(batch_size, dataset_limit)
-        self.train_samples = len(self.node_data.train_data)
+        if type(self.node_data.train_data) == dict:
+            self.train_samples = len(self.node_data.train_data['samples'])
+        else:
+            self.train_samples = len(self.node_data.train_data)
         return loader
      
     def load_test_data(self, batch_size=None,dataset_limit=0):
         if batch_size == None:
             batch_size = self.batch_size
         loader = self.node_data.load_test_data(batch_size, dataset_limit)
-        self.test_samples = len(self.node_data.test_data)
+        if type(self.node_data.test_data) == dict:
+            self.test_samples = len(self.node_data.test_data['samples'])
+        else:
+            self.test_samples = len(self.node_data.test_data)
         return loader
         
     def set_parameters(self, model):
@@ -153,7 +159,7 @@ class Client(object):
             # print ( "old_param.data", old_param.data, "new_param.data", new_param.data)
             old_param.data = new_param.data.clone()
             if ( torch.equal(new_param.data, old_param.data) == False):
-                self.log_once  ( "parameters not equal")
+                self.log_once  ( "This is weird: parameters not equal")
             # print ( "old_param.data", old_param.data, "new_param.data", new_param.data)
 
     def clone_model(self, model, target):
@@ -183,19 +189,46 @@ class Client(object):
         y_pred = np.argmax(y_pred, axis=1)
         cm = confusion_matrix(y_true, y_pred)
         return cm
+
+    def count_updated_params( self, old_params, threshold=1e-9, model = None):
+        updated_count = 0
+        total_count = 0
+        if model == None:
+            model = self.model.backbone
+
+        with torch.no_grad():
+            for p, old_p in zip(model.parameters(), old_params):
+                # Calcoliamo la differenza in valore assoluto
+                diff = (p.data - old_p).abs()
+                # Contiamo quanti elementi superano la soglia
+                updated_count += torch.count_nonzero(diff > threshold).item()
+                # Aggiungiamo il numero di elementi totali
+                total_count += diff.numel()
+
+        return updated_count, total_count
     
-    def test_metrics(self, test_client = None, on_train = False, model = None):
+    def copy_model_parameters(self, model = None):
+        if model == None:
+            model = self.model
+        params = []
+        for param in model.parameters():
+            params.append(param.data.clone())
+        return params
+
+    def test_metrics(self, test_client = None, on_train = False, model = None, metrics = None):
         client = self
         if test_client != None:
             client = test_client
+
         if on_train == True:
             testloader = client.load_train_data()
         else:
             testloader = client.load_test_data()
         
-        test_acc, test_num, auc, test_y_true, test_y_prob = self.test_metrics_data(testloader, model ) 
+        test_metrics = self.test_metrics_data(testloader, model, metrics=metrics) 
+        # test_acc, test_num, auc, test_y_true, test_y_prob = self.test_metrics_data(testloader, model ) 
 
-        return test_acc, test_num, auc, test_y_true, test_y_prob
+        return metrics
     
     def test_metrics_data(self, dataloader, test_model = None):
 

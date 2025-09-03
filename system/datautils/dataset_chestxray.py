@@ -5,6 +5,7 @@ import os
 import random
 from pathlib import Path
 import re
+import torch
 
 class ChestXrayDataset(Dataset):
     def __init__(self, dataset = None, is_train=True, test_ratio = 0.2, validate_ratio=0, train=None, transform=None, download=False, root=".", dataset_path = "dataset", datafile = "Data Chest X-Ray RSUA (Validated)/Split_Data_RSUA_Paths_k3.xlsx"):
@@ -60,7 +61,11 @@ class ChestXrayDataset(Dataset):
         image_path = re.sub(r'Data Thorax DICOM RSUA \(Validated\)', 'Data Chest X-Ray RSUA (Validated)', image_path)
         mask_path = re.sub(r'Data Thorax DICOM RSUA \(Validated\)', 'Data Chest X-Ray RSUA (Validated)', mask_path)
         image_sample = np.load(self.dataset_path+'/'+image_path)
+        image_sample = np.repeat(image_sample, 3, axis=2) if image_sample.shape[2] == 1 else image_sample
+        image_sample = self.transform(image_sample) if self.transform is not None else image_sample
         mask_sample = np.load(self.dataset_path+'/'+mask_path)
+        # mask_sample = np.repeat(mask_sample, 3, axis=2) if mask_sample.shape[2] == 1 else mask_sample
+        mask_sample = self.transform(mask_sample) if self.transform is not None else mask_sample
         image_label = self.get_label(image_path)
         # sample = {'image': image_sample, 'label': image_label, 'mask': mask_sample}
         sample = [image_sample, image_label, mask_sample]

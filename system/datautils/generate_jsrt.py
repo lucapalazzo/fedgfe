@@ -65,18 +65,27 @@ def generate_jsrt(args, dir_path, num_clients, num_classes, niid, balance, parti
         testset, batch_size=len(testset), shuffle=False)
 
     for _, train_data in enumerate(trainloader, 0):
-        traindata, traintargets, trainmasks = train_data[0][0], train_data[0][1], train_data[1]['semantic_masks']
+        traindata, traintargets, trainmasks, traininfo = train_data[0][0], train_data[0][1], train_data[1]['semantic_masks'], train_data[1]['sample_info']
     for _, test_data in enumerate(testloader, 0):
-        testdata, testtargets, testmasks = test_data[0][0], test_data[0][1], test_data[1]['semantic_masks']
+        testdata, testtargets, testmasks, testinfo = test_data[0][0], test_data[0][1], test_data[1]['semantic_masks'], test_data[1]['sample_info']
+
+    dataset_train_data = trainset.traindata
+    dataset_train_data_ids = trainset.traindata_ids
+    dataset_test_data = testset.testdata
+    dataset_test_data_ids = testset.testdata_ids
+    dataset_data = trainset.data
 
     dataset_image = []
     dataset_label = []
     dataset_mask = []
+    dataset_info = []
 
     dataset_image.extend(traindata.cpu().detach().numpy())
     dataset_image.extend(testdata.cpu().detach().numpy())
     dataset_mask.extend(trainmasks.cpu().detach().numpy())
     dataset_mask.extend(testmasks.cpu().detach().numpy())
+    dataset_info.extend(traininfo.cpu().detach().numpy())
+    dataset_info.extend(testinfo.cpu().detach().numpy())
     # dataset_label.extend(trainset.targets.cpu().detach().numpy())
     # train_nodules = torch.stack(traintargets[3]).permute(1,0)
     # test_nodules = torch.stack(testtargets[3]).permute(1,0)
@@ -93,11 +102,12 @@ def generate_jsrt(args, dir_path, num_clients, num_classes, niid, balance, parti
     dataset_image = np.array(dataset_image)
     dataset_label = np.array(dataset_label)
     dataset_mask = np.array(dataset_mask)
+    dataset_info = np.array(dataset_info)
 
     dataset_classes = len(traintargets)
     dataset_classes = 2
 
-    dataset_union = { 'samples': dataset_image, 'labels': dataset_label, 'semantic_masks': dataset_mask }
+    dataset_union = { 'samples': dataset_image, 'labels': dataset_label, 'semantic_masks': dataset_mask, 'info': dataset_info }
 
 
     X, y, client_data, statistic = separate_data((dataset_image, dataset_label), num_clients, dataset_classes,  

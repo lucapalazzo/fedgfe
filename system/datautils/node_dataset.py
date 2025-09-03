@@ -13,6 +13,8 @@ class NodeData():
         self.kwargs = kwargs   
         self.train_data = None
         self.train_samples = 0
+        self.train_dataloader = None
+        self.test_dataloader = None
         self.test_data = None
         self.test_samples = 0
         self.dataset = args.dataset
@@ -32,6 +34,20 @@ class NodeData():
             self.train_dataset.to(device)
         if self.test_dataset != None:
             self.test_dataset.to(device)
+        if self.train_data != None:
+            if type(self.train_data) == dict:
+                for k,v in self.train_data.items():
+                    self.train_data[k] = v.to(device)
+            else:
+                for i in range(len(self.train_data)):
+                    self.train_data[i] = (self.train_data[i][0].to(device), self.train_data[i][1].to(device))
+        if self.test_data != None:
+            if type(self.test_data) == dict:
+                for k,v in self.test_data.items():
+                    self.test_data[k] = v.to(device)
+            else:
+                for i in range(len(self.test_data)):
+                    self.test_data[i] = (self.test_data[i][0].to(device), self.test_data[i][1].to(device))
         return self
     
     def classification_labels_count(self):
@@ -43,11 +59,17 @@ class NodeData():
         for _,l in dataloader:
             if type(l) == dict:
                 if 'labels' in l:
-                    tasks_count = l['labels'].shape[0]
+                    if len(l['labels'].shape) == 1:
+                        tasks_count = 1
+                    else:
+                        tasks_count = l['labels'].shape[1]
                 else:
                     tasks_count = 1
             else:
-                tasks_count = l.shape[1]
+                if len(l.shape) == 1:
+                    tasks_count = 1
+                else:
+                    tasks_count = l.shape[1]
             break
         return tasks_count
     
@@ -90,9 +112,15 @@ class NodeData():
                 for i in range(len(self.train_data)):
                     memory_footprint += self.train_data[i][0].element_size() * self.train_data[i][0].nelement() + self.train_data[i][1].element_size() * self.train_data[i][1].nelement()
             print("Client %d train data memory footprint: %d" % (self.id, memory_footprint))
-            
-        self.train_dataset = FLNodeDataset(self.train_data, transform=self.transform, target_transform=self.target_transform, device=self.device)
-        return DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
+         
+        # self.train_dataset = FLNodeDataset(self.train_data, transform=self.transform, target_transform=self.target_transform, device=self.device)
+        if self.train_dataset == None:
+            self.train_dataset = FLNodeDataset(self.train_data, transform=self.transform, target_transform=self.target_transform)
+        if self.train_dataloader == None:
+            self.train_dataloader = DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
+        elif self.train_dataloader.batch_size != batch_size:
+            self.train_dataloader = DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
+        return self.train_dataloader
    
     def load_test_data(self, batch_size, dataset_limit=0,dataset_dir_prefix= ""):
         if self.test_data == None:
@@ -110,9 +138,14 @@ class NodeData():
                     memory_footprint += self.test_data[i][0].element_size() * self.test_data[i][0].nelement() + self.test_data[i][1].element_size() * self.test_data[i][1].nelement()
             print("Client %d test data memory footprint: %d" % (self.id, memory_footprint))
             self.test_samples = len(self.test_data)
-        self.test_dataset = FLNodeDataset(self.test_data, transform=self.transform, target_transform=self.target_transform, device=self.device)
-        return DataLoader(self.test_dataset, batch_size, drop_last=False, shuffle=True)
+        if self.test_dataset == None:
+            self.test_dataset = FLNodeDataset(self.test_data, transform=self.transform, target_transform=self.target_transform)
 
+        if self.test_dataloader == None:
+            self.test_dataloader = DataLoader(self.test_dataset, batch_size, drop_last=False, shuffle=True)
+        elif self.test_dataloader.batch_size != batch_size:
+            self.test_dataloader = DataLoader(self.test_dataset, batch_size, drop_last=False, shuffle=True)
+        return self.test_dataloader 
 
     def unload_train_data(self):
         self.train_data = None

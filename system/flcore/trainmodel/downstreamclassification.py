@@ -8,18 +8,23 @@ from sklearn.preprocessing import label_binarize
 from sklearn import metrics
 import torch.nn.functional as F
 
+from utils.node_metric import NodeMetric
+
 import torch
 import wandb
 
 
 class ClassificationHeadConv(nn.Module):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, input_dim, output_dim, cls_token_only=False):
         super(ClassificationHeadConv, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=768, out_channels=32, kernel_size=(3, 3), padding=1)
-        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(3, 3), padding=1)
-        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(64, output_dim)
-        self.relu = nn.ReLU()
+        # self.conv1 = nn.Conv2d(in_channels=768, out_channels=32, kernel_size=(3, 3), padding=1)
+        # self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(3, 3), padding=1)
+        # self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+        # self.fc = nn.Linear(64, output_dim)
+        # self.relu = nn.ReLU()
+        self.cls_token_only = cls_token_only
+        hidden_dim1 = 128
+        hidden_dim2 = 64
 
         self.head = nn.Sequential(
             # Primo layer convoluzionale:
@@ -27,54 +32,66 @@ class ClassificationHeadConv(nn.Module):
             # - out_channels: 32 (numero di filtri, può essere modificato)
             # - kernel_size: (3, 3) con padding=1 per mantenere la dimensione spaziale
             # self.conv1 = 
-            nn.Conv2d(in_channels=768, out_channels=32, kernel_size=(3, 3), padding=1),
+            nn.Conv2d(in_channels=768, out_channels=hidden_dim1, kernel_size=(3, 3), padding=1),
+            nn.BatchNorm2d(hidden_dim1),
+            nn.ReLU(),
         
         # Secondo layer convoluzionale:
         # - in_channels: 32
         # - out_channels: 64 (numero di filtri)
         # - kernel_size: (3, 3) con padding=1
         # self.conv2 =
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(3, 3), padding=1),
+            # nn.Conv2d(in_channels=128, out_channels=64, kernel_size=(3, 3), padding=1),
+            # nn.BatchNorm2d(64),
+            # nn.ReLU(),
         
         # Pooling globale per aggregare le informazioni spaziali in un singolo vettore per canale
         # self.global_pool = 
-            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
+            nn.Dropout(0.5),
         # Layer fully connected per la classificazione finale.
         # L'input sarà il numero di canali dell'ultimo conv layer (64)
         # self.fc = 
-            nn.Linear(64, output_dim),
+            nn.Linear(hidden_dim1, output_dim),
         
         # Funzione di attivazione ReLU
         # self.relu =
-            nn.ReLU()
+            # nn.ReLU()
         )
 
         
 
     def forward(self, x):
-        x = x[:,1:,:].permute(0,2,1)
-        x = x.view(-1, 768, 14, 14)  
         return self.head(x)
     
 class ClassificationHeadLinear(nn.Module):
-    def __init__(self, input_dim, output_dim):
+   
+    def __init__(self, input_dim, output_dim, cls_token_only=False):
         super(ClassificationHeadLinear, self).__init__()
+        self.cls_token_only = cls_token_only
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.hidden_dim1 = 256
+        self.hidden_dim2 = 64
         self.head = nn.Sequential(
-            nn.Linear(input_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256,64),
-            nn.ReLU(),
-            nn.Linear(64, output_dim)
+            # nn.Linear(input_dim, 256),
+            # nn.ReLU(),
+            # nn.Linear(256,64),
+            # nn.ReLU(),
+            nn.Linear(input_dim, output_dim)
         )
 
     def forward(self, x):
+        if self.cls_token_only == False:
+            x = x.mean(dim=(2,3))
         return self.head(x)
 
 class DownstreamClassification (Downstream):
-    def __init__(self, backbone, num_classes=10, wandb_log=False, classification_tasks_labels=[]):
-        super(DownstreamClassification, self).__init__(backbone, wandb_log=wandb_log)
+    def __init__(self, backbone, num_classes=10, wandb_log=False, classification_tasks_labels=[], device=None, classification_labels_used = None, cls_token_only=False):
+        super(DownstreamClassification, self).__init__(backbone, wandb_log=wandb_log, device=device)
 
+        self.task_name = "classification"
         self.input_dim = 0
         if isinstance(backbone, VisionTransformer):
             self.input_dim = backbone.embed_dim
@@ -83,54 +100,93 @@ class DownstreamClassification (Downstream):
         
         self.output_dim = num_classes
         self.num_classes = num_classes
+        self.cls_token_only = cls_token_only
+
+        self.use_conv_head = False
+        if self.use_conv_head:
+            self.classification_head_to_use = ClassificationHeadConv
+        else:
+            self.classification_head_to_use = ClassificationHeadLinear
 
         self.classification_task_count = len(classification_tasks_labels)
         self.classification_head = nn.ModuleList()
         self.classification_losses = []
-        for task_index, task_labels in enumerate(classification_tasks_labels):
-            task_labels_count = max(task_labels)+1
-            self.classification_head.add_module(f"classification_head_{task_index}", ClassificationHeadConv(self.input_dim, task_labels_count))
-            # self.classification_losses.append(nn.CrossEntropyLoss())
+        if classification_labels_used is None:
+            self.classification_labels_used = range(self.classification_task_count)
+        else:
+            self.classification_labels_used = classification_labels_used
+            self.classification_task_count = len(self.classification_labels_used)
+        
 
-        self.downstream_head = nn.Sequential(
-            nn.Linear(self.input_dim, self.output_dim),
-        )
+        for task_index, task_labels in enumerate(self.classification_labels_used):
+            task_labels_id = self.classification_labels_used[task_index]
+            task_labels_count = max(classification_tasks_labels[task_labels_id])+1
+            self.classification_head.add_module(f"classification_head_{task_index}", self.classification_head_to_use(self.input_dim, task_labels_count, cls_token_only=self.cls_token_only))
+
+        self.downstream_head = self.classification_head
 
         self.classification_loss = nn.CrossEntropyLoss()
 
         # self.defined_test_metrics = [ "accuracy", "auc"] 
-        self.defined_test_metrics = [ "accuracy" ] 
-        self.defined_train_metrics = [ "loss" ] 
+        # self.defined_test_metrics = { "accuracy": None, "auc": None }
+        self.defined_test_metrics = { "accuracy": None }
+        self.defined_train_metrics = { "loss": None }
 
-        self.test_metrics = []
-        self.test_metrics_aggregated = []
-        for task in classification_tasks_labels:
-            self.test_metrics.append({metric: [] for metric in self.defined_test_metrics})
-            self.test_metrics_aggregated.append({metric: [] for metric in self.defined_test_metrics})
+        self.init_metrics()
+        # self.test_metrics_aggregated = []
+        # for task_index in range(self.classification_task_count):
+        #     self.task_test_metrics[task_index] = {metric: [] for metric in self.defined_test_metrics}
+        #     self.task_test_metrics_aggregated.append({metric: [] for metric in self.defined_test_metrics})
 
  
         self.classification_heads_losses = self.init_heads_losses()
 
         # self.test_metrics = {metric: [] for metric in self.defined_test_metrics}
-        # self.test_metrics_aggregated = {metric: [] for metric in self.defined_test_metrics}
+        # self.test_metrics_aggregated = {metric: [] for metric in self.defined_test_metric
 
+    def train(self, mode: bool = True) -> None:
+        super(DownstreamClassification, self).train(mode)
+        self.classification_head.train(mode)
+    
+    def eval(self, mode: bool = True) -> None:
+        super(DownstreamClassification, self).eval()
+        self.classification_head.eval()
+
+    def define_task_metrics(self):
+        task_metrics = {metric: torch.Tensor for metric in self.defined_test_metrics}
+        return task_metrics
+
+    def init_metrics(self):
+        self.task_test_metrics = {}
+        self.task_test_metrics_aggregated = {}
+        for task_index in range(self.classification_task_count):
+            self.task_test_metrics[task_index] = self.define_task_metrics()
+            self.task_test_metrics_aggregated[task_index] = self.define_task_metrics()
+        return self.task_test_metrics
 
     def init_heads_losses(self):
-        losses = [torch.tensor(0.0,requires_grad=True) for i in range(self.classification_task_count)]
+        losses = {}
+        for task_index in range(self.classification_task_count):
+            losses[task_index] = torch.tensor(0.0,requires_grad=True)
         return losses
-    
+
+    def named_parameters(self, prefix = '', recurse = True, remove_duplicate = True):
+        # moduleList = nn.ModuleList()
+        # moduleList.add_module("classification_head", self.classification_head)
+        # moduleList.add_module("backbone", self.backbone)
+        return self.classification_head.named_parameters(prefix, recurse, remove_duplicate)
+
     def parameters(self, recurse=True):
-        moduleList = nn.ModuleList()
-        moduleList.add_module("downstream_head", self.downstream_head)
-        moduleList.add_module("classification_head", self.classification_head)
+        # moduleList = nn.ModuleList()
+        # moduleList.add_module("downstream_head", self.downstream_head)
+        # moduleList.add_module("classification_head", self.classification_head)
         # for i, head in enumerate(self.classification_head):
         #     moduleList.add_module(f"classification_head_{i}", head)
-        
-        return moduleList.parameters(recurse)
+        return self.classification_head.parameters(recurse)
     
     def parameters_count(self):
         head_params = sum(p.numel() for p in self.downstream_head.parameters())
-        print ( f"Head params: {head_params}")
+        print ( f"Classification Head params: {head_params}")
 
     def define_metrics(self, metrics_path = None):
         if self.wandb_log == False:
@@ -142,10 +198,10 @@ class DownstreamClassification (Downstream):
 
         for task_index in range(self.classification_task_count):
             for metric in self.defined_test_metrics:
-                metrics.append(f"test{path}{metric}_{task_index}")
+                metrics.append(f"test{path}{self.task_name}_{metric}_{task_index}")
             
             for metric in self.defined_train_metrics:
-                metrics.append(f"train{path}{metric}_{task_index}")
+                metrics.append(f"train{path}{self.task_name}_{metric}_{task_index}")
         
             for metric in metrics:
                 a = wandb.define_metric(metric, step_metric="round")
@@ -156,34 +212,58 @@ class DownstreamClassification (Downstream):
 
         if self.wandb_log == True:
             for task_index in range(self.classification_task_count):
-                wandb.log({f"test/{self.metrics_path}/accuracy_{task_index}": self.test_metrics_aggregated[task_index]['accuracy']})
+                wandb.log({f"test/{self.metrics_path}/accuracy_{task_index}": self.test_metrics_aggregated['f{task_index}']['accuracy']})
                 # wandb.log({f"test/{self.metrics_path}/auc_{task_index}": self.test_metrics_aggregated[task_index]['auc']})
 
-    def train_metrics ( self, dataloader ):
+    def train_metrics ( self, dataloader, metrics = None):
         train_num = 0
-        losses = 0
-        heads_losses = self.init_heads_losses()
+        total_loss = 0
+
+        # if losses is not None:
+        #     losses = self.init_heads_losses()
+        metrics.define_metrics( self.defined_train_metrics, task_count=self.classification_task_count)
+        tasks_losses = [torch.tensor(0.0,requires_grad=True) for i in range(self.classification_task_count)]
+        step = 0
+        samples = 0
         with torch.no_grad():
             for x, y in dataloader:
+                batch_losses = [torch.tensor(0.0,requires_grad=True) for i in range(self.classification_task_count)]
+                step += 1
+                samples += x.shape[0]
                 if type(y) == dict:
                     if 'labels' in y:
                         y = y['labels']
+                # if len(y.shape) > 1 and y.shape[1] > 1:
+                #     y = y [:,task_labels_id]
 
-                y = y.to(x.device)
+                x = x.to(self.device)
+                y = y.to(self.device)
                 output = self(x)
 
                 if output == None:
                     continue
 
-                loss = self.downstream_loss(output, y, losses = heads_losses)
+                loss = self.downstream_loss(output, y, losses = batch_losses)
                 train_num += 1
-                losses += loss.item()
+                total_loss += loss.item()
 
-            losses /= train_num
-            heads_losses = [loss/train_num for loss in heads_losses]
+                for task_index in range(self.classification_task_count):
+                    tasks_losses[task_index] += batch_losses[task_index].item()
+
+
+            total_loss /= train_num
+            
+            for task_index in range(self.classification_task_count):
+                tasks_losses[task_index] /= train_num
+
+            if metrics is not None:
+                metrics['steps'] = train_num
+                metrics['samples'] = samples
+                for task_index in range(self.classification_task_count):
+                    metrics[task_index]['loss'] = tasks_losses[task_index]
 
             # print ( f"Downstream task loss {losses/train_num}")
-            self.train_metrics_log( loss=losses, round = self.round, heads_losses=heads_losses )
+            self.train_metrics_log( loss=loss, round = self.round, heads_losses=metrics )
 
 
     def train_metrics_log(self, loss = None, round = 0, heads_losses = None, prefix="train"):
@@ -192,56 +272,23 @@ class DownstreamClassification (Downstream):
                 wandb.log({f"train/{self.metrics_path}/loss": loss, "round": round})
             if heads_losses is not None:
                 for task_index in range(self.classification_task_count):
-                    wandb.log({f"train/{self.metrics_path}/loss_{task_index}": heads_losses[task_index], "round": round})
+                    wandb.log({f"train/{self.metrics_path}/loss_{task_index}": heads_losses[task_index]['loss'], "round": round})
 
-    def test_metrics_calculate(self, logits, labels, round = None):
-
-        if round is None:
-            round = self.round
+    def test_metrics(self, logits, labels = None, samples = None, round = None, metrics = None, task = 0):
 
         batch_size = labels.shape[0]
+        task_metrics = self.define_task_metrics()
         accuracy, num, auc, y_true, y_prob = self.test_metrics_accuracy(logits, labels)
+        task_metrics['accuracy'] = accuracy
+        task_metrics['samples'] = num
+        if metrics is not None:
+            metrics[task]['samples'] = num
+            metrics[task]['accuracy'] = accuracy/num
+            metrics[task]['steps'] = 1
 
-        if self.test_running_round != self.round:
-            for task_index in range(self.classification_task_count):
-                self.test_metrics[task_index]['accuracy'] = []
-                self.test_metrics[task_index]['auc'] = []
-            self.test_running_round = self.round
-
-        for task_index in range(self.classification_task_count):
-            self.test_metrics[task_index]['accuracy'].append(accuracy[task_index]/num[task_index])
-            self.test_metrics[task_index]['auc'].append(auc[task_index])
-        # self.test_metrics['accuracy'].append(accuracy/batch_size)
-        # self.test_metrics['auc'].append(auc/batch_size)
-
-        self.test_metrics_aggregrate(self.test_metrics,batch_size=batch_size)
-        
-        # self.test_metrics_aggregated['accuracy'] = torch.mean(torch.stack(self.test_metrics['accuracy']))
-        # self.test_metrics_aggregated['auc'] = torch.mean(torch.stack(self.test_metrics['auc']))
-        
-        # print ( f"Accuracy: {self.test_metrics_aggregated['accuracy']}, AUC: {self.test_metrics_aggregated['auc']}")
-
-        return self.test_metrics
-    
-    def test_metrics_aggregrate (self, metrics, batch_size = 1):
-        for metric in self.defined_test_metrics:
-            for task_index, task_metric in enumerate(metrics):
-                metric_tensor = torch.tensor(task_metric[metric],dtype=torch.float32)
-                if len(metric_tensor) > 0:
-                    self.test_metrics_aggregated[task_index][metric] = torch.mean(metric_tensor)
-                else:
-                    self.test_metrics_aggregated[task_index][metric] = metric_tensor
-        # metric_tensor = torch.tensor(metrics[metric],dtype=torch.float32)
-        # if len(metric_tensor) > 0:
-        #     self.test_metrics_aggregated[metric] = torch.mean(metric_tensor)
-        # else:
-        #     self.test_metrics_aggregated[metric] = metric_tensor
-
-        return self.test_metrics_aggregated
-
+        return task_metrics
     
     def test_metrics_accuracy(self, logits, labels):
-        super().test_metrics_accuracy(logits, labels) 
        
         test_acc = []
         test_num = []
@@ -274,28 +321,9 @@ class DownstreamClassification (Downstream):
                     self.log_once(f'warning for client {self.id} in round {self.round}: output contains nan"')
 
                 task_prob = F.softmax(task_logits, dim=1) 
-        # y_prob.append(prob.detach().cpu().numpy()) 
-                task_y_prob.append(task_logits.detach().cpu().numpy()) 
-        # nc = self.num_classes
-        # if self.num_classes == 2:
-        #     nc += 1
-        # lb = label_binarize(labels.detach().cpu().numpy(), classes=np.arange(nc))
-        # if self.num_classes == 2:
-        #     lb = lb[:, :2]
+                task_y_prob.append(task_prob.detach().cpu().numpy()) 
+
                 task_y_true.append(task_labels.detach().cpu().numpy())
-
-                # if self.downstream_task_name == 'segmentation':
-                    # groundtruth_mask = y if y.shape[1] == 1 else y.permute(0, 3, 1, 2)
-                    # pred_mask = x
-                    # b, c, h, w = pred_mask.shape
-                    # if groundtruth_mask.shape[2] != h or groundtruth_mask.shape[3] != w:
-                    #     groundtruth_mask = F.interpolate(groundtruth_mask, size=(h, w), mode='nearest')
-
-                    # intersect = np.sum(pred_mask*groundtruth_mask)
-                    # total_pixel_pred = np.sum(pred_mask)
-                    # precision = np.mean(intersect/total_pixel_pred)
-                    # return round(precision, 3)
-                    # predictions = torch.argmax(output, dim=1)
 
                 if len(task_y_prob) > 0:
                     task_y_prob = np.concatenate(task_y_prob, axis=0)
@@ -310,8 +338,49 @@ class DownstreamClassification (Downstream):
                 y_prob.append(task_y_prob)
                 y_true.append(task_y_true)
                 auc.append(task_auc)
+        else:
+            task_prob = []
+            task_y_prob = []
+            task_y_true = []
+            task_test_acc = 0
+            task_test_num = 0
+
+            if len(labels.shape) == 1:
+                task_labels = labels
+            else: 
+                task_labels = labels[:, task_index]
+
+            task_logits = logits    
+            task_predictions = torch.argmax(task_logits, dim=1)
+            predictions = task_predictions
+            task_test_acc += (torch.sum(task_predictions == task_labels)).item()
+            task_test_num += labels.shape[0]
+
+            if torch.isnan(task_logits).any().item():
+                if not self.no_wandb:
+                   wandb.log({f'warning/{self.id}': torch.isnan(logits)})
+              # print(f'warning for client {self.id} in round {self.round}:', torch.isnan(output))
+                self.log_once(f'warning for client {self.id} in round {self.round}: output contains nan"')
+
+            task_prob = F.softmax(task_logits, dim=1).detach().cpu().numpy()
+            task_true = task_labels.detach().cpu().numpy() 
+            task_y_prob.append(task_prob) 
+            task_y_true.append(task_true)
+
+            if len(task_y_prob) > 0:
+                task_y_prob = np.concatenate(task_y_prob, axis=0)
+                task_y_true = np.concatenate(task_y_true, axis=0)
+            
+            # auc = metrics.roc_auc_score(task_true, task_prob, average='micro')
+            task_auc = 0
+            
+            test_acc.append(task_test_acc)
+            test_num.append(task_test_num)
+            y_prob.append(task_y_prob)
+            y_true.append(task_y_true)
+            auc.append(task_auc)
         
-        return test_acc, test_num, auc, y_true, y_prob
+        return task_test_acc, task_test_num, auc, task_y_true, task_y_prob
 
             
     def downstream_loss(self, logits, labels, samples = None, losses = None):
@@ -319,40 +388,40 @@ class DownstreamClassification (Downstream):
         if isinstance(labels, dict):
             labels = labels['labels']
         labels = labels.long()
+        tasks_loss = {}
 
-        # if self.metrics_last_round != self.round:
-        #     self.init_heads_losses()
-        #     self.metrics_last_round = self.round
-        #     self.metrics_round_epochs_count = 0
+        loss = None
 
-        # self.metrics_round_epochs_count += 1
-
-        loss = torch.tensor(0.0, requires_grad=True, device=labels.device)
         for task_id, task_logits in enumerate(logits):
+            classification_label_id = self.classification_labels_used[task_id]
             if len(labels.shape) == 1:
                 task_labels = labels
             else:
-                task_labels = labels[:, task_id].long()
+                task_labels = labels[:, classification_label_id].long()
             task_loss = self.classification_loss(task_logits, task_labels)
-            if losses is not None:  
-                losses[task_id] = losses[task_id] + task_loss
-            loss = loss + task_loss
-        return loss
-        return self.classification_loss(logits, labels)
+            tasks_loss[task_id] = task_loss
 
-    # def parameters(self, recurse=True):
-    #     moduleList = nn.ModuleList()
-    #     moduleList.add_module("downstream_head", self.downstream_head)
-    #     return moduleList.parameters(recurse)
+        if losses is not None:
+            for task_index in range(self.classification_task_count):
+                losses[task_index] = tasks_loss[task_index]
+
+        loss = sum(tasks_loss.values())
+        # loss /= self.classification_task_count
+        return loss
 
     def forward(self, x):
         x = super().forward(x)
         # x = self.downstream_head(x)
+
+        if self.cls_token_only == False:
+            patch_size = int(np.sqrt(x.shape[1]))
+            x = x.permute(0,2,1)
+            x = x.view(-1, 768, patch_size, patch_size)
+        
         output = []
         for i, head in enumerate(self.classification_head):
-            head.to(x.device)
+            # Only move to device if not already on correct device
+            if next(head.parameters()).device != x.device:
+                head.to(x.device)
             output.append(head(x))
         return output
-    
-    def backbone_forward(self, x):
-        return super().backbone_forward(x)

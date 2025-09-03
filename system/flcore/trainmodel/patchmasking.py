@@ -1,6 +1,8 @@
 import os
-from torch import nn
 import torch
+import torch.nn.functional as F
+import torch.nn as nn
+
 from flcore.trainmodel.patchpretexttask import PatchPretextTask
 from torchvision import transforms
 from typing import Iterator
@@ -8,14 +10,20 @@ import numpy as np
 
 from timm.models.vision_transformer import Block
 from transformers import ViTMAEModel, ViTMAEForPreTraining, ViTMAEConfig, ViTModel, AutoImageProcessor, ViTFeatureExtractor
+from torchmetrics import Dice, JaccardIndex, Accuracy
 import wandb
-
 
 class PatchMasking (PatchPretextTask):
     pretext_task_name = "patch_masking"
+    task_name = pretext_task_name
+    defined_test_metrics = { "mse": None, "mae": None, "cos_sim": None, "l2_dis": None }
+    defined_train_metrics = { "loss": None }
+    task_learning_rate = 0.001
+    task_weight_decay = 0.00001
+
     def __init__(self, backbone=None, input_dim = 768, output_dim = 768, debug_images=False, img_size=224, patch_size=-1, patch_count = -1, mask_ratio = 0.15):
         super(PatchMasking, self).__init__(backbone=backbone, input_dim = input_dim, output_dim = output_dim, debug_images=debug_images, img_size=img_size, patch_size=patch_size, patch_count = patch_count)
-
+        self.task_name = PatchMasking.pretext_task_name
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.name = PatchMasking.pretext_task_name
         # self.loss = PatchOrderLoss(self.num_patches, self.head_hidden_size)
@@ -35,25 +43,55 @@ class PatchMasking (PatchPretextTask):
             self.mask_feature_extractor = ViTFeatureExtractor()
             
             self.mask_model = ViTMAEForPreTraining(self.mask_model_config).to(self.device)
-            # self.mask_model.vit.encoder = self.backbone.encoder
+            self.mask_model.vit.encoder = self.backbone.encoder
             self.pretext_head = self.mask_model.decoder
             # self.mask_image_processor = AutoImageProcessor.from_pretrained("vit-mae-base")
             # self.mask_model.encoder = self.backbone.encoder
         else:
             self.pretext_head = nn.Sequential( nn.Linear(self.output_dim, self.masked_count * self.patch_size * 3 ) ).to(self.device)
 
+
+
     @staticmethod
-    def define_metrics( metrics_path = None ):
+    # def define_metrics( metrics_path = None ):
+    #     pretext_task_name = PatchMasking.pretext_task_name
+
+        
+
+    #     path = "/" if metrics_path is None else "/"+metrics_path+"/"
+    #     metrics = []
+    #     metrics.append(f"train{path}pretext_train_loss_{pretext_task_name}")
+    #     metrics.append(f"test{path}pretext_train_ds_loss_{pretext_task_name}")
+    #     metrics.append(f"test{path}pretext_test_acc_{pretext_task_name}")
+
+    #     for metric in metrics:
+    #        a = wandb.define_metric(metric, step_metric="ssl_round")
+
+    
+    def define_metrics( metrics_path = None):
+        """
+        Define the metrics for the pretext task.
+        """
+
         pretext_task_name = PatchMasking.pretext_task_name
 
         path = "/" if metrics_path is None else "/"+metrics_path+"/"
         metrics = []
-        metrics.append(f"train{path}pretext_train_loss_{pretext_task_name}")
-        metrics.append(f"test{path}pretext_train_ds_loss_{pretext_task_name}")
-        metrics.append(f"test{path}pretext_test_acc_{pretext_task_name}")
+
+        for metric in PatchMasking.defined_test_metrics:
+            defined_metric = f"test{path}{PatchMasking.task_name}_{metric}"
+            PatchMasking.defined_test_metrics[metric] = defined_metric
+            metrics.append(defined_metric)
+
+        for metric in PatchMasking.defined_train_metrics:
+            defined_metric = f"train{path}{PatchMasking.task_name}_{metric}"
+            PatchMasking.defined_train_metrics[metric] = defined_metric
+            metrics.append(defined_metric)
 
         for metric in metrics:
-           a = wandb.define_metric(metric, step_metric="ssl_round")
+           a = wandb.define_metric(metric, step_metric="round")
+
+        return metrics
 
     def parameters(self, recurse: bool = True) -> Iterator[nn.Parameter]:
         modules = nn.ModuleList()
@@ -69,10 +107,36 @@ class PatchMasking (PatchPretextTask):
         return 0
         return super().accuracy(x, target)
     
+    def test_metrics(self, predictions, Y = None, samples=None, metrics=None):
+        # Estrai solo le patch mascherate: x.mask == 1 indica patch mascherate
+        # x.logits shape: (b, 196, 768), x.mask shape: (b, 196)
+        samples_patches = self.patchify(samples)  # shape (b, 196, 768)
+        mask = predictions.mask.bool()  # shape (b, 196)
+        predictions_patches = predictions.logits
+        b, n, s = predictions_patches.shape
+        samples_patches = samples_patches.reshape(b, n, s)  # shape (b, 196, 768)
+        x_masked_flat = samples_patches[mask]
+        y_masked_flat = predictions_patches[mask] 
+
+        mse = F.mse_loss(x_masked_flat, y_masked_flat, reduction='mean')
+        mae = F.l1_loss(x_masked_flat, y_masked_flat, reduction='mean')
+        cosine_similarity = F.cosine_similarity(x_masked_flat, y_masked_flat, dim=-1).mean()
+        # l2_distance = F.pairwise_distance(x_masked_flat, y_masked_flat, p=2).mean()
+        l2_distance = torch.norm(y_masked_flat - x_masked_flat, p=2, dim=1).mean()
+
+        if metrics is not None:
+            metrics[0]['mse'] = mse.item()
+            metrics[0]['mae'] = mae.item()
+            metrics[0]['cos_sim'] = cosine_similarity.item()
+            metrics[0]['l2_dis'] = l2_distance.item()
+            metrics[0]['steps'] = 1
+            metrics['samples'] = b 
+
+
+        # print(f"MAE: {mae:02f}, MSE: {mse:02f} Cosine Similarity: {cosine_similarity:02f}, L2 Distance: {l2_distance:02f}")
+        return metrics
+
     def preprocess_sample(self, x):
-        
-        # images, self.masked_indices = self.random_masking(x, self.mask_ratio) 
-        # self.save_images(x, images, max_saved=1)
         return x 
     
     def loss(self, x, y = None):
@@ -118,13 +182,48 @@ class PatchMasking (PatchPretextTask):
             x = self.backbone(x)
             x = self.pretext_head(x)
         if self.debug_images or os.path.exists("save_debug_images"):
+            filename = f"mae_{self.id}.png"
             # if images.shape[1] == 1:
             #     images = images.repeat(1, 3, 1, 1)
             # images = torch.einsum('nchw->nhwc', images)
             save_images = [original_images] + images
-            self.save_images(save_images, None, max_saved=1)
+            self.save_images(save_images, None, max_saved=1, output_filename=filename, save_interval=2)
         return x
-    
+
+    def debug_output_images(self, samples, predictions, max_saved=1, output_filename=None, prefix=None, postfix=None, node_id=None):
+        original_images = samples.clone()
+        y = self.mask_model.unpatchify(predictions.logits)
+        mask = predictions.mask.detach()
+        mask = mask.unsqueeze(-1).repeat(1, 1, self.mask_model.config.patch_size**2 *3)  # (N, H*W, p*p*3)
+        mask = self.mask_model.unpatchify(mask)  # 1 is removing, 0 is keeping
+        # mask = torch.einsum('nchw->nhwc', mask).detach().cpu()
+
+        # x = torch.einsum('nchw->nhwc', pixel_values)
+
+# masked image
+        im_masked = original_images * (1 - mask)
+
+# MAE reconstruction pasted with visible patches
+        im_paste = original_images * (1 - mask) + y * mask
+        images = [ im_masked, im_paste]
+        if node_id is None:
+            node_id
+        # x = self.mask_model(x[:,0:1,:,:])
+        if prefix is None:
+            prefix = ""
+        else :
+            prefix = prefix + "_"
+        if postfix is None:
+            postfix = ""
+        else:
+            postfix = "_" + postfix
+        filename = f"{prefix}mae_{node_id}{postfix}.png"
+        # if images.shape[1] == 1:
+        #     images = images.repeat(1, 3, 1, 1)
+        # images = torch.einsum('nchw->nhwc', images)
+        save_images = [original_images] + images
+        self.save_images(save_images, None, max_saved=1, output_filename=filename, save_interval=2)
+        
     def decoder_create(self, x):
         self.decoder_embed = nn.Linear(self.vit.embed_dim, self.decoder_embed_dim, bias=True)
         self.mask_token = nn.Parameter(torch.zeros(1, 1, self.decoder_embed_dim))

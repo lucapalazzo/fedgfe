@@ -23,7 +23,7 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 from datautils.dataset_utils import check, separate_data, split_data, save_file
-from datautils.dataset_chectxray import ChestXrayDataset
+from datautils.dataset_chestxray import ChestXrayDataset
 
 
 
@@ -44,8 +44,8 @@ def generate_chestxray(args, dir_path, num_clients, num_classes, niid, balance, 
     train_path = dir_path + "train/"
     test_path = dir_path + "test/"
 
-    if check(args, config_path, train_path, test_path, num_clients, num_classes, niid, balance, partition):
-        return
+    # if check(args, config_path, train_path, test_path, num_clients, num_classes, niid, balance, partition):
+    #     return
         
     # Get Cifar10 data
     transform = None
@@ -53,9 +53,9 @@ def generate_chestxray(args, dir_path, num_clients, num_classes, niid, balance, 
     transform = transforms.Compose(
         [transforms.ToTensor()])
     if args.dataset_transform:
-        transform.append([transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        transform.transforms.append([transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     if image_size != -1:
-        transform.append(transforms.Compose([transforms.Resize(image_size)]))
+        transform.transforms.append(transforms.Resize([image_size,image_size]))
 
     trainset = ChestXrayDataset(root=dir_path+"rawdata", train=True, download=True, transform=transform)
     testset = ChestXrayDataset( dataset= trainset, train=False, download=True, transform=transform)

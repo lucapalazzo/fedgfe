@@ -119,7 +119,7 @@ class FedKD(Server):
                         client.send_time_cost['total_cost'] / client.send_time_cost['num_rounds']
             except ZeroDivisionError:
                 client_time_cost = 0
-            if client_time_cost <= self.time_threthold:
+            if client_time_cost <= self.time_threshold:
                 self.uploaded_ids.append(client.id)
                 # recover
                 for k in client.compressed_param.keys():

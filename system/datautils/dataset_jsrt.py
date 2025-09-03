@@ -11,6 +11,41 @@ from collections import OrderedDict
 from torchvision import transforms
 from pathlib import Path
 from PIL import Image
+import copy
+
+# Labels
+# Type ['malignant', 'benign']
+# Nodule {'has nodule': 154, 'non-nodule': 93}
+# Zones Image zones 
+# 0 'l.lower lobe(S8)',
+# 1 'r.upper lobe(S1)', 
+# 2 'l.upper lobe(S3)',
+# 3 'l.upper lobe',
+# 4 'r.middl e lobe',
+# 5 'r.upper lobe(S3)',
+# 6 'r.lower lobe(S7)',
+# 7 'l.lower lobe(S9)',
+# 8 'r.lower lobe(S9)',
+# 9 'r.lower lobe(S6)',
+# 10 'r.upper lobe',
+# 11 'r.lower lobe',
+# 12 'r.upper lobe(S2)',
+# 13 'r.middl e lobe(S4)',
+# 14 'l.upper lobe(S1+2)',
+# 15 'r.lower lobe(S8)',
+# 16 'left lu ng',
+# 17 'l.upper lobe(S4)',
+# 18 'right l ung',
+# 19 'l.lower lobe(S10)',
+# 20 'r.lower lobe(S9-10)',
+# 21 'l.lower lobe',
+# 22 'r.upper lobe(S2-S3)',
+# 23 'l.lower lobe(S6)',
+# 24 'l.lower lobe(S6-S8)',
+# 25 'r.lower lobe(S10)',
+# 26 'l.upper lobe(S5)',
+# 27 'r.middl e lobe(S5)',
+# 28 'unknown']
 
 class JSRTDataset(Dataset):
     def __init__(self, dataset = None, is_train=True, test_ratio = 0.2, validate_ratio=0, train=None, transform=None, download=False, root=".", dataset_path = "dataset", datafile = "All247images/"):
@@ -131,9 +166,9 @@ class JSRTDataset(Dataset):
                 nodule_size = 0 if image.nodule_size == None else image.nodule_size*target_size/original_size
                 nodule_position_x = int(image.x*target_size/original_size)
                 nodule_position_y = int(image.y*target_size/original_size)
-                self.labels[index][3] = nodule_size
-                self.labels[index][4] = nodule_position_x
-                self.labels[index][5] = nodule_position_y
+                # self.labels[index][3] = nodule_size
+                # self.labels[index][4] = nodule_position_x
+                # self.labels[index][5] = nodule_position_y
 
         image_label = self.labels[index]
         # tensor_image_label = []
@@ -211,6 +246,10 @@ class JSRTDataset(Dataset):
         images_zones_keys = list(images_zones.keys())
         images_nodules_keys = list(image_nodules.keys())
 
+        print ( "Image types %s" % images_types_keys )
+        print ( "Image zones %s" % images_zones_keys )
+        print ( "Image nodules %s" % images_nodules_keys )
+
         for image in self.data:
             image_type = image._malignant_or_benign
             image_zone = image._position
@@ -218,7 +257,8 @@ class JSRTDataset(Dataset):
             nodule_size = 0 if image.nodule_size == None else image.nodule_size
             nodule_position_x = image.x
             nodule_position_y = image.y
-            label = [images_types_keys.index(image_type), images_nodules_keys.index(image_nodule), images_zones_keys.index(image_zone), nodule_size, nodule_position_x, nodule_position_y]
+            # label = [images_types_keys.index(image_type), images_nodules_keys.index(image_nodule), images_zones_keys.index(image_zone), nodule_size, nodule_position_x, nodule_position_y]
+            label = [images_types_keys.index(image_type), images_nodules_keys.index(image_nodule), images_zones_keys.index(image_zone) ]
             self.labels.append(label)
             print("Label %s" %(label))
         return self.labels
@@ -235,14 +275,32 @@ class JSRTDataset(Dataset):
         if self.is_train:
             if self.traindata is None:
                 self.get_data('train')
+            ids = self.traindata_ids
 
             item = self.traindata[idx]
         elif self.is_train == False:
             if self.testdata is None:
                 self.get_data('test')
             item = self.testdata[idx]
+            ids = self.testdata_ids
 
-        return item, {'image': item[0], 'label': item[1], 'semantic_masks': item[2]}
+        image_info = copy.deepcopy(self.data[idx])
+
+        image_info_dict = image_info.__dict__
+        del image_info_dict['resized_image']
+        del image_info_dict['image']
+
+        for k in list(image_info_dict):
+            if image_info_dict[k] == None:
+                print ( "Found none" )
+                # del image_info_dict[k]
+                image_info_dict[k] = -1
+        
+        # sample_info = {'id': ids[idx] }
+        sample_info = ids[idx]
+
+        return item, {'image': item[0], 'label': item[1], 'semantic_masks': item[2], 'sample_info': sample_info }
+        # return item, {'image': item[0], 'label': item[1], 'semantic_masks': item[2] }
 
         splitted = col['images_path'].split('/')
         label = splitted[-3]

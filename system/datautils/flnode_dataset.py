@@ -30,14 +30,18 @@ class FLNodeDataset(Dataset):
     
     def __getitem__(self, idx):
         if type(self.data) == dict:
-            sample = self.data['samples'][idx].to(self.device)
+            sample = self.data['samples'][idx]
+            # sample = self.data['samples'][idx].to(self.device)
             label = {}
             for k in self.data.keys():
                 if k != 'samples':
-                    label[k] = self.data[k][idx].to(self.device)
+                    # label[k] = self.data[k][idx].to(self.device)
+                    label[k] = self.data[k][idx]
         else:
-            sample = self.data[idx][0].to(self.device)
-            label = self.data[idx][1].to(self.device)
+            # sample = self.data[idx][0].to(self.device)
+            # label = self.data[idx][1].to(self.device)
+            sample = self.data[idx][0]
+            label = self.data[idx][1]
         if sample.shape[0] > 3:
             sample = sample.moveaxis(2,0)
         if self.transform != None:
