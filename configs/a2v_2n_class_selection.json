@@ -1,0 +1,52 @@
+{
+  "experiment": {
+    "goal": "test",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 2,
+    "global_rounds": 100,
+    "local_epochs": 1,
+    "eval_gap": 10,
+    "diffusion_type": "sd",
+    "model_aggregation": "per_class_average"
+  },
+  "nodes": {
+    "0": {
+      "dataset": "VEGAS",
+      "selected_classes": ["baby_cry", "drum"],
+      "_comment": "Node 0 uses text baby_cry and drum",
+      "diffusion_type": "sd"
+    },
+    "1": {
+      "dataset": "VEGAS",
+      "selected_classes": ["dog"],
+      "diffusion_type": "sd",
+      "_comment": "Node 1 uses text dog"
+    }
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "batch_size": 32,
+    "weight_decay": 0.0001,
+    "momentum": 0.9
+  },
+  "dataset": {
+    "name": "VEGAS",
+    "path": "./data"
+    
+  },
+  "wandb": {
+    "disabled": true
+  }
+}

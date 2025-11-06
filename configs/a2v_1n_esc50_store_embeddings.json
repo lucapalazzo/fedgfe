@@ -1,0 +1,45 @@
+{
+  "experiment": {
+    "goal": "MonShen-1N-Classification",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 1
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 1,
+    "global_rounds": 1,
+    "local_epochs": 1,
+    "join_ratio": 1.0,
+    "eval_gap": 5
+  },
+  "model": {
+    "backbone": "vit",
+    "backbone_model": "hf_vit",
+    "pretrained": false,
+    "embedding_size": 768,
+    "patch_size": 16
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.00001,
+    "batch_size": 4,
+    "weight_decay": 0.001,
+    "momentum": 0.9,
+    "learning_rate_schedule": false
+  },
+  "feda2v": {
+    "store_audio_embeddings": true,
+    "audio_embedding_file_name": "esc50_audio_embs_dict.pt",
+    "diffusion_type": "flux"
+  },
+  "nodes": {
+    "0": {
+      "dataset": "ESC50"
+    }
+  },
+  "wandb": {
+    "disabled": true
+  }
+}

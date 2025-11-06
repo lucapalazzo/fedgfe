@@ -303,7 +303,7 @@ class PatchOrdering (PatchPretextTask):
             return None
         metrics[0]["accuracy"] = accuracy.item()
         metrics[0]['steps'] = 1
-        metrics['samples'] = predictions.shape[0]
+        metrics[0]['samples'] = predictions.shape[0]
         return metrics
     
     def accuracy_old(self, x, y = None):

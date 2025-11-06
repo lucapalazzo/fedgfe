@@ -39,120 +39,119 @@ class PretextTrainer:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             
         num_batches = len(dataloader.dataset) // dataloader.batch_size
+
+        pretext_task_name = model.pretext_task_name 
+        print (f"*** Node {self.client_id} {pretext_task_name} memory before training {torch.cuda.memory_allocated(device)//1024**2} MB")
         
-        for pretext_task_name in pretext_tasks:
-            print (f"*** Node {self.client_id} {pretext_task_name} memory before training {torch.cuda.memory_allocated(device)//1024**2} MB")
-            model.pretext_task_name = pretext_task_name
-            
-            print(f"\nNode {self.client_id} training on pretext task {pretext_task_name} "
-                  f"current LR {optimizer_manager.get_current_lr()}")
-            
-            # Freeze appropriate model parts
-            if model_freeze_callback:
-                model_freeze_callback(backbone=False, pretext=False, downstream=True)
-            
-            round_loss = 0
-            round_downstream_loss = 0
-            model = model.to(device)
-            
-            for step in range(epochs):
-                if dataloader is None:
-                    print(f"Node {self.client_id} has no data")
-                    return
-                    
-                losses = 0
-                downstream_losses = 0
+        print(f"\nNode {self.client_id} training on pretext task {pretext_task_name} "
+              f"current LR {optimizer_manager.get_current_lr()}")
+        
+        # Freeze appropriate model parts
+        if model_freeze_callback:
+            model_freeze_callback(backbone=False, pretext=False, downstream=True)
+        
+        round_loss = 0
+        round_downstream_loss = 0
+        model = model.to(device)
+        
+        for step in range(epochs):
+            if dataloader is None:
+                print(f"Node {self.client_id} has no data")
+                return
                 
-                pbarbatch = tqdm(total=num_batches, desc=f"Batch ", unit='batch', leave=False)
+            losses = 0
+            downstream_losses = 0
+            
+            pbarbatch = tqdm(total=num_batches, desc=f"Batch ", unit='batch', leave=False)
+            
+            for i, (x, y) in enumerate(dataloader):
+                if not self._check_batch(x, y):
+                    continue
                 
-                for i, (x, y) in enumerate(dataloader):
-                    if not self._check_batch(x, y):
-                        continue
-                    
-                    # Move data to device
-                    x, y = self._prepare_batch_data(x, y, device, get_label_callback)
-                    
-                    # Store parameters for tracking changes
-                    backbone_pre_params = None
-                    if copy_model_params_callback:
-                        backbone_pre_params = copy_model_params_callback(model.backbone)
-                    
-                    # Forward pass
-                    output = model(x)
-                    loss = model.loss(output, y)
-                    summed_loss = loss
-                    
-                    # Handle downstream task if present
-                    downstream_loss = self._handle_downstream_task(
-                        model, downstream_task, x, y, downstream_loss_operation, device
+                # Move data to device
+                x, y = self._prepare_batch_data(x, y, device, get_label_callback)
+                
+                # Store parameters for tracking changes
+                backbone_pre_params = None
+                if copy_model_params_callback:
+                    backbone_pre_params = copy_model_params_callback(model.backbone)
+                
+                # Forward pass
+                output = model(x)
+                loss = model.loss(output, y)
+                summed_loss = loss
+                
+                # Handle downstream task if present
+                downstream_loss = self._handle_downstream_task(
+                    model, downstream_task, x, y, downstream_loss_operation, device
+                )
+                
+                if downstream_loss_operation == "sum":
+                    summed_loss = loss + downstream_loss
+                
+                # Backward pass
+                optimizer.zero_grad()
+                summed_loss.backward()
+                losses += loss.item()
+                optimizer.step()
+                
+                # Track parameter updates
+                updated_info = ""
+                if backbone_pre_params is not None and count_updated_params_callback:
+                    updated_backbone, total_backbone = count_updated_params_callback(
+                        backbone_pre_params, model=model.backbone
                     )
-                    
-                    if downstream_loss_operation == "sum":
-                        summed_loss = loss + downstream_loss
-                    
-                    # Backward pass
-                    optimizer.zero_grad()
-                    summed_loss.backward()
-                    losses += loss.item()
-                    optimizer.step()
-                    
-                    # Track parameter updates
-                    updated_info = ""
-                    if backbone_pre_params is not None and count_updated_params_callback:
-                        updated_backbone, total_backbone = count_updated_params_callback(
-                            backbone_pre_params, model=model.backbone
-                        )
-                        updated_info = f"Backbone: {updated_backbone}/{total_backbone} ({updated_backbone/total_backbone:.2f})"
-                        for p in backbone_pre_params:
-                            p.to('cpu')
-                            del p
-                    
-                    # Debug output images
-                    if os.path.exists("save_debug_images"):
-                        model.pretext_task.debug_output_images(x, output, node_id=self.client_id, postfix="train")
-                    
-                    # Update progress bar
-                    if downstream_task is not None:
-                        pbarbatch.set_postfix({
-                            'Loss': f'{loss.item():.2f}',
-                            'DSLoss': f'{downstream_loss.item():.2f}',
-                            'Epoch': f'{step+1}/{epochs}',
-                            'Backbone': updated_info
-                        })
-                    else:
-                        pbarbatch.set_postfix({
-                            'Loss': f'{loss.item():.2f}',
-                            'Epoch': f'{step+1}/{epochs}',
-                            'Backbone': updated_info
-                        })
-                    
-                    pbarbatch.update(1)
-                    
-                    # Check sample limit
-                    if (self.args.limit_samples_number > 0 and 
-                        i * dataloader.batch_size > self.args.limit_samples_number):
-                        break
+                    updated_info = f"Backbone: {updated_backbone}/{total_backbone} ({updated_backbone/total_backbone:.2f})"
+                    for p in backbone_pre_params:
+                        p.to('cpu')
+                        del p
                 
-                round_loss += losses
-                round_downstream_loss += downstream_losses
-                optimizer_manager.step_scheduler()
-                pbarbatch.close()
+                # Debug output images
+                if os.path.exists("save_debug_images"):
+                    model.pretext_task.debug_output_images(x, output, node_id=self.client_id, postfix="train")
                 
-                # Periodic GPU memory cleanup
-                if torch.cuda.is_available() and (step + 1) % 5 == 0:
-                    torch.cuda.empty_cache()
+                # Update progress bar
+                if downstream_task is not None:
+                    pbarbatch.set_postfix({
+                        'Loss': f'{loss.item():.2f}',
+                        'DSLoss': f'{downstream_loss.item():.2f}',
+                        'Epoch': f'{step+1}/{epochs}',
+                        'Backbone': updated_info
+                    })
+                else:
+                    pbarbatch.set_postfix({
+                        'Loss': f'{loss.item():.2f}',
+                        'Epoch': f'{step+1}/{epochs}',
+                        'Backbone': updated_info
+                    })
+                
+                pbarbatch.update(1)
+                
+                # Check sample limit
+                if (self.args.limit_samples_number > 0 and 
+                    i * dataloader.batch_size > self.args.limit_samples_number):
+                    break
             
-            # Log training metrics
-            self._log_training_metrics(pretext_task_name, round_loss, round_downstream_loss, epochs, ssl_round)
+            round_loss += losses
+            round_downstream_loss += downstream_losses
+            optimizer_manager.step_scheduler()
+            pbarbatch.close()
             
-            # Test pretext task
-            print()
-            
-            test_metrics = self._test_pretext_task(
-                model, dataloader, get_label_callback, device
-            )
-            print(f"Node {self.client_id} pretext task {pretext_task_name} metrics on train {test_metrics}")
-            print (f"*** Node {self.client_id} {pretext_task_name} memory after training {torch.cuda.memory_allocated(device)//1024**2} MB")
+            # Periodic GPU memory cleanup
+            if torch.cuda.is_available() and (step + 1) % 5 == 0:
+                torch.cuda.empty_cache()
+        
+        # Log training metrics
+        self._log_training_metrics(pretext_task_name, round_loss, round_downstream_loss, epochs, ssl_round)
+        
+        # Test pretext task
+        print()
+        
+        test_metrics = self._test_pretext_task(
+            model, dataloader, get_label_callback, device
+        )
+        # print(f"Node {self.client_id} pretext task {pretext_task_name} metrics on train {test_metrics}")
+        # print (f"*** Node {self.client_id} {pretext_task_name} memory after training {torch.cuda.memory_allocated(device)//1024**2} MB")
 
     
     def _check_batch(self, x, y):
@@ -237,23 +236,12 @@ class PretextTrainer:
         return batch_metrics
     
     def test_pretext(self, model, testloader, get_label_callback, device=None):
-        """
-        Test pretext task on separate test data.
-        
-        Args:
-            model: Model to test
-            testloader: Test dataloader
-            get_label_callback: Function to extract labels
-            device: Device to run on
-            
-        Returns:
-            NodeMetric with test results
-        """
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         metrics = NodeMetric(phase=NodeMetric.Phase.TEST)
         metrics.define_metrics(model.defined_test_metrics)
+        metrics.task_name = model.pretext_task_name
         
         batch_metrics = NodeMetric(phase=NodeMetric.Phase.TEST)
         batch_metrics.define_metrics(model.defined_test_metrics)

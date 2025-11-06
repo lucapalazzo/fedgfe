@@ -599,9 +599,9 @@
                      "-nb", "3",
                      "--batch_size","16",
                      "--local_epochs", "10",
-                     "-lr", "0.00001",
+                     "-lr", "0.0001",
                      "-lam", "0.1",
-                     "--no_wandb",
+                    //  "--no_wandb",
                      "--dataset_image_size", "224",
                      "--model_pretrain",
                     //  "--nodes_downstream_tasks", "classification:segmentation",
@@ -613,7 +613,7 @@
                     //  "--nodes_pretext_tasks", "image_rotation,patch_rotation,patch_ordering,patch_mask",
                     // "--no_downstream_task",
                      "--patch_size", "16",
-                     "--cls_token_only"
+                    //  "--cls_token_only"
                     //  "--debug_pretext_images",
                     //  "--limit_samples", "1000",
                     // "--downstream_loss_operation", "sum",
@@ -623,7 +623,7 @@
 //                    , "-go", "${inputs:experimentName"
                 ],
                 "env":{
-                    "CUDA_VISIBLE_DEVICES": "1"
+                    "CUDA_VISIBLE_DEVICES": "2"
                 }
 
         },
@@ -846,7 +846,7 @@
                      "--local_epochs", "10",
                      "-lr", "0.0001",
                      "-lam", "0.1",
-                     "--no_wandb",
+                    //  "--no_wandb",
                      "--dataset_image_size", "224",
                      "--model_pretrain",
                     //  "--nodes_downstream_tasks", "classification:segmentation",
@@ -1192,7 +1192,7 @@
 
         },
         {
-            "name": "fedfge JSRT-8C Cla:SSeg AVG PO-SC-IR-PM",
+            "name": "fedfge JSRT-8C Cla:SSeg AVG PO-SC-IR-PM-BY",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/fedgfe",
@@ -1211,7 +1211,7 @@
                      "--local_epochs", "10",
                      "-lr", "0.0001",
                      "-lam", "0.1",
-                     "--no_wandb",
+                    //  "--no_wandb",
                      "--dataset_image_size", "224",
                      "--model_pretrain",
                     //  "--nodes_downstream_tasks", "classification:segmentation",
@@ -1220,7 +1220,7 @@
                     //  "--embedding_size", "64",
                     //  "--nodes_pretext_tasks", "patch_masking",
                     //  "--nodes_pretext_tasks", "patch_masking,image_rotation",
-                     "--nodes_pretext_tasks", "image_rotation,simclr,patch_ordering,patch_masking",
+                     "--nodes_pretext_tasks", "image_rotation,simclr,patch_ordering,patch_masking,byod",
                     // "--no_downstream_task",
                      "--patch_size", "16",
                     //  "--debug_pretext_images",
@@ -1237,6 +1237,59 @@
                     "CUDA_VISIBLE_DEVICES": "2"
                 }
 
+        },
+         {
+            "name": "fedfgeDDP JSRT-8C Cla:SSeg AVG PO-SC-IR-PM",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": ["-data", "JSRT-8C-ClaSSeg:8",
+                     "-m", "vit",
+                     "-algo", "FedGFEDDP",
+                     "--global_rounds", "100",
+                     "-did", "0",
+                     "-go", "prova",
+                     "-nc", "1",
+                     "-nb", "3",
+                     "--batch_size","16",
+                     "--local_epochs", "10",
+                     "-lr", "0.0001",
+                     "-lam", "0.1",
+                     "--no_wandb",
+                     "--dataset_image_size", "224",
+                     "--model_pretrain",
+                    //  "--nodes_downstream_tasks", "classification:segmentation",
+                     "--nodes_downstream_tasks", "classification",
+                     "--nodes_backbone_model", "hf_vit",
+                    //  "--embedding_size", "64",
+                    //  "--nodes_pretext_tasks", "patch_masking",
+                    //  "--nodes_pretext_tasks", "patch_masking,image_rotation",
+                     "--nodes_pretext_tasks", "image_rotation,simclr,patch_ordering,patch_masking,byod",
+                    // "--no_downstream_task",
+                     "--patch_size", "16",
+                    //  "--debug_pretext_images",
+                    //  "--limit_samples", "1000",
+                    // "--downstream_loss_operation", "sum",
+                    "--model_optimizer", "adamw",
+                    "--model_aggregation", "fedavg",
+                    "--ddp_enabled",
+                    "--ddp_visible_gpus", "0,2"
+                    // "--model_aggregation_random",
+                    // "--model_backbone_save_checkpoint",
+                    // "--model_backbone_load_checkpoint"
+//                    , "-go", "${inputs:experimentName"
+                ],
+                "env":{
+                    "MASTER_ADDR": "localhost",
+                    "MASTER_PORT": "12355",
+                    "RANK": "1",
+                    "LOCAL_RANK": "1",
+                    "WORLD_SIZE": "2",
+                    "CUDA_VISIBLE_DEVICES": "0,1"
+                }
         },
         {
             "name": "fedfge JSRT-8C SSeg RandomAgg PO-SC-IR-PM ",
@@ -1515,6 +1568,66 @@
 
         },
         {
+            "name": "fedfge JSRT-1C Config Standalone",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": ["--config", "configs/jsrt_simple_classification.json",
+                ],
+                "env":{
+                    "CUDA_VISIBLE_DEVICES": "2"
+                }
+
+        },
+        {
+            "name": "fedfge JSRT-8C Config ",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": ["--config", "configs/jsrt_classification_segmentation.json",
+                ],
+                "env":{
+                    "CUDA_VISIBLE_DEVICES": "2"
+                }
+
+        },
+                {
+            "name": "fedfge ShenMon-1N Config ",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": ["--config", "configs/monshen_1n_classification.json",
+                ],
+                "env":{
+                    "CUDA_VISIBLE_DEVICES": "2"
+                }
+
+        },
+        {
+           "name": "fedfge ShenMon-1N Config POPMIR",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": ["--config", "configs/monshen_1n_classification_POPMIR.json",
+                ],
+                "env":{
+                    "CUDA_VISIBLE_DEVICES": "1"
+                }
+
+        },
+        {
             "name": "TransUNet Test",
             "type": "debugpy",
             "request": "launch",
@@ -1539,7 +1652,7 @@
                 "env":{
                     "CUDA_VISIBLE_DEVICES": "1"
                 }
-        }
+        },
 
 //         },
 //         {
@@ -2112,20 +2225,20 @@
                 ],
         },
              {
-            "name": "JSRT XRay Generate 1N",
+            "name": "ShenzenMontgomery XRay Generate 8N",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/fedgfe",
             "program": "system/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["-data", "JSRT",
-                     "-nc", "1",
+            "args": ["-data", "ShenzenMontgomery",
+                     "-nc", "8",
                      "--dataset_generate",
                     //  "-dids", "0,1",
                     //  "-dsbalance",
                     //  "--dataset_niid",
-                     "--dataset_outdir", "JSRT-1C-ClaSSeg",
+                     "--dataset_outdir", "ShenzenMontogmery-8N-ClaSeg",
                      // "--dataset_partition", "dir",
                      "--dataset_balance",
                      "--dataset_image_size", "224",
@@ -2200,6 +2313,204 @@
                      "--num_classes_per_client", "10"
                      //                    , "-go", "${inputs:experimentName"
                 ],
-        }
+        },
+        {
+            "name": "FedGFE JSRT-1C PM Only",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "-data", "JSRT-1C-ClaSSeg:1",
+                "-m", "vit",
+                "-algo", "FedGFE",
+                "--global_rounds", "100",
+                // "--ssl_rounds", "5",
+                "-did", "0",
+                "-go", "debug_byod_only",
+                "-nc", "1",
+                "--batch_size", "16",
+                "--local_epochs", "10",
+                "-lr", "0.0001",
+                "--nodes_backbone_model", "hf_vit",
+                "--nodes_pretext_tasks", "image_rotation",
+                "--nodes_downstream_tasks", "classification",
+                // "--nodes_training_sequence", "sslfirst",
+                "--embedding_size", "768",
+                "--dataset_image_size", "224",
+                "--patch_size", "16",
+                "--debug_pretext_images",
+                // "--byod_external_data_path", "/home/lpala/fedgfe/dataset/JSRT/external_samples",
+                "--byod_alignment_weight", "0.3",
+                "--byod_similarity_threshold", "0.8",
+                "--byod_projection_dim", "256",
+                "--byod_augment_strength", "0.8",
+                "--model_optimizer", "adamw",
+                "--no_wandb"
+            ],
+        },
+        {
+            "name": "FedGFE JSRT-1C All Pretext Tasks",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "-data", "JSRT-1C-ClaSSeg:1",
+                "-m", "vit",
+                "-algo", "FedGFE",
+                "--global_rounds", "100",
+                // "--ssl_rounds", "8",
+                "-did", "0",
+                "-go", "debug_all_pretext",
+                "-nc", "1",
+                "--batch_size", "16",
+                "--local_epochs", "10",
+                "-lr", "0.0001",
+                "--nodes_backbone_model", "hf_vit",
+                "--nodes_pretext_tasks", "patch_ordering,image_rotation,patch_masking,simclr,byod",
+                "--nodes_downstream_tasks", "classification",
+                // "--nodes_training_sequence", "sslfirst",
+                "--embedding_size", "768",
+                "--dataset_image_size", "224",
+                "--patch_size", "16",
+                "--debug_pretext_images",
+                // "--byod_external_data_path", "/home/lpala/fedgfe/dataset/JSRT/external_samples",
+                "--byod_alignment_weight", "0.4",
+                "--byod_similarity_threshold", "0.75",
+                "--byod_projection_dim", "192",
+                "--byod_augment_strength", "1.0",
+                "--no_wandb"
+            ],
+        },
+        {
+            "name": "feda2v VEGAS 3N Config ",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_3n_class_selection.json",
+                ],
+                "env":{
+                    "CUDA_VISIBLE_DEVICES": "1"
+                }
+
+        },
+        {
+            "name": "feda2v ESC50 6N GT IC",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_6n_esc50_global_train.json",
+                ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "1"
+            }
+
+        },
+             {
+            "name": "feda2v ESC50 12N GT AEG",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_esc50_12n_gt_average_emebedding_gen.json",
+                ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "1"
+            }
+
+        },
+        
+        {
+            "name": "feda2v ESC50 3N Global train and generate ",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_3n_esc50_global_train_diffusion.json",
+                ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "0"
+            }
+        },
+        {
+            "name": "feda2v ESC50 6N Standalone",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_6n_esc50_standalone.json",
+                ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "1"
+            }
+        },
+        {
+            "name": "feda2v ESC50 1N Config ",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_1n_esc50_class_selection.json",
+                ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "3"
+            }
+
+        },
+         {
+            "name": "feda2v 1N Config Save AE",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": ["--config", "configs/a2v_1n_vegas_store_embeddings.json",
+                ],
+                "env":{
+                    "CUDA_VISIBLE_DEVICES": "2"
+                }
+
+        },
+                 {
+            "name": "feda2v 1N ESC50 Config Save AE",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": ["--config", "configs/a2v_1n_esc50_store_embeddings.json",
+                ],
+                "env":{
+                    "CUDA_VISIBLE_DEVICES": "2"
+                }
+
+        },
     ]
 }

@@ -11,6 +11,24 @@ class NodeMetric(MutableSequence, MutableMapping):
         TEST = auto()
         INFERENCE = auto()
 
+    class TaskType(Enum):
+        UNKNOWN = auto()
+        CLASSIFICATION = auto()
+        REGRESSION = auto()
+        SEGMENTATION = auto()
+        OBJECT_DETECTION = auto()
+        CLUSTERING = auto()
+        DIMENSIONALITY_REDUCTION = auto()
+        ANOMALY_DETECTION = auto()
+        REINFORCEMENT_LEARNING = auto()
+        NATURAL_LANGUAGE_PROCESSING = auto()
+        COMPUTER_VISION = auto()
+        TIME_SERIES_FORECASTING = auto()
+        AUDIO_PROCESSING = auto()
+        GRAPH_ANALYSIS = auto()
+        RECOMMENDATION_SYSTEMS = auto()
+        OTHER = auto()
+
     def __init__(self, seq=None, mapping=None, phase=Phase.UNKNOWN, task_count=1):
         self._list = list(seq or [])
         self._dict = dict(mapping or {})
@@ -19,6 +37,7 @@ class NodeMetric(MutableSequence, MutableMapping):
         self.task_type = None
         self.node_id = -1
         self._task_count = task_count
+        self._task_name = "task"
         self._dict['samples'] = 0
         self._dict['steps'] = 0
         self._calculated_metrics = [ 'mean', 'std', 'min', 'max', 'min_index', 'max_index' ]
@@ -68,13 +87,16 @@ class NodeMetric(MutableSequence, MutableMapping):
             metric_values = [0 if v is None else v for v in metric_values]
             
             if metric_values:
-                
                 self._dict[metric]['mean'] = sum(metric_values) / (len(metric_values)*steps) if len(metric_values) > 0 else 0
                 self._dict[metric]['std'] = (sum((x/steps - self._dict[metric]['mean']) ** 2 for x in metric_values) / len(metric_values)) ** 0.5
                 self._dict[metric]['min'] = min(metric_values)/steps
                 self._dict[metric]['min_index'] = metric_values.index(min(metric_values))
                 self._dict[metric]['max'] = max(metric_values)/steps
                 self._dict[metric]['max_index'] = metric_values.index(max(metric_values))
+                self._dict['samples'] = sum(self._dict[k]['samples'] for k in task_list if isinstance(self._dict[k], NodeMetric) and 'samples' in self._dict[k])
+                self._dict['samples'] = self._dict['samples']//len(task_list) if len(task_list) > 0 else 0
+                self._dict['steps'] = sum(self._dict[k]['steps'] for k in task_list if isinstance(self._dict[k], NodeMetric) and 'steps' in self._dict[k])
+                self._dict['steps'] = self._dict['steps']//len(task_list) if len(task_list) > 0 else 0
         return self
 
     def insert(self, i, v):
@@ -170,12 +192,13 @@ class NodeMetric(MutableSequence, MutableMapping):
                     # else:
                     #     raise ValueError(f"Metric '{metric}' not found in task '{task}'.")
                 self._dict[task]['steps'] += values._dict[task]['steps']
-            if 'samples' not in self._dict:
-                self._dict['samples'] = values._dict['samples']
-            else:
-                self._dict['samples'] += values._dict['samples']
+                self._dict[task]['samples'] += values._dict[task]['samples']
+            # if 'samples' not in self._dict:
+            #     self._dict['samples'] = values._dict['samples']
+            # else:
+            #     self._dict['samples'] += values._dict['samples']
+            # # self._dict['steps'] += values._dict['steps']
             # self._dict['steps'] += values._dict['steps']
-            self._dict['steps'] += values._dict['steps']
         return self
     
     def __str__(self):
@@ -185,7 +208,7 @@ class NodeMetric(MutableSequence, MutableMapping):
             return "NodeMetric: No defined metrics."
         for metric in self._defined_metrics:
             if metric in self._dict:
-                string += f"{metric}: {self._dict[metric]['mean']:.2f} (std: {self._dict[metric]['std']:.2f}, min: {self._dict[metric]['min']:.2f} at index {self._dict[metric]['min_index']}, max: {self._dict[metric]['max']:2f} at index {self._dict[metric]['max_index']})\n"
+                string += f"{self._task_name} {metric}: {self._dict[metric]['mean']:.2f} (std: {self._dict[metric]['std']:.2f}, min: {self._dict[metric]['min']:.2f} at index {self._dict[metric]['min_index']}, max: {self._dict[metric]['max']:2f} at index {self._dict[metric]['max_index']})\n"
             else:
                 string += f"{metric}: Not defined\n"
         return string
@@ -216,3 +239,31 @@ class NodeMetric(MutableSequence, MutableMapping):
             raise TypeError("Steps must be an integer.")
         self._dict['steps'] = value
         return self
+
+    @property
+    def task_count(self):
+        return self._task_count
+    @task_count.setter
+    def task_count(self, value):
+        if not isinstance(value, int):
+            raise TypeError("Task count must be an integer.")
+        self._task_count = value
+        return self
+    
+    @property
+    def task_name(self):
+        return self._task_name
+    @task_name.setter
+    def task_name(self, value):
+        if not isinstance(value, str):
+            raise TypeError("Task name must be a string.")
+        self._task_name = value
+        return self
+    
+    @property
+    def defined_metrics(self):
+        return self._defined_metrics
+    
+    @property
+    def metrics(self):
+        return self._defined_metrics

@@ -81,6 +81,10 @@ class DownstreamTrainer:
                 
                 # Backward pass
                 loss.backward()
+
+                # Gradient clipping to prevent exploding gradients
+                torch.nn.utils.clip_grad_norm_(downstream_task.parameters(), max_norm=1.0)
+
                 optimizer.step()
                 
                 # Update progress bar

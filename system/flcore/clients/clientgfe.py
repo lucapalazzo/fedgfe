@@ -27,6 +27,8 @@ from flcore.trainmodel.downstreamsegmentation import DownstreamSegmentation
 from flcore.trainmodel.imagerotation import ImageRotation
 from flcore.trainmodel.patchordering import PatchOrdering
 from flcore.trainmodel.patchmasking import PatchMasking
+from flcore.trainmodel.simclr import SimCLR
+from flcore.trainmodel.byod import BYOD
 from utils.check_parameters import check_optimizer_params, print_model_gradients_status
 from utils.node_metric import NodeMetric
 
@@ -84,7 +86,12 @@ class clientGFE(clientRewind):
             self.dataset = args.dataset
         
         self.node_data.dataset = self.dataset
-        self.node_data.dataset_id = 0
+
+        if 'dataset_split_id' in kwargs:
+            self.node_data.split_id = kwargs['dataset_split_id']
+        else: 
+            self.node_data.split_id = 0
+
         self.node_data_losses = []
 
         self.downstream_task_name = 'none'
@@ -175,6 +182,10 @@ class clientGFE(clientRewind):
                 module = PatchOrdering
             elif ( pretext_task == PatchMasking.pretext_task_name):
                 module = PatchMasking
+            elif ( pretext_task == SimCLR.pretext_task_name):
+                module = SimCLR
+            elif ( pretext_task == BYOD.pretext_task_name):
+                module = BYOD
 
             if module != None:
                 metrics = module.define_metrics(self.metrics_path)
@@ -350,62 +361,41 @@ class clientGFE(clientRewind):
         )
 
     def train_pretext(self, epochs, dataloader, client_device=None, training_task="both"):
-        """Train pretext tasks using the PretextTrainer."""
         self.train_time_cost['num_sslrounds'] += 1
         
         device = client_device if client_device is not None else self.device
         
-        # self.pretext_trainer.train_pretext(
-        #     model=self.model,
-        #     pretext_tasks=self.pretext_tasks,
-        #     epochs=epochs,
-        #     dataloader=dataloader,
-        #     optimizer=self.optimizer,
-        #     optimizer_manager=self.optimizer_manager,
-        #     downstream_task=self.downstream_task,
-        #     downstream_loss_operation=self.downstream_loss_operation,
-        #     device=device,
-        #     ssl_round=self.ssl_round,
-        #     model_freeze_callback=self.model_freeze,
-        #     get_label_callback=self.get_label,
-        #     copy_model_params_callback=self.copy_model_parameters,
-        #     count_updated_params_callback=self.count_updated_params
-        # )
-
-        self.pretext_trainer.train_pretext(
-            model=self.model,
-            pretext_tasks=self.pretext_tasks,
-            epochs=epochs,
-            dataloader=dataloader,
-            optimizer=self.optimizer,
-            optimizer_manager=self.optimizer_manager,
-            downstream_task=self.downstream_task,
-            downstream_loss_operation=self.downstream_loss_operation,
-            device=device,
-            ssl_round=self.ssl_round,
-            model_freeze_callback=self.model_freeze,
-            get_label_callback=self.get_label,
-            copy_model_params_callback=None,
-            count_updated_params_callback=None
-        )
-        
-        # Test pretext on separate test data
-        test_dataloader = self.load_test_data()
-        pretext_testmetric = NodeMetric(phase=NodeMetric.Phase.TEST)
-        pretext_testmetric.define_metrics(self.model.defined_test_metrics)
-        pretext_testmetric_on_train = NodeMetric(phase=NodeMetric.Phase.TRAIN)
-        pretext_testmetric_on_train.define_metrics(self.model.defined_test_metrics)
-        
-        self.test_pretext(test_dataloader, metrics=pretext_testmetric)
-        self.test_pretext(dataloader, metrics=pretext_testmetric_on_train)
-        self.log_metrics(pretext_testmetric, round=self.round)
-        
         for pretext_task_name in self.pretext_tasks:
+            self.model.pretext_task_name = pretext_task_name
+
+            self.pretext_trainer.train_pretext(
+                model=self.model,
+                pretext_tasks=self.pretext_tasks,
+                epochs=epochs,
+                dataloader=dataloader,
+                optimizer=self.optimizer,
+                optimizer_manager=self.optimizer_manager,
+                downstream_task=self.downstream_task,
+                downstream_loss_operation=self.downstream_loss_operation,
+                device=device,
+                ssl_round=self.ssl_round,
+                model_freeze_callback=self.model_freeze,
+                get_label_callback=self.get_label,
+                copy_model_params_callback=None,
+                count_updated_params_callback=None
+            )
+
+            # Test pretext on separate test data
+            test_dataloader = self.load_test_data()
+
+            pretext_testmetric = self.test_pretext(test_dataloader)
+            pretext_testmetric_on_train = self.test_pretext(dataloader)
+            self.log_metrics(pretext_testmetric, round=self.round)
+        
             print(f"Node {self.id} pretext task {pretext_task_name} metrics on train {pretext_testmetric_on_train}")
             print(f"Node {self.id} pretext task {pretext_task_name} metrics on test {pretext_testmetric}")
 
     def test_pretext(self, testloader=None, metrics=None):
-        """Test pretext tasks using the PretextTrainer."""
         if testloader is None:
             testloader = self.load_test_data()
         
@@ -415,9 +405,6 @@ class clientGFE(clientRewind):
             get_label_callback=self.get_label,
             device=self.device
         )
-        
-        if metrics is not None:
-            metrics += test_metrics
         
         return test_metrics
     def setup_optimizer(self):
@@ -472,7 +459,7 @@ class clientGFE(clientRewind):
 
         task_losses = self.downstream_task.init_heads_losses()
 
-        self.downstream_task.train_metrics( trainloader, metrics = metrics)
+        downstream_metric = self.downstream_task.train_metrics( trainloader, metrics = metrics)
 
         train_num = 0
         task_losses = 0
@@ -513,7 +500,7 @@ class clientGFE(clientRewind):
         self._move_to_cpu()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        return task_losses
+        return downstream_metric
         return task_losses, train_num
 
     def test_metrics_other(self, test_client = None):
@@ -625,6 +612,8 @@ class clientGFE(clientRewind):
 
         node_metrics = NodeMetric(phase=NodeMetric.Phase.TEST)
         node_metrics.define_metrics(self.model.defined_test_metrics, task_count=classification_tasks)
+        node_metrics.task_type = NodeMetric.TaskType.CLASSIFICATION
+        node_metrics.task_name = self.downstream_task.task_name
 
         if metrics != None:
             metrics.define_metrics(self.downstream_task.defined_test_metrics, self.downstream_task.classification_task_count)
@@ -647,6 +636,7 @@ class clientGFE(clientRewind):
 
             batch_metrics = NodeMetric(phase=NodeMetric.Phase.TEST)
             batch_metrics.define_metrics(self.model.defined_test_metrics, task_count=classification_tasks)
+
 
             with torch.no_grad():
                 for x, y in dataloader:
@@ -671,31 +661,37 @@ class clientGFE(clientRewind):
                     if isinstance(output, list):
                         output = output[classification_task]
 
-                    test_metrics = self.model.test_metrics(output, y, metrics = batch_metrics, task=classification_task)
+                    batch_metrics = self.model.test_metrics(output, y, task=classification_task)
                     node_metrics += batch_metrics
 
-        aggregated_metrics = {}
-        metrics.steps = steps
-        for classification_task in range(classification_tasks):
-            for key, value in node_metrics[classification_task].items():
-                if metrics != None:
-                    if key in metrics.defined_metrics:
-                        metrics[classification_task][key] = value/samples
+        # aggregated_metrics = {}
+        # metrics.steps = steps
+        # for classification_task in range(classification_tasks):
+        #     for key, value in node_metrics[classification_task].items():
+        #         if metrics != None:
+        #             if key in metrics.defined_metrics:
+        #                 metrics[classification_task][key] = value/samples
 
-                if key not in aggregated_metrics:
-                    aggregated_metrics[key] = []
-                aggregated_metrics[key].append(value)
+        #         if key not in aggregated_metrics:
+        #             aggregated_metrics[key] = []
+        #         aggregated_metrics[key].append(value)
+        # if metrics != None:
+        #     metrics['samples'] = samples
+
+        # aggregated_metrics = {key: np.mean(value) for key, value in aggregated_metrics.items()}
+        # node_metrics['aggregated'] = aggregated_metrics
         if metrics != None:
-            metrics['samples'] = samples
-
-        aggregated_metrics = {key: np.mean(value) for key, value in aggregated_metrics.items()}
-        node_metrics['aggregated'] = aggregated_metrics
-
+            metrics = node_metrics
         return node_metrics
     
     def test_metrics_data_segmentation(self, dataloader, model, metrics = None):
 
-        node_metrics = {}
+
+        node_metrics = NodeMetric(phase=NodeMetric.Phase.TEST)
+        node_metrics.task_count = 1
+        node_metrics.task_name = self.downstream_task.task_name
+        node_metrics.task_type = NodeMetric.TaskType.SEGMENTATION
+        node_metrics.define_metrics(self.model.defined_test_metrics)
 
         if metrics != None:
             metrics.define_metrics(self.downstream_task.defined_test_metrics)
@@ -722,29 +718,30 @@ class clientGFE(clientRewind):
                 output = model(x)
 
                 batch_metrics = self.model.test_metrics(output, y)
-                if node_metrics == {}:
-                    node_metrics = batch_metrics
-                else:
-                    # node_metrics = dict(Counter(node_metrics) + Counter(batch_metrics))
-                    node_metrics = {k: node_metrics.get(k, 0) + batch_metrics.get(k, 0) for k in (set(node_metrics) | set(batch_metrics))}
-            aggregated_metrics = {}
-            aggregated_value = []
-            metrics['samples'] = samples
-            metrics['steps'] = steps
+                node_metrics += batch_metrics
+        #         if node_metrics == {}:
+        #             node_metrics = batch_metrics
+        #         else:
+        #             # node_metrics = dict(Counter(node_metrics) + Counter(batch_metrics))
+        #             node_metrics = {k: node_metrics.get(k, 0) + batch_metrics.get(k, 0) for k in (set(node_metrics) | set(batch_metrics))}
+        #     aggregated_metrics = {}
+        #     aggregated_value = []
+        #     metrics['samples'] = samples
+        #     metrics['steps'] = steps
 
-            for key, value in node_metrics.items():
-                if metrics != None:
-                    if key in metrics.defined_metrics:
-                        metrics[task_index][key] = value.detach().cpu().numpy()/steps/samples
-                if key != 'samples':
-                    aggregated_value.append(value.detach().cpu().numpy())
+        #     for key, value in node_metrics.items():
+        #         if metrics != None:
+        #             if key in metrics.defined_metrics:
+        #                 metrics[task_index][key] = value.detach().cpu().numpy()/steps/samples
+        #         if key != 'samples':
+        #             aggregated_value.append(value.detach().cpu().numpy())
             
 
-        aggregated_metrics = {'samples': len(aggregated_value), 'mean': np.mean(aggregated_value), 'std': np.std(aggregated_value)}
-        node_metrics['aggregated'] = aggregated_metrics
-                   
-                
+        # aggregated_metrics = {'samples': len(aggregated_value), 'mean': np.mean(aggregated_value), 'std': np.std(aggregated_value)}
+        # node_metrics['aggregated'] = aggregated_metrics
 
+        self.downstream_task.test_metrics_log( round = self.round, metrics = node_metrics )
+                   
         return node_metrics
                     
 

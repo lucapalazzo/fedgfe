@@ -70,6 +70,8 @@ from flcore.servers.serverZIO import FedZio
 from flcore.servers.serverrewind import FedRewind
 from flcore.servers.serveravgrew import FedAvgRew
 from flcore.servers.servergfe import FedGFE
+from flcore.servers.servergfe_ddp import FedGFEDDP
+from flcore.servers.serverA2V import FedA2V
 
 from flcore.trainmodel.models import *
 from flcore.trainmodel.vitfc import VITFC
@@ -82,6 +84,8 @@ from flcore.trainmodel.transformer import *
 
 from utils.result_utils import average_data
 from utils.mem_utils import MemReporter
+from utils.config_loader import load_config_to_args
+from utils.nodes_tasks_parser import parse_nodes_tasks_config
 
 from disablrandomness import set_seed
 
@@ -90,8 +94,9 @@ from torchvision.models import ResNet18_Weights
 
 from torchinfo import summary
 
+logging.basicConfig(level=logging.INFO,format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',force=True,stream=sys.stdout)
 logger = logging.getLogger()
-logger.setLevel(logging.ERROR)
+logger.setLevel(logging.INFO)
 
 warnings.simplefilter("ignore")
 torch.manual_seed(0)
@@ -244,19 +249,22 @@ def run(args):
                 args.model = ViTModel(ViTConfig(), add_pooling_layer=False).to(args.device)
             elif args.nodes_backbone_model == "timm_vit":
                 args.model = timmVisionTransformer(img_size=224, patch_size=16, num_classes=args.num_classes).to(args.device)
+        elif model_str == "a2v":
+            args.model = None
         else:
             raise NotImplementedError
         
         param_size = 0
-        for param in args.model.parameters():
-            param_size += param.nelement() * param.element_size()
-        buffer_size = 0
-        for buffer in args.model.buffers():
-            buffer_size += buffer.nelement() * buffer.element_size()
+        if args.model is not None:
+            for param in args.model.parameters():
+                param_size += param.nelement() * param.element_size()
+            buffer_size = 0
+            for buffer in args.model.buffers():
+                buffer_size += buffer.nelement() * buffer.element_size()
 
-        size_all_mb = (param_size + buffer_size) / 1024**2
+            size_all_mb = (param_size + buffer_size) / 1024**2
 
-        print(f"Model size: {size_all_mb:.3f}MB")
+            print(f"Model size: {size_all_mb:.3f}MB")
         print(args.model)
 
         if not args.no_wandb:
@@ -429,10 +437,11 @@ def run(args):
         elif args.algorithm == "FedZio":
             server = FedZio(args, i)
         elif args.algorithm == "FedGFE":
-            # pretext_tasks = ['patch_ordering']
-
-            # pretext_tasks = ['patch_ordering','mask', 'rotation', 'colorization', 'inpainting']
             server = FedGFE(args, i)
+        elif args.algorithm == "FedGFEDDP":
+            server = FedGFEDDP(args, i)
+        elif args.algorithm == "FedA2V":
+            server = FedA2V(args, i)
         else:
             raise NotImplementedError
 
@@ -465,7 +474,9 @@ if __name__ == "__main__":
         print( "%d %d\n" % ( i, torch.cuda.utilization(i) ) )
     parser = argparse.ArgumentParser()
     # general
-    parser.add_argument('-ru', "--run_uuid", type=str, default=None, 
+    parser.add_argument('-c', "--config", type=str, default=None,
+                        help="Path to JSON configuration file")
+    parser.add_argument('-ru', "--run_uuid", type=str, default=None,
                         help="Run UUID for resuming from checkpoint")
     parser.add_argument('-go', "--goal", type=str, default="test", 
                         help="The goal for this experiment")
@@ -639,6 +650,49 @@ if __name__ == "__main__":
     parser.add_argument('-ssuct', '--cls_token_only', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Use cls token only")
     parser.add_argument('-fgm', '--federation_grid_metrics', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Node metrics for all datasets")
 
+    # BYOD Pretext Task
+    parser.add_argument('-byodpath', '--byod_external_data_path', type=str, default=None, help="Path to external data for BYOD pretext task")
+    parser.add_argument('-byodweight', '--byod_alignment_weight', type=float, default=0.5, help="Weight for alignment loss in BYOD")
+    parser.add_argument('-byodthresh', '--byod_similarity_threshold', type=float, default=0.7, help="Similarity threshold for BYOD accuracy metric")
+    parser.add_argument('-byodproj', '--byod_projection_dim', type=int, default=128, help="Projection dimension for BYOD")
+    parser.add_argument('-byodaug', '--byod_augment_strength', type=float, default=1.0, help="Augmentation strength for BYOD")
+
+    # FedGFEDDP
+    parser.add_argument('-ddp', '--ddp_enabled', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Enable differential privacy")
+    parser.add_argument('-ddpb', '--ddp_backend', type=str, default="nccl", help="Enable differential privacy")
+    parser.add_argument('-ddpws', '--ddp_world_size', type=int, default=1, help="Enable differential privacy")
+    parser.add_argument('-ddpvs', '--ddp_visible_gpus', type=str, default="", help="Enable differential privacy")
+
+    # FedA2V (Audio2Visual) specific parameters
+    parser.add_argument("--diffusion_type", type=str, default="sd")
+    parser.add_argument("--use_act_loss", type=bool, default=False)
+    parser.add_argument("--use_text_loss", type=bool, default=True)
+    parser.add_argument("--use_image_loss", type=bool, default=False)
+    parser.add_argument("--audio_model_name", type=str, default="MIT/ast-finetuned-audioset-10-10-0.4593")
+    parser.add_argument("--image_model_name", type=str, default="google/vit-base-patch16-224-in21k")
+    parser.add_argument("--img_pipe_name", type=str, default="runwayml/stable-diffusion-v1-5")
+    parser.add_argument("--img_lcm_lora_id", type=str, default="latent-consistency/lcm-lora-sdv1-5")
+    parser.add_argument("--audio_pipe_name", type=str, default="cvssp/audioldm-l-full")
+    parser.add_argument("--lr1", type=float, default=0.001)
+    parser.add_argument("--lr2", type=float, default=0.0001)
+    parser.add_argument("--lr3", type=float, default=0.0001)
+    parser.add_argument("--steps", type=int, default=1000)
+    parser.add_argument("--mode", type=str, default="train_nodata")
+    parser.add_argument("--ablation_type", type=str, default="only_t5")
+    parser.add_argument("--controllability_type", type=str, default="volume")
+    parser.add_argument("--target_img_path", type=str, default="data/img")
+    parser.add_argument("--img_out_path", type=str, default="exp/img")
+    parser.add_argument("--audio_out_path", type=str, default="exp/audio")
+    parser.add_argument("--class_to_activate", type=int, default=8)
+    parser.add_argument("--single_class", type=bool, default=False)
+    parser.add_argument("--checkpoint_name", type=str, default="best_model")
+    parser.add_argument("--project", type=str, default="sinestesia")
+    parser.add_argument("--entity", type=str, default="ctlab-team")
+
+    # Nodes Tasks Configuration
+    parser.add_argument('-nt', '--nodes_tasks_config', type=str, default=None, help="JSON string or file path for per-node task configuration")
+    parser.add_argument('-ntp', '--nodes_tasks_from_config', type=bool, default=False, action=argparse.BooleanOptionalAction, help="Use nodes_tasks section from config file")
+
 
     parser.add_argument('-rora', "--routing_random", type=bool, default=False, action=argparse.BooleanOptionalAction, help="Route to random node")
     parser.add_argument('-rosc', "--routing_scored", type=bool, default=False, action=argparse.BooleanOptionalAction)
@@ -650,6 +704,23 @@ if __name__ == "__main__":
     parser.add_argument('-rmf', "--reduce_memory_footprint", type=bool, default=False, action=argparse.BooleanOptionalAction)
 
     args = parser.parse_args()
+
+    # Load JSON configuration if provided
+    if args.config is not None:
+        try:
+            args = load_config_to_args(args.config, args)
+            print(f"Successfully loaded configuration from: {args.config}")
+        except Exception as e:
+            print(f"Error loading configuration file: {e}")
+            exit(1)
+
+    # Process nodes_tasks configuration from CLI if provided
+    try:
+        args = parse_nodes_tasks_config(args)
+        
+    except Exception as e:
+        print(f"Error processing nodes_tasks configuration: {e}")
+        exit(1)
 
     if args.dataset_generate:
         dataset_generate(args)
@@ -710,10 +781,13 @@ if __name__ == "__main__":
         print("Rewind learning rate keep: {}".format(args.rewind_learning_rate_keep))
         print("=" * 50) 
 
+    if args.algorithm == "FedA2V":
+        print("A2V G model {}".format(args.diffusion_type))
+
     if args.seed != -1:
         print ("Setting seed to",args.seed)
         set_seed(args.seed)
-
+    
 
 
         

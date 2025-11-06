@@ -1,0 +1,48 @@
+{
+  "experiment": {
+    "goal": "test",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 2,
+    "global_rounds": 100,
+    "local_epochs": 2,
+    "eval_gap": 10,
+    "diffusion_type": "flux",
+    "model_aggregation": "per_class_average",
+    "use_saved_audio_embeddings": false,
+    "generate_images_frequency": 10
+  },
+  "nodes": {
+    "0": {
+      "dataset": "ESC50",
+      "selected_classes": ["airplane"],
+      "_comment": "Node 0 uses text airplane",
+      "diffusion_type": "flux"
+    }
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "batch_size": 8,
+    "weight_decay": 0.0001,
+    "momentum": 0.9
+  },
+  "dataset": {
+    "name": "VEGAS",
+    "path": "./data"
+    
+  },
+  "wandb": {
+    "disabled": false
+  }
+}

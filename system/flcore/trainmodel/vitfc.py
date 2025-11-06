@@ -50,13 +50,14 @@ import math
 
 class VITFC(nn.Module):
 
-    def __init__(self, backbone, num_classes, pretext_task=None, downstream_task = None, img_size=224, patch_count=16, patch_size=16, mask_ratio=0.15, pretrained=True, in_chans=3, decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,mlp_ratio=4., norm_layer=nn.LayerNorm, downstream_loss=None, debug_images = False):
+    def __init__(self, args, backbone, num_classes, pretext_task=None, downstream_task = None, img_size=224, patch_count=16, patch_size=16, mask_ratio=0.15, pretrained=True, in_chans=3, decoder_embed_dim=512, decoder_depth=8, decoder_num_heads=16,mlp_ratio=4., norm_layer=nn.LayerNorm, downstream_loss=None, debug_images = False):
         super(VITFC, self).__init__()
        
         self.backbone = backbone
         self.round = 0
         self.id = 0
         self.device = backbone.device if hasattr(backbone, 'device') else 'cpu'
+        self.args = args
 
         if isinstance(backbone, VisionTransformer):
             self.original_head = self.backbone.head
@@ -241,6 +242,7 @@ class VITFC(nn.Module):
         for pretext_task in self.pretext_tasks:
             if pretext_task.name == "patch_ordering":
                 task = pretext_task
+                break
         
         if task is None:
             task = PatchOrdering(backbone=self.backbone, input_dim=self.embedding_size, patch_count=self.num_patches, patch_size=self.patch_size, img_size=self.img_size, debug_images=self.debug_images )
@@ -304,6 +306,39 @@ class VITFC(nn.Module):
         
         return task
 
+    def prepare_byod(self):   
+        task = None
+        for pretext_task in self.pretext_tasks:
+            if pretext_task.name == "byod":
+                task = pretext_task
+        
+        if task is None:
+            from flcore.trainmodel.byod import BYOD
+            # Get BYOD parameters from args if available
+            external_data_path = getattr(self.args, 'byod_external_data_path', None)
+            alignment_weight = getattr(self.args, 'byod_alignment_weight', 0.5)
+            similarity_threshold = getattr(self.args, 'byod_similarity_threshold', 0.7)
+            projection_dim = getattr(self.args, 'byod_projection_dim', 128)
+            augment_strength = getattr(self.args, 'byod_augment_strength', 1.0)
+            
+            task = BYOD(
+                backbone=self.backbone, 
+                input_dim=self.embedding_size, 
+                patch_count=self.num_patches, 
+                patch_size=self.patch_size, 
+                img_size=self.img_size, 
+                debug_images=self.debug_images,
+                external_data_path=external_data_path,
+                alignment_weight=alignment_weight,
+                similarity_threshold=similarity_threshold,
+                projection_dim=projection_dim,
+                augment_strength=augment_strength,
+                cls_token_only=self.args.cls_token_only if hasattr(self.args, 'cls_token_only') else True
+            )
+            self.pretext_tasks.append(task)
+        
+        return task
+
 
     def loss(self, output = None, target = None):
         if self.pretext_train:
@@ -328,31 +363,22 @@ class VITFC(nn.Module):
         if self.pretext_train:
             self._pretext_task.round = self.round
             self.output = self._pretext_task(x)
-            # if self.pretext_task_name == "patch_masking":
-            #     self.output = self._pretext_task(x)
-            # elif self.pretext_task_name == "patch_ordering":
-            #     self.output = self._pretext_task(x)
-            # elif self.pretext_task_name == "patch_rotation":
-            #     self.output = self._pretext_task(x)
-            # elif self.pretext_task_name == "image_rotation":
-            #     self.output =  self._pretext_task(x)
         else: 
-            # self.vit.head = self.starting_classifier
             self.downstream_task.round = self.round
             self.output = self.downstream_task(x)
         return self.output
     
-    def forward_image_rotation(self, x):
+    # def forward_image_rotation(self, x):
 
-        images, self.image_rotation_labels = self.rotate_images(x)
-        self.save_images(x, images, max_saved=1)
+    #     images, self.image_rotation_labels = self.rotate_images(x)
+    #     self.save_images(x, images, max_saved=1)
 
-        output = self.vit(images)
-        # logits = self.vit.head(patches)
+    #     output = self.vit(images)
+    #     # logits = self.vit.head(patches)
 
-        # B, num_patches, num_classes = logits.shape
-        # outputs = logits.permute(0, 2, 1)
-        return output
+    #     # B, num_patches, num_classes = logits.shape
+    #     # outputs = logits.permute(0, 2, 1)
+    #     return output
     
     # def forward_patch_rotation(self, x):
 
@@ -472,90 +498,90 @@ class VITFC(nn.Module):
     #     return loss
     
 
-    def forward_decoder_mask(self, x, ids_restore):
-        # Embed tokens
-        self.decoder_embed = self.decoder_embed.to(x.device)
-        x = self.decoder_embed(x)
+    # def forward_decoder_mask(self, x, ids_restore):
+    #     # Embed tokens
+    #     self.decoder_embed = self.decoder_embed.to(x.device)
+    #     x = self.decoder_embed(x)
 
-        # Append mask tokens to the sequence
-        mask_tokens = self.mask_token.repeat(x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], 1).to(x.device)
-        x_ = torch.cat([x[:, 1:, :], mask_tokens], dim=1)  # Exclude cls token
+    #     # Append mask tokens to the sequence
+    #     mask_tokens = self.mask_token.repeat(x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], 1).to(x.device)
+    #     x_ = torch.cat([x[:, 1:, :], mask_tokens], dim=1)  # Exclude cls token
 
-        # Unshuffle
-        x_ = torch.gather(x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2])).to(x.device)
+    #     # Unshuffle
+    #     x_ = torch.gather(x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2])).to(x.device)
 
-        # Add positional encoding
-        x_ = x_ + self.decoder_pos_embed[:, 1:, :].to(x.device)
+    #     # Add positional encoding
+    #     x_ = x_ + self.decoder_pos_embed[:, 1:, :].to(x.device)
 
-        # Add cls token
-        cls_token = x[:, :1, :]
-        x_ = torch.cat([cls_token, x_], dim=1)
-        x_ = x_ + self.decoder_pos_embed[:, :1, :].to(x.device)
+    #     # Add cls token
+    #     cls_token = x[:, :1, :]
+    #     x_ = torch.cat([cls_token, x_], dim=1)
+    #     x_ = x_ + self.decoder_pos_embed[:, :1, :].to(x.device)
 
-        # Apply Transformer blocks
-        for blk in self.decoder_blocks:
-            blk.to(x.device)
-            x_ = blk(x_)
-        self.decoder_norm = self.decoder_norm.to(x.device)
-        x_ = self.decoder_norm(x_)
+    #     # Apply Transformer blocks
+    #     for blk in self.decoder_blocks:
+    #         blk.to(x.device)
+    #         x_ = blk(x_)
+    #     self.decoder_norm = self.decoder_norm.to(x.device)
+    #     x_ = self.decoder_norm(x_)
 
-        # Predict pixels
-        self.decoder_pred = self.decoder_pred.to(x.device)
-        x_rec = self.decoder_pred(x_)  # [B, num_patches, patch_dim]
+    #     # Predict pixels
+    #     self.decoder_pred = self.decoder_pred.to(x.device)
+    #     x_rec = self.decoder_pred(x_)  # [B, num_patches, patch_dim]
 
-        # Remove cls token
-        x_rec = x_rec[:, 1:, :]  # [B, num_patches, patch_dim]
+    #     # Remove cls token
+    #     x_rec = x_rec[:, 1:, :]  # [B, num_patches, patch_dim]
 
-        return x_rec
+    #     return x_rec
     
-    def forward_encoder_mask(self, x, mask_ratio):
-        # Embed patches
-        x = self.vit.patch_embed(x)  # [B, num_patches, embed_dim]
+    # def forward_encoder_mask(self, x, mask_ratio):
+    #     # Embed patches
+    #     x = self.vit.patch_embed(x)  # [B, num_patches, embed_dim]
 
-        # Add positional encoding
-        x = x + self.vit.pos_embed[:, 1:, :]
+    #     # Add positional encoding
+    #     x = x + self.vit.pos_embed[:, 1:, :]
 
-        # Apply masking
-        x_masked, mask, ids_restore = self.random_masking(x, mask_ratio)
+    #     # Apply masking
+    #     x_masked, mask, ids_restore = self.random_masking(x, mask_ratio)
 
-        # Add class token
-        cls_token = self.vit.cls_token + self.vit.pos_embed[:, :1, :]
-        cls_tokens = cls_token.expand(x_masked.shape[0], -1, -1)
-        x_masked = torch.cat((cls_tokens, x_masked), dim=1)
+    #     # Add class token
+    #     cls_token = self.vit.cls_token + self.vit.pos_embed[:, :1, :]
+    #     cls_tokens = cls_token.expand(x_masked.shape[0], -1, -1)
+    #     x_masked = torch.cat((cls_tokens, x_masked), dim=1)
 
-        # Apply Transformer blocks
-        x_masked = self.vit.pos_drop(x_masked)
-        for blk in self.vit.blocks:
-            x_masked = blk(x_masked)
-        x_masked = self.vit.norm(x_masked)
+    #     # Apply Transformer blocks
+    #     x_masked = self.vit.pos_drop(x_masked)
+    #     for blk in self.vit.blocks:
+    #         x_masked = blk(x_masked)
+    #     x_masked = self.vit.norm(x_masked)
 
-        return x_masked, mask, ids_restore
+    #     return x_masked, mask, ids_restore
 
-    def random_masking(self, x, mask_ratio):
-        """
-        Perform per-sample random masking by per-sample shuffling.
-        """
-        B, L, D = x.shape  # batch, length, dim
-        len_keep = int(L * (1 - mask_ratio))
+    # def random_masking(self, x, mask_ratio):
+    #     """
+    #     Perform per-sample random masking by per-sample shuffling.
+    #     """
+    #     B, L, D = x.shape  # batch, length, dim
+    #     len_keep = int(L * (1 - mask_ratio))
 
-        noise = torch.rand(B, L, device=x.device)  # noise in [0, 1]
+    #     noise = torch.rand(B, L, device=x.device)  # noise in [0, 1]
 
-        # Sort noise for each sample
-        ids_shuffle = torch.argsort(noise, dim=1)
-        ids_restore = torch.argsort(ids_shuffle, dim=1)
+    #     # Sort noise for each sample
+    #     ids_shuffle = torch.argsort(noise, dim=1)
+    #     ids_restore = torch.argsort(ids_shuffle, dim=1)
 
-        # Keep the first subset
-        ids_keep = ids_shuffle[:, :len_keep]
+    #     # Keep the first subset
+    #     ids_keep = ids_shuffle[:, :len_keep]
 
-        x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, D))
+    #     x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, D))
 
-        # Generate the binary mask
-        mask = torch.ones([B, L], device=x.device)
-        mask[:, :len_keep] = 0
-        # Unshuffle to get the binary mask
-        mask = torch.gather(mask, dim=1, index=ids_restore)
+    #     # Generate the binary mask
+    #     mask = torch.ones([B, L], device=x.device)
+    #     mask[:, :len_keep] = 0
+    #     # Unshuffle to get the binary mask
+    #     mask = torch.gather(mask, dim=1, index=ids_restore)
 
-        return x_masked, mask, ids_restore
+    #     return x_masked, mask, ids_restore
     
     @property
     def pretext_train(self):
@@ -643,10 +669,12 @@ class VITFC(nn.Module):
             self._pretext_task = self.prepare_image_rotation()
         elif self._pretext_task_name == "simclr":
             self._pretext_task = self.prepare_simclr()
+        elif self._pretext_task_name == "byod":
+            self._pretext_task = self.prepare_byod()
         else:
             print ( "Pretext task not recognized" )
             return
-        self.pretext_task_change_callback(self._pretext_task)
+        # self.pretext_task_change_callback(self._pretext_task)
 
     @property
     def task_learning_rate(self):

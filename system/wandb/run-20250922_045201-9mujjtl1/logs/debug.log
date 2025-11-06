@@ -1,0 +1,58 @@
+2025-09-22 04:52:01,103 INFO    MainThread:4053182 [wandb_setup.py:_flush():81] Current SDK version is 0.20.1
+2025-09-22 04:52:01,103 INFO    MainThread:4053182 [wandb_setup.py:_flush():81] Configure stats pid to 4053182
+2025-09-22 04:52:01,103 INFO    MainThread:4053182 [wandb_setup.py:_flush():81] Loading settings from /home/lpala/.config/wandb/settings
+2025-09-22 04:52:01,103 INFO    MainThread:4053182 [wandb_setup.py:_flush():81] Loading settings from /home/lpala/fedgfe/system/wandb/settings
+2025-09-22 04:52:01,103 INFO    MainThread:4053182 [wandb_setup.py:_flush():81] Loading settings from environment variables
+2025-09-22 04:52:01,103 INFO    MainThread:4053182 [wandb_init.py:setup_run_log_directory():703] Logging user logs to /home/lpala/fedgfe/system/wandb/run-20250922_045201-9mujjtl1/logs/debug.log
+2025-09-22 04:52:01,103 INFO    MainThread:4053182 [wandb_init.py:setup_run_log_directory():704] Logging internal logs to /home/lpala/fedgfe/system/wandb/run-20250922_045201-9mujjtl1/logs/debug-internal.log
+2025-09-22 04:52:01,103 INFO    MainThread:4053182 [wandb_init.py:init():831] calling init triggers
+2025-09-22 04:52:01,105 INFO    MainThread:4053182 [wandb_init.py:init():836] wandb.init called with sweep_config: {}
+config: {'config': 'configs/example_jsrt_8c.json', 'run_uuid': None, 'goal': 'test', 'device': 'cuda', 'device_id': '0', 'device_ids': '0', 'dataset': 'JSRT-8C-ClaSSeg', 'dataset_path': '/home/lpala/fedgfe/dataset', 'dataset_image_size': 224, 'dataset_transform': True, 'seed': 42, 'num_classes': 2, 'num_classes_per_client': 2, 'model': ViTModel(
+  (embeddings): ViTEmbeddings(
+    (patch_embeddings): ViTPatchEmbeddings(
+      (projection): Conv2d(3, 768, kernel_size=(16, 16), stride=(16, 16))
+    )
+    (dropout): Dropout(p=0.0, inplace=False)
+  )
+  (encoder): ViTEncoder(
+    (layer): ModuleList(
+      (0-11): 12 x ViTLayer(
+        (attention): ViTSdpaAttention(
+          (attention): ViTSdpaSelfAttention(
+            (query): Linear(in_features=768, out_features=768, bias=True)
+            (key): Linear(in_features=768, out_features=768, bias=True)
+            (value): Linear(in_features=768, out_features=768, bias=True)
+            (dropout): Dropout(p=0.0, inplace=False)
+          )
+          (output): ViTSelfOutput(
+            (dense): Linear(in_features=768, out_features=768, bias=True)
+            (dropout): Dropout(p=0.0, inplace=False)
+          )
+        )
+        (intermediate): ViTIntermediate(
+          (dense): Linear(in_features=768, out_features=3072, bias=True)
+          (intermediate_act_fn): GELUActivation()
+        )
+        (output): ViTOutput(
+          (dense): Linear(in_features=3072, out_features=768, bias=True)
+          (dropout): Dropout(p=0.0, inplace=False)
+        )
+        (layernorm_before): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+        (layernorm_after): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+      )
+    )
+  )
+  (layernorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+), 'model_pretrain': False, 'model_optimizer': 'SGD', 'model_optimizer_weight_decay': 0.001, 'model_optimizer_momentum': 0.9, 'loss_weighted': False, 'batch_size': 32, 'local_learning_rate': 0.01, 'learning_rate_schedule': True, 'learning_rate_schedule_gamma': 0.99, 'global_rounds': 50, 'local_epochs': 5, 'algorithm': 'FedGFE', 'join_ratio': 1.0, 'random_join_ratio': False, 'num_clients': 8, 'prev': 0, 'times': 1, 'eval_gap': 1, 'privacy': False, 'dp_sigma': 0.0, 'save_folder_name': 'items', 'auto_break': False, 'dlg_eval': False, 'dlg_gap': 100, 'batch_num_per_client': 2, 'num_new_clients': 0, 'fine_tuning_epoch_new': 0, 'dataset_limit': 0, 'dataset_generate': False, 'dataset_niid': False, 'dataset_partition': 'pat', 'dataset_balance': True, 'dataset_outdir': None, 'dataset_dir_alpha': 0.1, 'no_wandb': False, 'client_drop_rate': 0.0, 'train_slow_rate': 0.0, 'send_slow_rate': 0.0, 'time_select': False, 'time_threthold': 10000, 'beta': 0.0, 'lamda': 1.0, 'mu': 0, 'K': 5, 'p_learning_rate': 0.01, 'M': 5, 'itk': 4000, 'alphaK': 1.0, 'sigma': 1.0, 'alpha': 1.0, 'plocal_epochs': 1, 'tau': 1.0, 'fine_tuning_epochs': 10, 'dr_learning_rate': 0.0, 'L': 1.0, 'noise_dim': 512, 'generator_learning_rate': 0.005, 'hidden_dim': 512, 'server_epochs': 1000, 'localize_feature_extractor': False, 'server_learning_rate': 1.0, 'eta': 1.0, 'rand_percent': 80, 'layer_idx': 2, 'mentee_learning_rate': 0.005, 'T_start': 0.95, 'T_end': 0.98, 'momentum': 0.1, 'kl_weight': 0.0, 'num_clients_strong': 2, 'strong_model_pretrain': False, 'weak_model_pretrain': False, 'rewind_epochs': 0, 'rewind_ratio': 0.0, 'rewind_interval': 0, 'rewind_strategy': 'none', 'rewind_rotate': False, 'rewind_donkey': False, 'rewind_noise': False, 'rewind_random': False, 'rewind_donkey_count': 2, 'rewind_learning_rate_schedule': False, 'rewind_learning_rate_decay': False, 'rewind_learning_rate_decay_ratio': 0.1, 'rewind_learning_rate_keep': False, 'rewind_end_epoch_ratio': 1, 'nodes_backbone_model': 'hf_vit', 'nodes_datasets': 'JSRT-8C-ClaSSeg:8:0;1;2;3;4;5;6;7', 'nodes_downstream_tasks': 'classification', 'no_downstream_tasks': False, 'nodes_pretext_tasks': 'image_rotation,patch_masking', 'nodes_pretext_tasks_parallel': False, 'nodes_training_sequence': 'both', 'embedding_size': 768, 'num_hidden_layers': 12, 'patch_size': 16, 'limit_samples_number': 0, 'downstream_tasks': 'classification', 'downstream_loss_operation': 'none', 'debug_pretext_images': False, 'model_aggregation': 'none', 'model_aggregation_random': False, 'model_aggregation_weighted': False, 'segmentation_mask_threshold': 0.5, 'ssl_rounds': 0, 'model_backbone_save_checkpoint': False, 'model_backbone_load_checkpoint': False, 'model_backbone_checkpoint': 'backbone.pt', 'cls_token_only': False, 'federation_grid_metrics': False, 'byod_external_data_path': None, 'byod_alignment_weight': 0.5, 'byod_similarity_threshold': 0.7, 'byod_projection_dim': 128, 'byod_augment_strength': 1.0, 'ddp_enabled': False, 'ddp_backend': 'nccl', 'ddp_world_size': 1, 'ddp_visible_gpus': '', 'routing_random': False, 'routing_scored': False, 'routing_static': False, 'routing_static_cycled': False, 'routing_scored_average': 'micro', 'reduce_memory_footprint': False, '_wandb': {'code_path': 'code/system/main.py'}}
+2025-09-22 04:52:01,105 INFO    MainThread:4053182 [wandb_init.py:init():872] starting backend
+2025-09-22 04:52:01,315 INFO    MainThread:4053182 [wandb_init.py:init():875] sending inform_init request
+2025-09-22 04:52:01,321 INFO    MainThread:4053182 [wandb_init.py:init():883] backend started and connected
+2025-09-22 04:52:01,325 INFO    MainThread:4053182 [wandb_init.py:init():956] updated telemetry
+2025-09-22 04:52:01,332 INFO    MainThread:4053182 [wandb_init.py:init():980] communicating run to backend with 90.0 second timeout
+2025-09-22 04:52:02,304 INFO    MainThread:4053182 [wandb_init.py:init():1032] starting run threads in backend
+2025-09-22 04:52:02,458 INFO    MainThread:4053182 [wandb_run.py:_console_start():2453] atexit reg
+2025-09-22 04:52:02,459 INFO    MainThread:4053182 [wandb_run.py:_redirect():2301] redirect: wrap_raw
+2025-09-22 04:52:02,459 INFO    MainThread:4053182 [wandb_run.py:_redirect():2370] Wrapping output streams.
+2025-09-22 04:52:02,459 INFO    MainThread:4053182 [wandb_run.py:_redirect():2393] Redirects installed.
+2025-09-22 04:52:02,461 INFO    MainThread:4053182 [wandb_init.py:init():1078] run started, returning control to user process
+2025-09-22 04:52:04,710 INFO    MsgRouterThr:4053182 [mailbox.py:close():129] [no run ID] Closing mailbox, abandoning 1 handles.

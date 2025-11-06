@@ -94,7 +94,7 @@ class FedGFE(FedRewind):
         self.set_clients(clientGFE)
 
         for client in self.clients:
-            print ( "\n*** Client %d dataset %s id %d" % (client.id, client.dataset, client.node_data.dataset_id) )
+            print ( "\n*** Client %d dataset %s id %d" % (client.id, client.dataset, client.node_data.split_id) )
             client.node_data.stats_dump()
 
 
@@ -207,95 +207,7 @@ class FedGFE(FedRewind):
         target=client.train( rewind_train_node = previous_node, training_task = training_task )
         if future != None:
             future.set_result(-1)
-    
-    def train_run(self, round, training_task = "both"):
-        # importante commentare questa riga per avere i client sempre ordinati
-        #self.selected_clients = self.select_clients()
-        self.selected_clients = self.clients
-
-        running_threads = { 0: None, 1: None }
-        running_futures = { 0: None, 1: None }
-        running_clients = { 0: None, 1: None }
-        running_start_times = { 0: 0, 1: 0 }
-        # with concurrent.futures.ProcessPoolExecutor(max_workers=2) as executor:a
-        client_count = len(self.clients)
-        client_index = 0
-        # availables_gpus = [ 0 , 1]
-        availables_gpus = self.gpus
-        while client_index < client_count:
-            client = self.clients[client_index]
-            client.round = round
-            client.ssl_round = self.ssl_round
-            client.thread = None
-            client.federation_size = len(self.clients)
-            client.train( training_task = training_task )
-
-            if training_task == "both" or training_task == "downstream":
-                self.client_round_ending_hook( client )
-            client_index += 1
-            continue
-
-        # while client.thread == None:
-            for gpu in availables_gpus:
-                if running_threads[gpu] == None:
-                    # print("Starting training of node %d on GPU %d" % (client.id, gpu))
-
-                    device = "cuda:"+str(gpu)
-                    # executor.map(client.train, device)
-                    running_futures[gpu] = futures.Future()
-                    future = running_futures[gpu]
-                    node_previous_length = len(client.rewind_previous_node_id)
-                    previous_node = None
-                    if ( node_previous_length > 0 ):
-                        previous_node_index = client.rewind_previous_node_id[node_previous_length-1]
-                        for previous_client in self.clients:
-                            if previous_client.id == previous_node_index:
-                                previous_node = previous_client
-                                break
-                    running_threads[gpu] = self.train_thread(client, device, future, previous_node, training_task = training_task)
-                    running_start_times[gpu] = time.time()
-                    running_clients[gpu] = client
-                    # running_threads[gpu] = self.train_thread (client, device)
-                    client.thread = running_threads[gpu]
-                    client_index += 1
-                    break
-            for gpu in availables_gpus:
-                if running_futures[gpu] != None:
-                    # print(running_futures[0].done())
-                    if running_futures[gpu].done():
-                        elapsed = time.time() - running_start_times[gpu]
-                        client_type = "standard"
-                        running_client = running_clients[gpu]
-                        running_client_id = running_client.id
-                        # client_model_name = str(running_client.model).split( "(", 1)[0]
-                        running_threads[gpu] = None
-                        running_futures[gpu] = None
-                        
-                        # print ( "Calling ending hook from main")
-                        if training_task == "both" or training_task == "downstream":
-                            self.client_round_ending_hook( running_client )
-            time.sleep(0.1)
-        
-        
-        while running_futures[0] != None or running_futures[1] != None:
-            for gpu in availables_gpus:
-                if running_futures[gpu] != None:
-                    running_client = running_clients[gpu]
-                    # print(running_futures[0].done())
-                    if running_futures[gpu].done():
-                        elapsed = time.time() - running_start_times[gpu]
-                        client_type = "standard"
-                        running_client_id = running_client.id
-                        # if self.clients[running_client_id].is_strong:
-                        #     client_type = "strong"
-                        client_model_name = str(running_client.model).split( "(", 1)[0]
-                        running_client.model
-                        running_threads[gpu] = None
-                        running_futures[gpu] = None
-                        # print ( "Calling ending hook from loop")
-                        self.client_round_ending_hook( running_client )
-            time.sleep(0.1)
-
+  
     def train_clients(self, round, training_task = "both"):
         #self.selected_clients = self.select_clients()
         self.selected_clients = self.clients
@@ -542,7 +454,7 @@ class FedGFE(FedRewind):
 
         print ( "\nNode %d orig loss %02f accuracy %02f" % ( client.id, round_loss, round_accuracy ) )
 
-    def create_clients(self, clientObj, node_id, dataset, client_dataset_id):
+    def create_clients(self, clientObj, node_id, dataset, client_dataset_split_id):
         file_prefix = dataset 
         # if i != 2 and i != 3:
         # if i != 2:
@@ -555,12 +467,13 @@ class FedGFE(FedRewind):
         test_data_len = -1
 
         node_backbone = copy.deepcopy(self.nodes_backbone_model)
-        node_model = VITFC(node_backbone, self.args.num_classes,patch_size=self.args.patch_size,debug_images=self.args.debug_pretext_images)
+        node_model = VITFC(self.args, node_backbone, self.args.num_classes,patch_size=self.args.patch_size,debug_images=self.args.debug_pretext_images)
         node_model.id = node_id
 
         client = clientObj(self.args, 
                         node_id, 
                         dataset=dataset,
+                        dataset_split_id = client_dataset_split_id,
                         train_samples=train_data_len, 
                         test_samples=test_data_len,
                         train_slow=-1, 
@@ -576,10 +489,82 @@ class FedGFE(FedRewind):
                         patch_size=self.patch_size,
                         patch_count=self.patch_count
                         )
-        client.node_data.dataset_id = client_dataset_id
+        # client.node_data.split_id = client_dataset_split_id
         return client
    
     def set_clients(self, clientObj):
+        """Create clients based on args.nodes_tasks configuration if available, otherwise use legacy method."""
+
+        # Check if we have nodes_tasks configuration
+        if hasattr(self.args, 'nodes_tasks') and self.args.nodes_tasks is not None:
+            print("Using nodes_tasks configuration for client creation")
+            self._set_clients_from_nodes_tasks(clientObj)
+        else:
+            print("Using legacy dataset configuration for client creation")
+            self._set_clients_legacy(clientObj)
+
+    def _set_clients_from_nodes_tasks(self, clientObj):
+        """Create clients using args.nodes_tasks configuration."""
+        gpus = cycle(self.gpus)
+        self.nodes_datasets_status = {}
+
+        # Sort node IDs to ensure consistent ordering
+        sorted_node_ids = sorted(self.args.nodes_tasks.keys(), key=lambda x: int(x))
+
+        print(f"Creating {len(sorted_node_ids)} clients from nodes_tasks configuration:")
+
+        for node_id in sorted_node_ids:
+            node_config = self.args.nodes_tasks[node_id]
+            client_id = int(node_id)
+
+            # Extract configuration for this node
+            task_type = node_config.get('task_type', 'classification')
+            pretext_tasks = node_config.get('pretext_tasks', [])
+            dataset = node_config.get('dataset', self.args.dataset)
+            dataset_split = int(node_config.get('dataset_split', client_id))
+
+            print(f"  Node {client_id}: {task_type} on {dataset}:{dataset_split} with pretext_tasks {pretext_tasks}")
+
+            # Create client
+            client = self.create_clients(clientObj, client_id, dataset, dataset_split)
+
+            # Configure client with node-specific settings
+            client.available_clients = np.arange(self.num_clients)
+            client.pretext_tasks = pretext_tasks  # Node-specific pretext tasks
+            client.downstream_task_name = task_type
+            client.downstream_task.parameters_count()
+
+            # Set metrics path
+            metric_dataset_path = dataset.lower()
+            client.metrics_path = f"node_{client.id}_{metric_dataset_path}_{dataset_split}"
+
+            # Set transform
+            client.transform = transforms.Compose([
+                transforms.Resize([224, 224]),
+            ])
+
+            # Wandb logging
+            if self.no_wandb == False:
+                client.node_data.stats_wandb_log()
+
+            client.data_log = self.data_log
+            self.clients.append(client)
+
+            # Update dataset status tracking
+            if dataset not in self.nodes_datasets_status:
+                self.nodes_datasets_status[dataset] = {
+                    'created_nodes': [],
+                    'used_splits': [],
+                    'available_splits': []
+                }
+
+            self.nodes_datasets_status[dataset]['created_nodes'].append(client_id)
+            self.nodes_datasets_status[dataset]['used_splits'].append(dataset_split)
+
+        print(f"Successfully created {len(self.clients)} clients from nodes_tasks configuration")
+
+    def _set_clients_legacy(self, clientObj):
+        """Legacy client creation method using nodes_datasets format."""
         # n_strong = 0
         # n_weak = 0
         gpus = cycle(self.gpus)
@@ -605,7 +590,7 @@ class FedGFE(FedRewind):
                 selected_splits = [int(x) for x in selected_splits]
                 dataset_client_count = len(selected_splits)
                 dataset_splits_count = int(splitted[1])
-            
+
             available_splits = [ s for s in range(dataset_splits_count) if s not in selected_splits ]
 
             dataset_name = splitted[0]
@@ -779,26 +764,31 @@ class FedGFE(FedRewind):
         # fed_test_acc = sum(stats_test[2])*1.0 / sum(stats_test[1])
         fed_test_acc = 0
         # Somma tutti gli elementi della lista che contiene dizionari di cui prendere quello 'aggregated'
-        fed_test_accuracies = []
+        fed_test_metrics = {}
         for node_id in stats_test:
             node_test_acc = 0
             stats = stats_test[node_id]
             for tested_node_id in stats.keys():
                 sample_count = stats[tested_node_id]['samples']
                 for client_metric in stats[tested_node_id].defined_metrics:
+                    if client_metric not in fed_test_metrics:
+                        fed_test_metrics[client_metric] = []
+                    fed_test_metrics[client_metric].append(stats[tested_node_id][client_metric]['mean'])
                     node_test_acc += stats[tested_node_id][client_metric]['mean']
-                node_test_acc = node_test_acc * 1.0 / len(stats[tested_node_id].defined_metrics)
-            fed_test_accuracies.append(node_test_acc)
+                # node_test_acc = node_test_acc * 1.0 / len(stats[tested_node_id].defined_metrics)
+            # fed_test_accuracies.append(node_test_acc)
 
-        fed_test_accuracies_on_train = []
+        fed_test_metrics_on_train = {}
         for node_id in stats_test_on_train:
             node_test_acc = 0
             stats = stats_test_on_train[node_id]
             for tested_node_id in stats.keys():
                 for client_metric in stats[tested_node_id].defined_metrics:
-                    node_test_acc += stats[tested_node_id][client_metric]['mean']
-                node_test_acc =  node_test_acc * 1.0 / len(stats[tested_node_id].defined_metrics)
-            fed_test_accuracies_on_train.append(node_test_acc)
+                    if client_metric not in fed_test_metrics_on_train:
+                        fed_test_metrics_on_train[client_metric] = []
+                    fed_test_metrics_on_train[client_metric].append(stats[tested_node_id][client_metric]['mean'])
+                # node_test_acc =  node_test_acc * 1.0 / len(stats[tested_node_id].defined_metrics)
+            # fed_test_accuracies_on_train.append(node_test_acc)
 
         fed_train_losses = [] 
         for train_stat in stats_train:
@@ -808,14 +798,16 @@ class FedGFE(FedRewind):
             # node_train_metric = node_train_metric * 1.0 / len(stats)
             fed_train_losses.append(node_train_metric)
 
-        fed_test_acc = sum(fed_test_accuracies) * 1.0 / len(fed_test_accuracies)
-        fed_test_acc_on_train = sum(fed_test_accuracies_on_train) * 1.0 / len(fed_test_accuracies_on_train)
+        # fed_test_acc = sum(fed_test_metrics) * 1.0 / len(fed_test_metrics)
+        # fed_test_acc_on_train = sum(fed_test_metrics_on_train) * 1.0 / len(fed_test_metrics_on_train)
         fed_train_loss = sum(fed_train_losses) * 1.0 / len(fed_train_losses)
 
         worst_metrics = {}
         worst_metrics_node = {} 
         worst_metrics_taskid = {} 
-        worst_test_acc = 1
+        best_metrics = {}
+        best_metrics_node = {}
+        best_metrics_taskid = {}
 
         for node_id in stats_test:
             node_test_acc = 0
@@ -830,11 +822,28 @@ class FedGFE(FedRewind):
                         worst_metrics_taskid[defined_metric] = client_metric[defined_metric]['min_index']
                         worst_metrics_node[defined_metric] = node_id
 
+                    if defined_metric not in best_metrics or best_metrics[defined_metric] <= client_metric[defined_metric]['max']:
+                        best_metrics[defined_metric] = client_metric[defined_metric]['max']
+                        best_metrics_taskid[defined_metric] = client_metric[defined_metric]['max_index']
+                        best_metrics_node[defined_metric] = node_id
+
+        fed_test_metrics_string = ""
+        for client_metric in fed_test_metrics:
+            mean_metric = sum(fed_test_metrics[client_metric]) * 1.0 / len(fed_test_metrics[client_metric])
+            fed_test_metrics_string += f" {client_metric} {mean_metric:.3f} "
+
+        fed_test_metrics_on_train_string = ""
+        for client_metric in fed_test_metrics_on_train:
+            mean_metric = sum(fed_test_metrics_on_train[client_metric]) * 1.0 / len(fed_test_metrics_on_train[client_metric])
+            fed_test_metrics_on_train_string += f" {client_metric} {mean_metric:.3f} "
+
         print ( "**Federation train loss: %.2f (%s)" % ( fed_train_loss, fed_train_losses ) )
-        print ( "**Federation test accuracy: %.2f (%s)" % ( fed_test_acc, fed_test_accuracies ) )
-        print ( "**Federation test accuracy on train: %.2f (%s)" % ( fed_test_acc_on_train, fed_test_accuracies_on_train ) )
+        print ( "**Federation test metrics: %s" % ( fed_test_metrics_string ) )
+        print ( "**Federation test metrics on train: %s" % ( fed_test_metrics_on_train_string ) )
         for worst_metric in worst_metrics:
             print ( f"**Federation worst {worst_metric}: {worst_metrics[worst_metric]:.3f} task {worst_metrics_taskid[worst_metric]}")
+        for best_metric in best_metrics:
+            print ( f"**Federation best {best_metric}: {best_metrics[best_metric]:.3f} task {best_metrics_taskid[best_metric]}")
 
         # train_loss = 0
         # for node_index in stats_train:
@@ -971,9 +980,9 @@ class FedGFE(FedRewind):
     def round_train_metrics(self, client):
         train_metric = NodeMetric( phase=NodeMetric.Phase.TRAIN )
         client._move_to_gpu(self.device)
-        losses = client.train_metrics( metrics = train_metric )
+        train_metric = client.train_metrics()
         if client.downstream_task != None:
-            client.downstream_task.train_metrics_log( losses, round = self.round )
+            client.downstream_task.train_metrics_log( train_metric, round = self.round )
         client._move_to_cpu()
 
 
@@ -1011,22 +1020,19 @@ class FedGFE(FedRewind):
             self.fine_tuning_new_clients()
             return self.test_metrics_new_clients()
         
-        train_clients_stats = {}
-        # train_clients_losses = {}
+        nodes_train_metrics = {}
 
         for client_index,c in enumerate(self.clients):
             if c.node_data.test_data == None:
                 print ( "Client %d test data is None" % c.id)
                 continue
             c._move_to_gpu(self.device)
-            train_clients_stats[c.id] = {}
-            node_train_metrics = NodeMetric( phase=NodeMetric.Phase.TRAIN )
-            c.train_metrics( metrics = node_train_metrics )
-            train_clients_stats[c.id] = node_train_metrics
-            # train_clients_losses[c.id] = losses
+            # node_train_metrics = NodeMetric( phase=NodeMetric.Phase.TRAIN )
+            node_train_metrics = c.train_metrics()
+            nodes_train_metrics[c.id] = node_train_metrics
             c._move_to_cpu()
 
-        return train_clients_stats
+        return nodes_train_metrics
     
     def test_metrics(self,standalone = False):
         if self.eval_new_clients and self.num_new_clients > 0:
@@ -1079,12 +1085,10 @@ class FedGFE(FedRewind):
                 if c.node_data.test_data == None:
                     print ( "Client %d test data is None" % c.id)
                     continue
-                node_test_metrics = NodeMetric( phase=NodeMetric.Phase.TEST )
                 c.pretext_train = False
-                test_metrics = c.test_metrics(t, metrics=node_test_metrics)
+                node_test_metrics = c.test_metrics(t)
                 # print("test_metrics:", test_metrics)
-                node_test_metrics_on_train = NodeMetric( phase=NodeMetric.Phase.TEST )
-                test_metrics_on_train = c.test_metrics(t, on_train=True, metrics = node_test_metrics_on_train)
+                node_test_metrics_on_train = c.test_metrics(t, on_train=True)
                 # print("test_metrics_on_train:", test_metrics_on_train)
                 test_clients_stats[t.id][c.id] = node_test_metrics
                 test_clients_stats_on_train[t.id][c.id] = node_test_metrics_on_train
@@ -1104,11 +1108,11 @@ class FedGFE(FedRewind):
             # test_clients_stats[node_id][node_id]['aggregated'].keys()
             for metric_type in metric_types:
                 samples = test_clients_stats[node_id][node_id]['samples']
-                node_test_acc = test_clients_stats[node_id][node_id][metric_type]['mean']/samples
-                node_test_acc_on_train = test_clients_stats_on_train[node_id][node_id][metric_type]['mean']/samples
+                node_test_acc = test_clients_stats[node_id][node_id][metric_type]['mean']
+                node_test_acc_on_train = test_clients_stats_on_train[node_id][node_id][metric_type]['mean']
                 # print ( f"Client {node_id} test metrics: {node_test_acc:.2f} {node_test_acc_on_train:.2f}" )
         return test_clients_stats, test_clients_stats_on_train
-        return ids, test_num_samples, test_tot_correct, test_tot_auc, test_y_t, test_y_p, test_clients_stats, train_clients_stats
+    
     def round_test_metric_deviation (self, accuracies):
         # Calcola la deviazione standard tra le loss dei nodi e dei modelli
         standard_deviation = np.std(accuracies)
@@ -1122,8 +1126,9 @@ class FedGFE(FedRewind):
 
         if client.downstream_task == None:
             return 0
-        node_test_metrics = NodeMetric( phase=NodeMetric.Phase.TEST )
-        test_metrics = client.test_metrics( metrics = node_test_metrics )
+
+        node_test_metrics = client.test_metrics()
+        client.downstream_task.test_metrics_log( metrics = node_test_metrics, round = self.round )
         # test_num = node_test_metrics['samples']
         # acc, test_num, auc, y_true, y_prob = client.test_metrics()
 
@@ -1134,11 +1139,11 @@ class FedGFE(FedRewind):
 
         client_round_metric = {}
         
-        for metric in test_metrics.defined_metrics:
+        for metric in node_test_metrics.defined_metrics:
             client_round_metric[metric] = []
         
-        for metric in test_metrics.defined_metrics:
-            client_round_metric[metric].append(test_metrics[metric]['mean'])
+        for metric in node_test_metrics.defined_metrics:
+            client_round_metric[metric].append(node_test_metrics[metric]['mean'])
         # if not self.no_wandb:
         #     wandb.log({f'test/model_{client.id}/round_test_acc_{client.id}': client_round_acc, "round": self.round})
 
@@ -1157,6 +1162,8 @@ class FedGFE(FedRewind):
         node_test_metrics_on_train = NodeMetric( phase=NodeMetric.Phase.TEST )
         test_metrics = client.test_metrics( metrics=node_test_metrics )
         test_metrics_on_train = client.test_metrics( on_train = True, metrics=node_test_metrics_on_train )
+
+        print( "Node %d test metrics: %s on train: %s" % ( client.id, test_metrics, test_metrics_on_train ) )
 
         accuracy_on_test = node_test_metrics[node_chosen_metric]['mean']
 

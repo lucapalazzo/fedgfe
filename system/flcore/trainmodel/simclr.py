@@ -21,7 +21,7 @@ class SimCLR(PatchPretextTask):
     task_learning_rate = 1e-4  # Default learning rate for optimizer
     
     def __init__(self, backbone=None, input_dim=768, output_dim=768, debug_images=False, img_size=224, 
-                 patch_size=-1, patch_count=-1, temperature=0.5, projection_dim=128, augment_strength=1.0):
+                 patch_size=-1, patch_count=-1, temperature=0.2, projection_dim=128, augment_strength=1.0, cls_token_only=True):
         super(SimCLR, self).__init__(backbone=backbone, input_dim=input_dim, output_dim=output_dim, 
                                      debug_images=debug_images, img_size=img_size, patch_size=patch_size, 
                                      patch_count=patch_count)
@@ -29,11 +29,12 @@ class SimCLR(PatchPretextTask):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.name = SimCLR.pretext_task_name
         self.temperature = temperature
+        self.cls_token_only = cls_token_only
         
         # Projection head (MLP) as described in the SimCLR paper
         self.projection_head = nn.Sequential(
             nn.Linear(self.output_dim, self.output_dim),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             nn.Linear(self.output_dim, projection_dim)
         ).to(self.device)
 
@@ -152,8 +153,6 @@ class SimCLR(PatchPretextTask):
                     features = features.last_hidden_state[:, 1:, :]  # Use mean of patch embeddings
                     features = features.mean(dim=1)  # Average over patches
 
-
-                    #####
                     # patches = features.view(batch_size, 2, -1, features.size(-1))  # [B, 2, P, D]
                     # patches_flat = features.reshape(-1, patches.size(-1))   # [B*P, D]
                     # z_tokens = self.projection_head(patches_flat)          # [B*P, proj_dim]
@@ -234,7 +233,7 @@ class SimCLR(PatchPretextTask):
         metrics[0]["accuracy"] = accuracy
         metrics[0]['loss'] = loss_value
         metrics[0]['steps'] = 1
-        metrics['samples'] = predictions.shape[0]
+        metrics[0]['samples'] = predictions.shape[0]
         return metrics
     
     def accuracy(self, predictions, y=None):

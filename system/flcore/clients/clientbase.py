@@ -20,7 +20,7 @@ import math
 import torch.nn as nn
 import numpy as np
 import os
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 import torch.nn.functional as F
 from sklearn.preprocessing import label_binarize
 from sklearn import metrics
@@ -76,7 +76,7 @@ class Client(object):
         self.loss_weighted = args.loss_weighted
         self.loss_weights = None
 
-        self.round = -1
+        self.round = 0
 
         self.federation_size = 0
 
@@ -87,8 +87,8 @@ class Client(object):
                 self.has_BatchNorm = True
                 break
 
-        self.train_slow = kwargs['train_slow']
-        self.send_slow = kwargs['send_slow']
+        self.train_slow = kwargs['train_slow'] if "train_slow" in kwargs else False
+        self.send_slow = kwargs['send_slow'] if "send_slow" in kwargs else False
         self.train_time_cost = {'num_rounds': 0, 'total_cost': 0.0}
         self.send_time_cost = {'num_rounds': 0, 'total_cost': 0.0}
 
@@ -136,7 +136,10 @@ class Client(object):
         if batch_size == None:
             batch_size = self.batch_size
         loader = self.node_data.load_train_data(batch_size, dataset_limit)
-        if type(self.node_data.train_data) == dict:
+
+        if isinstance(self.node_data.train_dataset, Dataset):
+            self.train_samples = len(self.node_data.train_dataset)
+        elif type(self.node_data.train_data) == dict:
             self.train_samples = len(self.node_data.train_data['samples'])
         else:
             self.train_samples = len(self.node_data.train_data)
@@ -146,7 +149,9 @@ class Client(object):
         if batch_size == None:
             batch_size = self.batch_size
         loader = self.node_data.load_test_data(batch_size, dataset_limit)
-        if type(self.node_data.test_data) == dict:
+        if isinstance(self.node_data.test_dataset, Dataset):
+            self.test_samples = len(self.node_data.test_dataset)
+        elif type(self.node_data.test_data) == dict:
             self.test_samples = len(self.node_data.test_data['samples'])
         else:
             self.test_samples = len(self.node_data.test_data)
@@ -227,8 +232,9 @@ class Client(object):
         
         test_metrics = self.test_metrics_data(testloader, model, metrics=metrics) 
         # test_acc, test_num, auc, test_y_true, test_y_prob = self.test_metrics_data(testloader, model ) 
-
-        return metrics
+        if metrics != None:
+            metrics = test_metrics
+        return test_metrics
     
     def test_metrics_data(self, dataloader, test_model = None):
 

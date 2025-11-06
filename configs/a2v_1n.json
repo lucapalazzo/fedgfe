@@ -1,0 +1,53 @@
+{
+  "experiment": {
+    "goal": "MonShen-1N-Classification",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 1
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 1,
+    "global_rounds": 100,
+    "local_epochs": 10,
+    "join_ratio": 1.0,
+    "eval_gap": 5
+  },
+  "model": {
+    "backbone": "vit",
+    "backbone_model": "hf_vit",
+    "pretrained": false,
+    "embedding_size": 768,
+    "patch_size": 16
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.00001,
+    "batch_size": 16,
+    "weight_decay": 0.001,
+    "momentum": 0.9,
+    "learning_rate_schedule": false
+  },
+  "dataset": {
+    "name": "ShenzenMontogmery-1N-ClaSeg",
+    "image_size": 224
+  },
+  "fedgfe": {
+    "nodes_downstream_tasks": "classification",
+    "nodes_training_sequence": "both",
+    "cls_token_only": false,
+    "patch_size": 16
+  },
+  "nodes_tasks": {
+    "0": {
+      "task_type": "classification",
+      "pretext_tasks": [],
+      "dataset": "ShenzenMontogmery-1N-ClaSeg",
+      "dataset_split": "0"
+    }
+  },
+  "wandb": {
+    "disabled": true
+  }
+}

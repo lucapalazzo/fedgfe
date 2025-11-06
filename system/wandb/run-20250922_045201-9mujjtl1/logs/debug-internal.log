@@ -1,0 +1,16 @@
+{"time":"2025-09-22T04:52:01.325501443Z","level":"INFO","msg":"stream: starting","core version":"0.20.1","symlink path":"/home/lpala/fedgfe/system/wandb/run-20250922_045201-9mujjtl1/logs/debug-core.log"}
+{"time":"2025-09-22T04:52:01.885723763Z","level":"INFO","msg":"stream: created new stream","id":"9mujjtl1"}
+{"time":"2025-09-22T04:52:01.885890401Z","level":"INFO","msg":"stream: started","id":"9mujjtl1"}
+{"time":"2025-09-22T04:52:01.885955147Z","level":"INFO","msg":"writer: Do: started","stream_id":"9mujjtl1"}
+{"time":"2025-09-22T04:52:01.885977721Z","level":"INFO","msg":"sender: started","stream_id":"9mujjtl1"}
+{"time":"2025-09-22T04:52:01.8861178Z","level":"INFO","msg":"handler: started","stream_id":"9mujjtl1"}
+{"time":"2025-09-22T04:52:02.309272566Z","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-09-22T04:52:02.30989273Z","level":"ERROR","msg":"git repo not found","error":"repository does not exist"}
+{"time":"2025-09-22T04:52:04.711885873Z","level":"INFO","msg":"stream: closing","id":"9mujjtl1"}
+{"time":"2025-09-22T04:52:04.711936849Z","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-09-22T04:52:04.712073132Z","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-09-22T04:52:05.34106976Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-09-22T04:52:05.609720327Z","level":"INFO","msg":"handler: closed","stream_id":"9mujjtl1"}
+{"time":"2025-09-22T04:52:05.609785274Z","level":"INFO","msg":"writer: Close: closed","stream_id":"9mujjtl1"}
+{"time":"2025-09-22T04:52:05.609811483Z","level":"INFO","msg":"sender: closed","stream_id":"9mujjtl1"}
+{"time":"2025-09-22T04:52:05.609977961Z","level":"INFO","msg":"stream: closed","id":"9mujjtl1"}

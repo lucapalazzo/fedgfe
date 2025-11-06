@@ -1,0 +1,108 @@
+{
+  "experiment": {
+    "goal": "test",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 6,
+    "global_rounds": 100,
+    "local_epochs": 2,
+    "eval_gap": 10,
+    "diffusion_type": "flux",
+    "model_aggregation": "per_class_average",
+    "use_saved_audio_embeddings": false
+  },
+  "feda2v": {
+    "generate_nodes_images_frequency": 10,
+    "generate_global_images_frequency": 0,
+    "images_output_dir": "esc50-12n-global-train",
+    "global_model_train": true,
+    "global_model_train_epochs": 2
+  },
+  "nodes": {
+    "0": {
+      "dataset": "VEGAS",
+      "selected_classes": ["baby_cry"],
+      "_comment": "Node 0 uses text baby_cry",
+      "diffusion_type": "flux"
+    },
+    "1": {
+      "dataset": "VEGAS",
+      "selected_classes": ["chainsaw"],
+      "diffusion_type": "flux",
+      "_comment": "Node 1 uses text chainsaw"
+    },
+    "2": {
+      "dataset": "VEGAS",
+      "selected_classes": ["dog"],
+      "diffusion_type": "flux",
+      "_comment": "Node 2 uses text dog"
+    },
+    "3": {
+      "dataset": "VEGAS",
+      "selected_classes": ["drum"],
+      "diffusion_type": "flux",
+      "_comment": "Node 3 uses text can_opening"
+    },
+    "4": {
+      "dataset": "VEGAS",
+      "selected_classes": ["fireworks"],
+      "diffusion_type": "flux",
+      "_comment": "Node 4 uses text fireworks"
+    },
+    "5": {
+      "dataset": "VEGAS",
+      "selected_classes": ["helicopter"],
+      "diffusion_type": "flux",
+      "_comment": "Node 5 uses text helicopter"
+    },
+    "6": {
+      "dataset": "VEGAS",
+      "selected_classes": ["printer"],
+      "diffusion_type": "flux",
+      "_comment": "Node 6 uses text printer"
+    },
+    "7": {
+      "dataset": "VEGAS",
+      "selected_classes": ["rail_transport"],
+      "_comment": "Node 0 uses text rail_transport",
+      "diffusion_type": "flux"
+    },
+    "8": {
+      "dataset": "VEGAS",
+      "selected_classes": ["snoring"],
+      "diffusion_type": "flux",
+      "_comment": "Node 1 uses text snoring"
+    },
+    "9": {
+      "dataset": "VEGAS",
+      "selected_classes": ["water_flowing"],
+      "diffusion_type": "flux",
+      "_comment": "Node 2 uses text water_flowing"
+    }
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "batch_size": 8,
+    "weight_decay": 0.0001,
+    "momentum": 0.9
+  },
+  "dataset": {
+    "name": "VEGAS",
+    "path": "./data"
+    
+  },
+  "wandb": {
+    "disabled": false
+  }
+}

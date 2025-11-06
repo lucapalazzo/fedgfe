@@ -59,8 +59,23 @@ class ClassificationHeadConv(nn.Module):
         # self.relu =
             # nn.ReLU()
         )
+        self._initialize_weights()
 
-        
+    def _initialize_weights(self):
+        """Initialize convolutional and linear layer weights"""
+        for module in self.head:
+            if isinstance(module, nn.Conv2d):
+                nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
+            elif isinstance(module, nn.BatchNorm2d):
+                nn.init.constant_(module.weight, 1)
+                nn.init.constant_(module.bias, 0)
+            elif isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight)
+                nn.init.constant_(module.bias, 0.1)
+
+
 
     def forward(self, x):
         return self.head(x)
@@ -75,12 +90,29 @@ class ClassificationHeadLinear(nn.Module):
         self.hidden_dim1 = 256
         self.hidden_dim2 = 64
         self.head = nn.Sequential(
-            # nn.Linear(input_dim, 256),
+            nn.LayerNorm(input_dim),
+            nn.Linear(input_dim, self.hidden_dim1),
+            nn.GELU(),
+            nn.Dropout(0.2),
+            nn.Linear(self.hidden_dim1, output_dim)
+            # nn.Linear(input_dim, self.hidden_dim1),
             # nn.ReLU(),
-            # nn.Linear(256,64),
+            # nn.Linear(self.hidden_dim1, self.hidden_dim2),
             # nn.ReLU(),
-            nn.Linear(input_dim, output_dim)
+            # nn.Linear(self.hidden_dim2, output_dim)
         )
+        self._initialize_weights()
+
+    def to(self, device):
+        self.head.to(device)
+        return self
+    
+    def _initialize_weights(self):
+        """Initialize linear layer weights using Xavier/Glorot initialization"""
+        for module in self.head:
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight)
+                nn.init.constant_(module.bias, 0.1)
 
     def forward(self, x):
         if self.cls_token_only == False:
@@ -196,32 +228,50 @@ class DownstreamClassification (Downstream):
         path = "/" if metrics_path is None else "/"+metrics_path+"/"
         metrics = []
 
-        for task_index in range(self.classification_task_count):
-            for metric in self.defined_test_metrics:
-                metrics.append(f"test{path}{self.task_name}_{metric}_{task_index}")
+        for metric in self.defined_test_metrics:
+            defined_metric = f"test{path}{self.task_name}_{metric}"
+            self.defined_test_metrics[metric] = defined_metric
+            for task_id in range(self.classification_task_count):
+                task_defined_metric = f"{defined_metric}_{task_id}"
+                metrics.append(task_defined_metric)
             
-            for metric in self.defined_train_metrics:
-                metrics.append(f"train{path}{self.task_name}_{metric}_{task_index}")
+        for metric in self.defined_train_metrics:
+            defined_metric = f"train{path}{self.task_name}_{metric}"
+            self.defined_train_metrics[metric] = defined_metric
+            for task_id in range(self.classification_task_count):
+                task_defined_metric = f"{defined_metric}_{task_id}"
+                metrics.append(task_defined_metric)
+
+        loss_metric = f"train{path}{self.task_name}_loss"
+        metrics.append(loss_metric)
         
-            for metric in metrics:
-                a = wandb.define_metric(metric, step_metric="round")
+        for metric in metrics:
+            a = wandb.define_metric(metric, step_metric="round")
     
-    def test_metrics_log(self, round = None, prefix="test"):
-        if round is None:
+    def test_metrics_log(self, metrics = None, round = None):
+        if metrics is None:
+            return
+
+        if round is None or round < 0:
             round = self.round
 
         if self.wandb_log == True:
-            for task_index in range(self.classification_task_count):
-                wandb.log({f"test/{self.metrics_path}/accuracy_{task_index}": self.test_metrics_aggregated['f{task_index}']['accuracy']})
-                # wandb.log({f"test/{self.metrics_path}/auc_{task_index}": self.test_metrics_aggregated[task_index]['auc']})
+            for task_id in range(metrics.task_count):
+                for metric_type in metrics.metrics:
+                    if metric_type in self.defined_test_metrics:
+                        metric_path = f"{self.defined_test_metrics[metric_type]}_{task_id}"
+                        metric_value = metrics[task_id][metric_type]/metrics[task_id]['steps'] if metrics[task_id]['steps'] > 0 else 0
+                        wandb.log({metric_path: metric_value, "round": round})
 
     def train_metrics ( self, dataloader, metrics = None):
         train_num = 0
         total_loss = 0
 
-        # if losses is not None:
-        #     losses = self.init_heads_losses()
-        metrics.define_metrics( self.defined_train_metrics, task_count=self.classification_task_count)
+        metrics = NodeMetric(phase=NodeMetric.Phase.TRAIN)
+        metrics.define_metrics(self.defined_train_metrics, task_count=self.classification_task_count)
+        metrics.task_name = self.task_name
+        metrics.task_type = NodeMetric.TaskType.CLASSIFICATION
+
         tasks_losses = [torch.tensor(0.0,requires_grad=True) for i in range(self.classification_task_count)]
         step = 0
         samples = 0
@@ -256,35 +306,42 @@ class DownstreamClassification (Downstream):
             for task_index in range(self.classification_task_count):
                 tasks_losses[task_index] /= train_num
 
-            if metrics is not None:
-                metrics['steps'] = train_num
-                metrics['samples'] = samples
-                for task_index in range(self.classification_task_count):
-                    metrics[task_index]['loss'] = tasks_losses[task_index]
+            for task_index in range(self.classification_task_count):
+                metrics[task_index]['steps'] = train_num
+                metrics[task_index]['samples'] = samples
+                metrics[task_index]['loss'] = tasks_losses[task_index]
 
             # print ( f"Downstream task loss {losses/train_num}")
-            self.train_metrics_log( loss=loss, round = self.round, heads_losses=metrics )
+            self.train_metrics_log( metrics=metrics, round = self.round )
+        return metrics
 
+    def train_metrics_log(self, metrics = None, round = 0):
+        if metrics is None:
+            return
 
-    def train_metrics_log(self, loss = None, round = 0, heads_losses = None, prefix="train"):
+        if round is None or round < 0:
+            round = self.round
+
         if self.wandb_log == True:
-            if loss is not None:
-                wandb.log({f"train/{self.metrics_path}/loss": loss, "round": round})
-            if heads_losses is not None:
-                for task_index in range(self.classification_task_count):
-                    wandb.log({f"train/{self.metrics_path}/loss_{task_index}": heads_losses[task_index]['loss'], "round": round})
+            for task_id in range(metrics.task_count):
+                for metric_type in metrics._defined_metrics:
+                    if metric_type in self.defined_train_metrics:
+                        metric_path = f"{self.defined_train_metrics[metric_type]}_{task_id}"
+                        metrics_value = metrics[task_id][metric_type]/metrics[task_id]['steps'] if metrics[task_id]['steps'] > 0 else 0
+                        wandb.log({metric_path: metrics_value, "round": round})
 
     def test_metrics(self, logits, labels = None, samples = None, round = None, metrics = None, task = 0):
-
         batch_size = labels.shape[0]
-        task_metrics = self.define_task_metrics()
+
+        task_metrics = NodeMetric(phase=NodeMetric.Phase.TEST, task_count=self.classification_task_count)
+        task_metrics.define_metrics( self.defined_test_metrics)
+        task_metrics.task_name = self.task_name
+        task_metrics.task_type = NodeMetric.TaskType.CLASSIFICATION
+
         accuracy, num, auc, y_true, y_prob = self.test_metrics_accuracy(logits, labels)
-        task_metrics['accuracy'] = accuracy
-        task_metrics['samples'] = num
-        if metrics is not None:
-            metrics[task]['samples'] = num
-            metrics[task]['accuracy'] = accuracy/num
-            metrics[task]['steps'] = 1
+        task_metrics[task]['samples'] = num
+        task_metrics[task]['accuracy'] = accuracy/num
+        task_metrics[task]['steps'] = 1
 
         return task_metrics
     
@@ -408,6 +465,9 @@ class DownstreamClassification (Downstream):
         loss = sum(tasks_loss.values())
         # loss /= self.classification_task_count
         return loss
+
+    def loss(self, logits, labels, samples=None):
+        return self.downstream_loss(logits, labels, samples=samples)
 
     def forward(self, x):
         x = super().forward(x)

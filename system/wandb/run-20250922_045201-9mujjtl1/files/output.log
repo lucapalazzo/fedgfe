@@ -1,0 +1,26 @@
+Finished creating server and clients.
+Pretext task not recognized
+Created VITFC model 0x71bf835dcbf0 optimizer 0x59693721c0a0
+Trying to set schdulers but no optimizer for client  0
+Loading train data for client 0 dataset id 0
+File not found:  dataset/JSRT-8C-ClaSSeg/train/0.npz
+Loading train data for client 0 dataset id 0
+File not found:  dataset/JSRT-8C-ClaSSeg/train/0.npz
+Traceback (most recent call last):
+  File "/home/lpala/fedgfe/system/main.py", line 755, in <module>
+    run(args)
+  File "/home/lpala/fedgfe/system/main.py", line 434, in run
+    server = FedGFE(args, i)
+             ^^^^^^^^^^^^^^^
+  File "/home/lpala/fedgfe/system/flcore/servers/servergfe.py", line 94, in __init__
+    self.set_clients(clientGFE)
+  File "/home/lpala/fedgfe/system/flcore/servers/servergfe.py", line 552, in set_clients
+    client = self.create_clients(clientObj, client_id, dataset_name, dataset_split_id)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lpala/fedgfe/system/flcore/servers/servergfe.py", line 473, in create_clients
+    client = clientObj(self.args,
+            ^^^^^^^^^^^^^^^^^^^^
+  File "/home/lpala/fedgfe/system/flcore/clients/clientgfe.py", line 102, in __init__
+    self.classification_labels_used = [ i for i in range(self.classification_labels_count) ]
+                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'NoneType' object cannot be interpreted as an integer

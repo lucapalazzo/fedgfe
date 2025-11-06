@@ -19,7 +19,8 @@ class FLModel(nn.Module):
         self.downstream_task = None
 
     def to(self, device):
-        self.inner_model.to(device)
+        if self.inner_model != None:
+            self.inner_model.to(device)
         self.device = device
 
         return self
@@ -96,7 +97,8 @@ class FLModel(nn.Module):
     
     @pretext_train.setter
     def pretext_train(self, pretext_train):
-        self.inner_model.pretext_train = pretext_train
+        if self.inner_model != None:
+            self.inner_model.pretext_train = pretext_train
 
     def downstream_task_set(self, new_downstream_task):
         self.downstream_task = new_downstream_task

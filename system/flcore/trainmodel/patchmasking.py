@@ -130,7 +130,7 @@ class PatchMasking (PatchPretextTask):
             metrics[0]['cos_sim'] = cosine_similarity.item()
             metrics[0]['l2_dis'] = l2_distance.item()
             metrics[0]['steps'] = 1
-            metrics['samples'] = b 
+            metrics[0]['samples'] = b 
 
 
         # print(f"MAE: {mae:02f}, MSE: {mse:02f} Cosine Similarity: {cosine_similarity:02f}, L2 Distance: {l2_distance:02f}")

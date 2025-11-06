@@ -147,7 +147,7 @@ class ImageRotation (PatchPretextTask):
             return None
         metrics[0]["accuracy"] = accuracy.item()
         metrics[0]['steps'] = 1
-        metrics['samples'] = predictions.shape[0]
+        metrics[0]['samples'] = predictions.shape[0]
         return metrics
 
     def accuracy(self, x, y = None):
@@ -183,13 +183,13 @@ class ImageRotation (PatchPretextTask):
                 x = x.last_hidden_state[:,1:,:]
                 # x = self.pool_output_embedding(x, self.pooled_output_dim)
                 # x = x.view(x.shape[0], -1)
-        x = self.fl(x)
-        x = self.ln(x)
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.dropout_layer(x)
-        x = self.fc2(x)
-        # x = self.pretext_head(x)
+        # x = self.fl(x)
+        # x = self.ln(x)
+        # x = self.fc1(x)
+        # x = self.relu(x)
+        # x = self.dropout_layer(x)
+        # x = self.fc2(x)
+        x = self.pretext_head(x)
 
         return x
 
@@ -200,7 +200,7 @@ class ImageRotation (PatchPretextTask):
         num_patches_per_row = H // self.patch_count
         num_patches = num_patches_per_row ** 2
         labels = torch.zeros(B, dtype=torch.long, device=device)
-        rotated_imgs = torch.zeros_like(imgs).to(imgs.device)
+        rotated_imgs = torch.zeros_like(imgs).to(imgs.device    )
 
         for b in range(B):
             angle = np.random.choice(self.image_rotation_angles)

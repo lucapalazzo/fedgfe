@@ -1,0 +1,60 @@
+{
+  "experiment": {
+    "goal": "ESC50-Audio2Visual-Test",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 3,
+    "global_rounds": 50,
+    "local_epochs": 5,
+    "join_ratio": 1.0,
+    "eval_gap": 5
+  },
+  "model": {
+    "backbone": "vit",
+    "backbone_model": "hf_vit",
+    "pretrained": false,
+    "embedding_size": 768,
+    "patch_size": 16
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.0001,
+    "batch_size": 16,
+    "weight_decay": 0.001
+  },
+  "feda2v": {
+    "store_audio_embeddings": true,
+    "audio_embedding_file_name": "esc50_audio_embs_dict.pt"
+  },
+  "nodes": {
+    "0": {
+      "dataset": "ESC50",
+      "selected_classes": ["dog", "cat", "rooster"],
+      "use_folds": true,
+      "train_folds": [0, 1, 2],
+      "test_folds": [3]
+    },
+    "1": {
+      "dataset": "ESC50",
+      "selected_classes": ["chainsaw", "helicopter", "airplane"],
+      "use_folds": true,
+      "train_folds": [0, 1, 2],
+      "test_folds": [3]
+    },
+    "2": {
+      "dataset": "ESC50",
+      "selected_classes": ["fireworks", "thunderstorm", "rain"],
+      "use_folds": true,
+      "train_folds": [0, 1, 2],
+      "test_folds": [3]
+    }
+  },
+  "wandb": {
+    "disabled": true
+  }
+}

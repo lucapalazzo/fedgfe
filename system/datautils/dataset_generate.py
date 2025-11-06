@@ -5,6 +5,7 @@ from datautils.generate_cifar100 import generate_cifar100
 from datautils.generate_chestxray import generate_chestxray
 from datautils.generate_jsrt import generate_jsrt
 from datautils.generate_darwin import generate_darwin
+from datautils.generate_shenzen_montgomery import generate_shenzen_montgomery
 
 def dataset_generate ( args ):
     if args.dataset == "mnist" or args.dataset == "fmnist":
@@ -37,6 +38,11 @@ def dataset_generate ( args ):
         if ( args.dataset_outdir != None ):
             outdir = 'dataset/' + args.dataset_outdir + '/'
         generate_darwin( args, outdir, args.num_clients, 100, args.dataset_niid, args.dataset_balance, args.dataset_partition, args.dataset_dir_alpha, class_per_client=args.num_classes_per_client)
+    elif args.dataset == "ShenzenMontgomery":
+        outdir = 'dataset/ShenzhenMontgomerySeg/'
+        if ( args.dataset_outdir != None ):
+            outdir = 'dataset/' + args.dataset_outdir + '/'
+        generate_shenzen_montgomery( args, outdir, args.num_clients, 100, args.dataset_niid, args.dataset_balance, args.dataset_partition, args.dataset_dir_alpha, class_per_client=args.num_classes_per_client)
     
     # else:
     #     generate_synthetic('dataset/synthetic/', args.num_clients, 10, args.niid)

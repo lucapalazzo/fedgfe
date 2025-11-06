@@ -1,32 +1,120 @@
+import numpy as np
 from utils.data_utils import read_client_data
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, random_split
 from datautils.flnode_dataset import FLNodeDataset
+from datautils.fl_splitted_dataset import FLSplittedDataset
 
 import torch
+import os
 
 import wandb
 class NodeData():
-    def __init__(self, args, id = -1, transform=None, target_transform=None, **kwargs):
-        self.id = id
-        self.dataset_id = id
+    def __init__(self, args, node_id = -1, dataset_split_id = -1, transform=None, target_transform=None,
+                 custom_train_dataset=None, custom_test_dataset=None, dataset=None, **kwargs):
+        self.id = node_id
+        self.split_id = dataset_split_id
         self.args = args
-        self.kwargs = kwargs   
+        self.kwargs = kwargs
         self.train_data = None
         self.train_samples = 0
         self.train_dataloader = None
         self.test_dataloader = None
         self.test_data = None
         self.test_samples = 0
-        self.dataset = args.dataset
+        self.dataset_name = args.dataset
+        self.dataset = dataset
         self.num_classes = args.num_classes
         self.labels = None
         self.labels_count = None
         self.labels_percent = None
         self.transform = transform
         self.target_transform = target_transform
-        self.train_dataset = None
-        self.test_dataset = None
+
+        # Support for custom datasets that inherit from Dataset
+        self.custom_train_dataset = custom_train_dataset
+        self.custom_test_dataset = custom_test_dataset
+
+        # If custom datasets are provided, use them directly
+        if custom_train_dataset is not None:
+            self.train_dataset = custom_train_dataset
+            self.train_samples = len(custom_train_dataset) if hasattr(custom_train_dataset, '__len__') else 0
+            self.use_custom_dataset = True
+        else:
+            self.train_dataset = None
+            self.use_custom_dataset = False
+
+        if custom_test_dataset is not None:
+            self.test_dataset = custom_test_dataset
+            self.test_samples = len(custom_test_dataset) if hasattr(custom_test_dataset, '__len__') else 0
+        else:
+            self.test_dataset = None
+
+        # Check if we should use FLSplittedDataset for federated splits
+        self.use_fl_splitted = self._should_use_fl_splitted_dataset()
+        
+        if self.dataset is not None:
+            self.train_dataset, self.test_dataset = random_split(self.dataset, [int(0.8*len(self.dataset)), len(self.dataset) - int(0.8*len(self.dataset))])
+
         self.device = args.device
+
+    def _should_use_fl_splitted_dataset(self):
+        """Check if we should use FLSplittedDataset instead of legacy loading."""
+        if self.use_custom_dataset:
+            return False
+
+        # Check if federated dataset directory structure exists
+        dataset_dir = getattr(self.args, 'dataset_dir_prefix', '')
+        dataset_path = os.path.join(dataset_dir, 'dataset', self.dataset_name)
+
+        # Check if train/test split directories exist
+        train_dir = os.path.join(dataset_path, 'train')
+        test_dir = os.path.join(dataset_path, 'test')
+
+        return (os.path.exists(train_dir) and os.path.exists(test_dir) and
+                any(f.endswith('.npz') for f in os.listdir(train_dir)) if os.path.isdir(train_dir) else False)
+
+    def _create_fl_splitted_datasets(self):
+        """Create FLSplittedDataset instances for train and test."""
+        if not self.use_fl_splitted:
+            return False
+
+        dataset_dir = getattr(self.args, 'dataset_dir_prefix', '')
+        dataset_path = os.path.join(dataset_dir, 'dataset', self.dataset_name)
+
+        try:
+            # Create train dataset
+            if self.train_dataset is None:
+                self.train_dataset = FLSplittedDataset(
+                    dataset_path=dataset_path,
+                    node_id=self.split_id,
+                    is_train=True,
+                    transform=self.transform,
+                    target_transform=self.target_transform,
+                    device=self.device
+                )
+                self.train_samples = len(self.train_dataset)
+                print(f"Created FLSplittedDataset for train: {self.train_samples} samples")
+
+            # Create test dataset
+            if self.test_dataset is None:
+                self.test_dataset = FLSplittedDataset(
+                    dataset_path=dataset_path,
+                    node_id=self.split_id,
+                    is_train=False,
+                    transform=self.transform,
+                    target_transform=self.target_transform,
+                    device=self.device
+                )
+                self.test_samples = len(self.test_dataset)
+                print(f"Created FLSplittedDataset for test: {self.test_samples} samples")
+
+            return True
+        except Exception as e:
+            print(f"Failed to create FLSplittedDataset: {e}")
+            return False
+
+    def __str__(self):
+        return "Node %d split id %d dataset %s train samples %d test samples %d" % ( self.id, self.split_id, self.dataset, self.train_samples, self.test_samples )
 
     def to(self, device):
         self.device = device
@@ -37,14 +125,16 @@ class NodeData():
         if self.train_data != None:
             if type(self.train_data) == dict:
                 for k,v in self.train_data.items():
-                    self.train_data[k] = v.to(device)
+                    if type(v) == torch.Tensor:
+                        self.train_data[k] = v.to(device)
             else:
                 for i in range(len(self.train_data)):
                     self.train_data[i] = (self.train_data[i][0].to(device), self.train_data[i][1].to(device))
         if self.test_data != None:
             if type(self.test_data) == dict:
                 for k,v in self.test_data.items():
-                    self.test_data[k] = v.to(device)
+                    if type(v) == torch.Tensor:
+                        self.test_data[k] = v.to(device)
             else:
                 for i in range(len(self.test_data)):
                     self.test_data[i] = (self.test_data[i][0].to(device), self.test_data[i][1].to(device))
@@ -97,41 +187,78 @@ class NodeData():
         return mask_count
     
     def load_train_data(self, batch_size, dataset_limit=0, prefix = "",dataset_dir_prefix= ""):
+        # Check if we can use existing dataloader
+        if self.train_dataloader is not None and self.train_dataloader.batch_size == batch_size:
+            return self.train_dataloader
+
+        # Try to use FLSplittedDataset if applicable
+        if self.use_fl_splitted and self.train_dataset is None:
+            if self._create_fl_splitted_datasets():
+                self.train_dataloader = DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
+                return self.train_dataloader
+
+        # If using a custom dataset (like VEGASDataset), directly create dataloader
+        if self.train_dataset is not None:
+            print(f"Loading custom train dataset for client {self.id} with {self.train_samples} samples")
+            self.train_dataloader = DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
+            return self.train_dataloader
+
+        # Original implementation for npz files
         if self.train_data == None:
-            print("Loading train data for client %d dataset id %d" % ( self.id, self.dataset_id ) )
-            self.train_data = read_client_data(self.dataset, self.dataset_id, is_train=True,dataset_limit=dataset_limit, prefix=prefix, dataset_dir_prefix=dataset_dir_prefix)
+            print("Loading train data for client %d dataset id %d" % ( self.id, self.split_id ) )
+            self.train_data = read_client_data(self.dataset, self.split_id, is_train=True,dataset_limit=dataset_limit, prefix=prefix, dataset_dir_prefix=dataset_dir_prefix)
             if self.train_data == None:
                 return None
             memory_footprint = 0
             if type(self.train_data) == dict:
                 for k,v in self.train_data.items():
-                    memory_footprint += v.element_size() * v.nelement()
+                    if type(v) == torch.Tensor:
+                        memory_footprint += v.element_size() * v.nelement()
                 self.train_samples = len(self.train_data['samples'])
             else:
                 self.train_samples = len(self.train_data)
                 for i in range(len(self.train_data)):
                     memory_footprint += self.train_data[i][0].element_size() * self.train_data[i][0].nelement() + self.train_data[i][1].element_size() * self.train_data[i][1].nelement()
             print("Client %d train data memory footprint: %d" % (self.id, memory_footprint))
-         
-        # self.train_dataset = FLNodeDataset(self.train_data, transform=self.transform, target_transform=self.target_transform, device=self.device)
-        if self.train_dataset == None:
-            self.train_dataset = FLNodeDataset(self.train_data, transform=self.transform, target_transform=self.target_transform)
-        if self.train_dataloader == None:
-            self.train_dataloader = DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
-        elif self.train_dataloader.batch_size != batch_size:
-            self.train_dataloader = DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
+        else:
+            # self.train_dataset = FLNodeDataset(self.train_data, transform=self.transform, target_transform=self.target_transform, device=self.device)
+            if self.train_dataset == None:
+                self.train_dataset = FLNodeDataset(self.train_data, transform=self.transform, target_transform=self.target_transform)
+            if self.train_dataloader == None:
+                self.train_dataloader = DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
+            elif self.train_dataloader.batch_size != batch_size:
+                self.train_dataloader = DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
+
         return self.train_dataloader
    
     def load_test_data(self, batch_size, dataset_limit=0,dataset_dir_prefix= ""):
+        # Check if we can use existing dataloader
+        if self.test_dataloader is not None and self.test_dataloader.batch_size == batch_size:
+            return self.test_dataloader
+
+        # Try to use FLSplittedDataset if applicable (test dataset might be created along with train)
+        if self.use_fl_splitted and self.test_dataset is None:
+            if self._create_fl_splitted_datasets():
+                self.test_dataloader = DataLoader(self.test_dataset, batch_size, drop_last=False, shuffle=False)
+                return self.test_dataloader
+
+        # If using a custom dataset (like VEGASDataset), directly create dataloader
+        if self.test_dataset is not None:
+            print(f"Loading custom test dataset for client {self.id} with {self.test_samples} samples")
+            self.test_dataloader = DataLoader(self.test_dataset, batch_size, drop_last=False, shuffle=False)
+            return self.test_dataloader
+
+        # Original implementation for npz files
         if self.test_data == None:
-            print("Loading test data for client %d dataset id %d" % ( self.id, self.dataset_id ) )
-            self.test_data = read_client_data(self.dataset, self.dataset_id, is_train=False,dataset_limit=dataset_limit, dataset_dir_prefix=dataset_dir_prefix)
+            print("Loading test data for client %d dataset id %d" % ( self.id, self.split_id ) )
+            self.test_data = read_client_data(self.dataset, self.split_id, is_train=False,dataset_limit=dataset_limit, dataset_dir_prefix=dataset_dir_prefix)
             if self.test_data == None:
                 return None
             memory_footprint = 0
             if type(self.train_data) == dict:
                 for k,v in self.train_data.items():
-                    memory_footprint += v.element_size() * v.nelement()
+                    if type(v) == torch.Tensor:
+                        memory_footprint += v.element_size() * v.nelement()
                 self.train_samples = len(self.train_data['samples'])
             else:
                 for i in range(len(self.test_data)):
@@ -145,7 +272,70 @@ class NodeData():
             self.test_dataloader = DataLoader(self.test_dataset, batch_size, drop_last=False, shuffle=True)
         elif self.test_dataloader.batch_size != batch_size:
             self.test_dataloader = DataLoader(self.test_dataset, batch_size, drop_last=False, shuffle=True)
-        return self.test_dataloader 
+        return self.test_dataloader
+
+    def get_train_dataset(self, dataset_limit=0):
+        """
+        Get the training dataset without creating a DataLoader.
+        Used by DDP mixin for creating custom distributed DataLoaders.
+        """
+        # Try to use FLSplittedDataset if applicable
+        if self.use_fl_splitted and self.train_dataset is None:
+            self._create_fl_splitted_datasets()
+
+        # If using a custom dataset, return it directly
+        if self.use_custom_dataset and self.train_dataset is not None:
+            return self.train_dataset
+
+        # If we have a dataset from FLSplittedDataset, return it
+        if self.train_dataset is not None:
+            return self.train_dataset
+
+        # Original implementation for npz files
+        if self.train_data is None:
+            self.train_data = read_client_data(self.dataset, self.split_id, is_train=True, dataset_limit=dataset_limit)
+            if self.train_data is None:
+                return None
+
+            if type(self.train_data) == dict:
+                self.train_samples = len(self.train_data['samples'])
+            else:
+                self.train_samples = len(self.train_data)
+
+        if self.train_dataset is None:
+            self.train_dataset = FLNodeDataset(self.train_data, transform=self.transform, target_transform=self.target_transform)
+
+        return self.train_dataset
+    
+    def get_test_dataset(self, dataset_limit=0):
+        """
+        Get the test dataset without creating a DataLoader.
+        Used by DDP mixin for creating custom distributed DataLoaders.
+        """
+        # Try to use FLSplittedDataset if applicable (might be created along with train)
+        if self.use_fl_splitted and self.test_dataset is None:
+            self._create_fl_splitted_datasets()
+
+        # If using a custom dataset, return it directly
+        if self.use_custom_dataset and self.test_dataset is not None:
+            return self.test_dataset
+
+        # If we have a dataset from FLSplittedDataset, return it
+        if self.test_dataset is not None:
+            return self.test_dataset
+
+        # Original implementation for npz files
+        if self.test_data is None:
+            self.test_data = read_client_data(self.dataset, self.split_id, is_train=False, dataset_limit=dataset_limit)
+            if self.test_data is None:
+                return None
+
+            self.test_samples = len(self.test_data)
+
+        if self.test_dataset is None:
+            self.test_dataset = FLNodeDataset(self.test_data, transform=self.transform, target_transform=self.target_transform)
+
+        return self.test_dataset 
 
     def unload_train_data(self):
         self.train_data = None
@@ -171,7 +361,16 @@ class NodeData():
         if data == None:
             return [],[]
         
-        if type(data) == dict:
+        if type(data) == Dataset:
+            print ("Dataset object provided, cannot compute stats")
+        
+        if isinstance(data, Dataset):
+            # è un'istanza di Dataset (o di una sua sottoclasse)
+            print("Dataset object provided, cannot compute stats")
+            dataset_length = len(data)
+            print(f"Dataset length: {dataset_length}")
+            print(f"")
+            return [],[]
             if 'labels' in data:
                 labels = data['labels']
             else:
@@ -221,12 +420,16 @@ class NodeData():
         return self.classification_labels_count, self.labels_percent
     
     def train_stats_get(self):
+        if self.train_dataset != None:
+            return self.stats_get( self.train_dataset )
         if self.train_data == None:
             self.load_train_data(1)
         
         return self.stats_get( self.train_data )
     
     def test_stats_get(self):
+        if self.test_dataset != None:
+            return self.stats_get( self.test_dataset )
         if self.test_data == None:
             self.load_test_data(1)
         
@@ -283,9 +486,11 @@ class NodeData():
 
     def stats_dump(self):
         # return
-        if self.train_data == None:
+        if self.dataset != None:
+            print("Using Dataset obkect id %d" % (self.id))
+        elif self.train_data == None:
             self.load_train_data(1)
-        if self.test_data == None:
+        elif self.test_data == None:
             self.load_test_data(1)
 
         if self.dataset_stats_get() == None:

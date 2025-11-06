@@ -1,0 +1,67 @@
+{
+  "experiment": {
+    "goal": "test",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 4,
+    "global_rounds": 100,
+    "local_epochs": 1,
+    "eval_gap": 10,
+    "diffusion_type": "sd"
+  },
+  "nodes": {
+    "0": {
+      "dataset": "VEGAS",
+      "task_type": "classification",
+      "selected_classes": ["baby_cry", "drum"],
+      "_comment": "Node 0 uses text labels for CIFAR-10 animals",
+      "diffusion_type": "sd"
+    },
+    "1": {
+      "dataset": "VEGAS",
+      "task_type": "classification",
+      "selected_classes": ["dog"],
+      "diffusion_type": "sd",
+      "_comment": "Node 1 uses numeric indices for vehicles (airplane, automobile, ship, truck)"
+    }
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false,
+    "num_classes": 10,
+    "embedding_size": 768,
+    "patch_size": 16
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "batch_size": 32,
+    "weight_decay": 0.0001,
+    "momentum": 0.9
+  },
+  "dataset": {
+    "name": "cifar10",
+    "path": "./data",
+    "image_size": 224,
+    "transform": true,
+    "partition": "iid",
+    "dir_alpha": 0.1,
+    "balance": false
+  },
+  "fedgfe": {
+    "nodes_downstream_tasks": "classification",
+    "nodes_pretext_tasks": "simclr",
+    "nodes_training_sequence": "both",
+    "cls_token_only": false,
+    "limit_samples_number": 0
+  },
+  "wandb": {
+    "disabled": true
+  }
+}

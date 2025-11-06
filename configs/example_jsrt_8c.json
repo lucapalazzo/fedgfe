@@ -1,0 +1,56 @@
+{
+  "experiment": {
+    "goal": "test",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42
+  },
+  "federation": {
+    "algorithm": "FedGFE",
+    "num_clients": 8,
+    "global_rounds": 50,
+    "local_epochs": 5,
+    "join_ratio": 1.0,
+    "eval_gap": 1
+  },
+  "model": {
+    "backbone": "vit",
+    "backbone_model": "hf_vit",
+    "pretrained": false,
+    "num_classes": 2,
+    "embedding_size": 768,
+    "patch_size": 16
+  },
+  "training": {
+    "optimizer": "SGD",
+    "learning_rate": 0.01,
+    "batch_size": 32,
+    "weight_decay": 0.001,
+    "momentum": 0.9,
+    "learning_rate_schedule": true
+  },
+  "dataset": {
+    "name": "JSRT-8C-ClaSSeg",
+    "path": "/home/lpala/fedgfe/dataset",
+    "image_size": 224,
+    "transform": true,
+    "partition": "pat",
+    "dir_alpha": 0.1,
+    "balance": true
+  },
+  "fedgfe": {
+    "nodes_datasets": "JSRT-8C-ClaSSeg:8:0;1;2;3;4;5;6;7",
+    "nodes_downstream_tasks": "classification",
+    "nodes_pretext_tasks": "image_rotation,patch_masking",
+    "nodes_training_sequence": "both",
+    "cls_token_only": false,
+    "limit_samples_number": 0
+  },
+  "rewind": {
+    "epochs": 0,
+    "ratio": 0.0,
+    "interval": 0,
+    "strategy": "none"
+  }
+}

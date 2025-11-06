@@ -1,0 +1,64 @@
+{
+  "experiment": {
+    "goal": "test",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42,
+    "use_balooning": false
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 2,
+    "global_rounds": 100,
+    "local_epochs": 1,
+    "eval_gap": 10,
+    "diffusion_type": "flux",
+    "model_aggregation": "per_class_average",
+    "use_saved_audio_embeddings": false
+  },
+  "feda2v": {
+    "generate_nodes_images_frequency": 0,
+    "generate_global_images_frequency": 0
+  },
+  "nodes": {
+    "0": {
+      "dataset": "VEGAS",
+      "selected_classes": ["baby_cry"],
+      "_comment": "Node 0 uses text baby_cry",
+      "diffusion_type": "flux"
+    },
+    "1": {
+      "dataset": "VEGAS",
+      "selected_classes": ["drum"],
+      "diffusion_type": "flux",
+      "_comment": "Node 1 uses text drum"
+    },
+    "2": {
+      "dataset": "VEGAS",
+      "selected_classes": ["dog"],
+      "diffusion_type": "flux",
+      "_comment": "Node 1 uses text dog"
+    }
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "batch_size": 32,
+    "weight_decay": 0.0001,
+    "momentum": 0.9
+  },
+  "dataset": {
+    "name": "VEGAS",
+    "path": "./data"
+    
+  },
+  "wandb": {
+    "disabled": true
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "experiment": {
+    "goal": "test",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 1
+  },
+  "federation": {
+    "algorithm": "FedGFE",
+    "num_clients": 1,
+    "global_rounds": 20,
+    "local_epochs": 3,
+    "join_ratio": 1.0,
+    "eval_gap": 5
+  },
+  "model": {
+    "backbone": "vit",
+    "backbone_model": "hf_vit",
+    "pretrained": false,
+    "num_classes": 2,
+    "embedding_size": 768,
+    "patch_size": 16
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.005,
+    "batch_size": 16,
+    "weight_decay": 0.001,
+    "momentum": 0.9,
+    "learning_rate_schedule": false
+  },
+  "dataset": {
+    "name": "JSRT-1C-ClaSSeg",
+    "image_size": 224
+  },
+  "fedgfe": {
+    "nodes_downstream_tasks": "classification",
+    "nodes_pretext_tasks": "",
+    "nodes_training_sequence": "downstream",
+    "cls_token_only": false,
+    "patch_size": 16
+  },
+  "nodes_tasks": {
+    "0": {
+      "task_type": "classification",
+      "pretext_tasks": [ "byod", "image_rotation" ],
+      "dataset": "JSRT-8C-ClaSSeg",
+      "dataset_split": "0"
+    },
+    "1": {
+      "task_type": "segmentation",
+      "pretext_tasks": [ "patch_masking" ],
+      "dataset": "JSRT-8C-ClaSSeg",
+      "dataset_split": "1"
+    },
+    "2": {
+      "task_type": "classification",
+      "pretext_tasks": [ "byod" ],
+      "dataset": "JSRT-8C-ClaSSeg",
+      "dataset_split": "2"
+    },
+    "3": {
+      "task_type": "classification",
+      "pretext_tasks": [ "image_rotation" ],
+      "dataset": "JSRT-8C-ClaSSeg",
+      "dataset_split": "3"
+    },
+    "4": {
+      "task_type": "segmentation",
+      "pretext_tasks": [ "patch_ordering" ],
+      "dataset": "JSRT-8C-ClaSSeg",
+      "dataset_split": "4"
+    },
+    "5": {
+      "task_type": "classification",
+      "pretext_tasks": [ "simclr" ],
+      "dataset": "JSRT-8C-ClaSSeg",
+      "dataset_split": "5"
+    },
+    "6": {
+      "task_type": "segmentation",
+      "pretext_tasks": [ "patch_ordering" ],
+      "dataset": "JSRT-8C-ClaSSeg",
+      "dataset_split": "6"
+    },
+    "7": {
+      "task_type": "classification",
+      "pretext_tasks": [ "patch_ordering" ],
+      "dataset": "JSRT-8C-ClaSSeg",
+      "dataset_split": "7"
+    }
+  },
+  "wandb": {
+    "disabled": false
+  }
+}

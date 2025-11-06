@@ -1,0 +1,348 @@
+_wandb:
+    value:
+        cli_version: 0.20.1
+        code_path: code/system/main.py
+        m: []
+        python_version: 3.12.2
+        t:
+            "1":
+                - 1
+                - 5
+                - 11
+                - 41
+                - 48
+                - 49
+                - 53
+                - 63
+            "2":
+                - 1
+                - 5
+                - 11
+                - 41
+                - 48
+                - 49
+                - 53
+                - 63
+            "3":
+                - 16
+                - 55
+            "4": 3.12.2
+            "5": 0.20.1
+            "6": 4.49.0
+            "12": 0.20.1
+            "13": linux-x86_64
+K:
+    value: 5
+L:
+    value: 1
+M:
+    value: 5
+T_end:
+    value: 0.98
+T_start:
+    value: 0.95
+algorithm:
+    value: FedGFE
+alpha:
+    value: 1
+alphaK:
+    value: 1
+auto_break:
+    value: false
+batch_num_per_client:
+    value: 2
+batch_size:
+    value: 32
+beta:
+    value: 0
+byod_alignment_weight:
+    value: 0.5
+byod_augment_strength:
+    value: 1
+byod_external_data_path:
+    value: null
+byod_projection_dim:
+    value: 128
+byod_similarity_threshold:
+    value: 0.7
+client_drop_rate:
+    value: 0
+cls_token_only:
+    value: false
+config:
+    value: configs/example_jsrt_8c.json
+dataset:
+    value: JSRT-8C-ClaSSeg
+dataset_balance:
+    value: true
+dataset_dir_alpha:
+    value: 0.1
+dataset_generate:
+    value: false
+dataset_image_size:
+    value: 224
+dataset_limit:
+    value: 0
+dataset_niid:
+    value: false
+dataset_outdir:
+    value: null
+dataset_partition:
+    value: pat
+dataset_path:
+    value: /home/lpala/fedgfe/dataset
+dataset_transform:
+    value: true
+ddp_backend:
+    value: nccl
+ddp_enabled:
+    value: false
+ddp_visible_gpus:
+    value: ""
+ddp_world_size:
+    value: 1
+debug_pretext_images:
+    value: false
+device:
+    value: cuda
+device_id:
+    value: "0"
+device_ids:
+    value: "0"
+dlg_eval:
+    value: false
+dlg_gap:
+    value: 100
+downstream_loss_operation:
+    value: none
+downstream_tasks:
+    value: classification
+dp_sigma:
+    value: 0
+dr_learning_rate:
+    value: 0
+embedding_size:
+    value: 768
+eta:
+    value: 1
+eval_gap:
+    value: 1
+federation_grid_metrics:
+    value: false
+fine_tuning_epoch_new:
+    value: 0
+fine_tuning_epochs:
+    value: 10
+generator_learning_rate:
+    value: 0.005
+global_rounds:
+    value: 50
+goal:
+    value: test
+hidden_dim:
+    value: 512
+itk:
+    value: 4000
+join_ratio:
+    value: 1
+kl_weight:
+    value: 0
+lamda:
+    value: 1
+layer_idx:
+    value: 2
+learning_rate_schedule:
+    value: true
+learning_rate_schedule_gamma:
+    value: 0.99
+limit_samples_number:
+    value: 0
+local_epochs:
+    value: 5
+local_learning_rate:
+    value: 0.01
+localize_feature_extractor:
+    value: false
+loss_weighted:
+    value: false
+mentee_learning_rate:
+    value: 0.005
+model:
+    value: |-
+        ViTModel(
+          (embeddings): ViTEmbeddings(
+            (patch_embeddings): ViTPatchEmbeddings(
+              (projection): Conv2d(3, 768, kernel_size=(16, 16), stride=(16, 16))
+            )
+            (dropout): Dropout(p=0.0, inplace=False)
+          )
+          (encoder): ViTEncoder(
+            (layer): ModuleList(
+              (0-11): 12 x ViTLayer(
+                (attention): ViTSdpaAttention(
+                  (attention): ViTSdpaSelfAttention(
+                    (query): Linear(in_features=768, out_features=768, bias=True)
+                    (key): Linear(in_features=768, out_features=768, bias=True)
+                    (value): Linear(in_features=768, out_features=768, bias=True)
+                    (dropout): Dropout(p=0.0, inplace=False)
+                  )
+                  (output): ViTSelfOutput(
+                    (dense): Linear(in_features=768, out_features=768, bias=True)
+                    (dropout): Dropout(p=0.0, inplace=False)
+                  )
+                )
+                (intermediate): ViTIntermediate(
+                  (dense): Linear(in_features=768, out_features=3072, bias=True)
+                  (intermediate_act_fn): GELUActivation()
+                )
+                (output): ViTOutput(
+                  (dense): Linear(in_features=3072, out_features=768, bias=True)
+                  (dropout): Dropout(p=0.0, inplace=False)
+                )
+                (layernorm_before): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+                (layernorm_after): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+              )
+            )
+          )
+          (layernorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+        )
+model_aggregation:
+    value: none
+model_aggregation_random:
+    value: false
+model_aggregation_weighted:
+    value: false
+model_backbone_checkpoint:
+    value: backbone.pt
+model_backbone_load_checkpoint:
+    value: false
+model_backbone_save_checkpoint:
+    value: false
+model_optimizer:
+    value: SGD
+model_optimizer_momentum:
+    value: 0.9
+model_optimizer_weight_decay:
+    value: 0.001
+model_pretrain:
+    value: false
+momentum:
+    value: 0.1
+mu:
+    value: 0
+no_downstream_tasks:
+    value: false
+no_wandb:
+    value: false
+nodes_backbone_model:
+    value: hf_vit
+nodes_datasets:
+    value: JSRT-8C-ClaSSeg:8:0;1;2;3;4;5;6;7
+nodes_downstream_tasks:
+    value: classification
+nodes_pretext_tasks:
+    value: image_rotation,patch_masking
+nodes_pretext_tasks_parallel:
+    value: false
+nodes_training_sequence:
+    value: both
+noise_dim:
+    value: 512
+num_classes:
+    value: 2
+num_classes_per_client:
+    value: 2
+num_clients:
+    value: 8
+num_clients_strong:
+    value: 2
+num_hidden_layers:
+    value: 12
+num_new_clients:
+    value: 0
+p_learning_rate:
+    value: 0.01
+patch_size:
+    value: 16
+plocal_epochs:
+    value: 1
+prev:
+    value: 0
+privacy:
+    value: false
+rand_percent:
+    value: 80
+random_join_ratio:
+    value: false
+reduce_memory_footprint:
+    value: false
+rewind_donkey:
+    value: false
+rewind_donkey_count:
+    value: 2
+rewind_end_epoch_ratio:
+    value: 1
+rewind_epochs:
+    value: 0
+rewind_interval:
+    value: 0
+rewind_learning_rate_decay:
+    value: false
+rewind_learning_rate_decay_ratio:
+    value: 0.1
+rewind_learning_rate_keep:
+    value: false
+rewind_learning_rate_schedule:
+    value: false
+rewind_noise:
+    value: false
+rewind_random:
+    value: false
+rewind_ratio:
+    value: 0
+rewind_rotate:
+    value: false
+rewind_strategy:
+    value: none
+routing_random:
+    value: false
+routing_scored:
+    value: false
+routing_scored_average:
+    value: micro
+routing_static:
+    value: false
+routing_static_cycled:
+    value: false
+run_uuid:
+    value: null
+save_folder_name:
+    value: items
+seed:
+    value: 42
+segmentation_mask_threshold:
+    value: 0.5
+send_slow_rate:
+    value: 0
+server_epochs:
+    value: 1000
+server_learning_rate:
+    value: 1
+sigma:
+    value: 1
+ssl_rounds:
+    value: 0
+strong_model_pretrain:
+    value: false
+tau:
+    value: 1
+time_select:
+    value: false
+time_threthold:
+    value: 10000
+times:
+    value: 1
+train_slow_rate:
+    value: 0
+weak_model_pretrain:
+    value: false

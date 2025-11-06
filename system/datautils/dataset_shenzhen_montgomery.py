@@ -1,3 +1,4 @@
+import torch
 from torch.utils.data import Dataset
 import pandas as pd
 import numpy as np
@@ -8,7 +9,7 @@ import re
 from PIL import Image
 import torchvision.transforms.functional as F
 
-class ShenzhenDataset(Dataset):
+class ShenzhenMontgomeryDataset(Dataset):
     def __init__(self, dataset = None, is_train=True, test_ratio = 0.2, validate_ratio=0, train=None, transform=None, download=False, root=".", dataset_path = "dataset", datafile = "Data Chest X-Ray RSUA (Validated)/Split_Data_RSUA_Paths_k3.xlsx"):
         self.is_train = is_train
         if train is not None:
@@ -24,7 +25,7 @@ class ShenzhenDataset(Dataset):
         self.mask_path = "mask"
         self.image_path = "img"
 
-        if dataset is not None and isinstance(dataset, ShenzhenDataset):
+        if dataset is not None and isinstance(dataset, ShenzhenMontgomeryDataset):
             self.samples = dataset.samples
             self.traindata_ids = dataset.traindata_ids
             self.testdata_ids = dataset.testdata_ids
@@ -36,19 +37,30 @@ class ShenzhenDataset(Dataset):
             # self.labels = dataset.labels
             return
 
-        self.data_path = Path(self.dataset_path+"/Shenzhen")
+        self.data_path = [ Path(self.dataset_path+"/Chest X-ray dataset for lung segmentation/Montgomery"), Path(self.dataset_path+"/Chest X-ray dataset for lung segmentation/Shenzhen") ]
         self.data_dir = Path(self.dataset_path)
         self.samples_data_dir = Path(self.dataset_path+"/img")
         self.masks_data_dir = Path(self.dataset_path+"/mask")
+        self.ann_data_dir = Path(self.dataset_path+"/amm")
 
         self.samples = []
-        for sample_file in self.samples_data_dir.iterdir():
-            if sample_file.suffix == '.png':
-                mask_file = self.masks_data_dir / (sample_file.stem + '.png')
-                if mask_file.exists():
-                    self.samples.append((sample_file, mask_file))
-                else:
-                    print('No mask for sample %s' %sample_file)
+
+        if not isinstance(self.data_path, list):
+            self.data_path = [self.data_path]
+
+        for data_path in self.data_path:
+            sample_dir = Path(data_path / "img")
+            mask_dir = Path(data_path / "mask")
+            ann_dir = Path(data_path / "amm")
+
+            for sample_file in sample_dir.iterdir():
+                if sample_file.suffix == '.png':
+                    mask_file = mask_dir / (sample_file.stem + '.png')
+                    ann_file = ann_dir / (sample_file.stem + '.json')
+                    if mask_file.exists():
+                        self.samples.append((sample_file, mask_file))
+                    else:
+                        print('No mask for sample %s' %sample_file)
 
         self.traindata_len = int(len(self.samples) * (1 - test_ratio - validate_ratio))
         self.testdata_len = int(len(self.samples) * test_ratio) + 1
@@ -72,17 +84,27 @@ class ShenzhenDataset(Dataset):
         print ( f"{index}", end=" " )
         # print ( "%s Sample %s mask %s" %(sample_type, str(sample_file), str(mask_file)))
 
+        sample_filename = sample_file.stem
+
         sample_tensor = read_image_as_tensor(sample_file)
         mask_tensor = read_image_as_tensor(mask_file)
 
         # print ( "Image %s mask %s" %(str(sample_tensor.shape), str(mask_tensor.shape)))
         downsampled_image = self.transform(sample_tensor)
         downsampled_mask = self.transform(mask_tensor)
+        m = re.search(r'_\d{4}_(0|1)$', sample_filename)
+        if m:
+            label = torch.tensor(int(m.group(1)),dtype=torch.long)
+        else:
+            label = None
+        # print ( "Image %s mask %s" %(str(sample_tensor.shape), str
 
         # print ( "Image %s mask %s" %(str(downsampled_image.shape), str(downsampled_mask.shape)))
 
-        sample = [downsampled_image, downsampled_mask]
-        return sample
+        sample_dict = { 'samples': downsampled_image, 'labels': label, 'masks': downsampled_mask, 'info': sample_filename }
+
+        sample = [downsampled_image, downsampled_mask, label]
+        return sample, sample_dict
     
     def get_data(self, datatype):
         if datatype == 'train':
@@ -144,12 +166,12 @@ class ShenzhenDataset(Dataset):
 
     def __getitem__(self, idx):
         if self.is_train:
-            item = self.get_sample('train',idx)
+            item, item_info = self.get_sample('train',idx)
 
         elif self.is_train == False:
-            item = self.get_sample('test', idx)
+            item, item_info = self.get_sample('test', idx)
 
-        return item
+        return item, item_info
 
         splitted = col['images_path'].split('/')
         label = splitted[-3]

@@ -41,8 +41,8 @@ class DownstreamSegmentation (Downstream):
 
         self.mask_threshold = None
 
-        self.task_test_metrics = { "precision": [], "recall": [], "accuracy": [], "dice": [] }
-        self.test_metrics_aggregated = { "precision": [], "recall": [], "accuracy": [], "dice": [] }
+        # self.task_test_metrics = { "precision": [], "recall": [], "accuracy": [], "dice": [] }
+        # self.test_metrics_aggregated = { "precision": [], "recall": [], "accuracy": [], "dice": [] }
         self.test_running_round = -1
         self.epoch_running_batch = -1
 
@@ -71,10 +71,11 @@ class DownstreamSegmentation (Downstream):
             print ( "Using ViTModel as backbone")
             self.vitseg.transformer.encoder = backbone
 
-        self.defined_test_metrics = { "segmentation_dice": None, "segmentation_accuracy": None, "segmentation_precision": None,
-                                     "segmentation_recall": None, "segmentation_iou": None }
+        self.defined_test_metrics = { "dice": None, "accuracy": None, "precision": None,
+                                     "recall": None, "iou": None }
         self.defined_train_metrics = { "loss": None }
         self.metrics_decimals = 3
+        self.task_count = 1
 
         self.ce_loss = CrossEntropyLoss()
         self.dice_loss = DiceLoss(self.mask_out_layers)
@@ -83,6 +84,8 @@ class DownstreamSegmentation (Downstream):
         # self.dice_loss_monai = DiceLossMonai(reduction='none')
 
     def init_metrics(self):
+        print ( "Dummy init metrics")
+        return
         self.task_test_metrics = {
             "aggregated": {} 
         }
@@ -116,12 +119,16 @@ class DownstreamSegmentation (Downstream):
         for metric in self.defined_test_metrics:
             defined_metric = f"test{path}{self.task_name}_{metric}"
             self.defined_test_metrics[metric] = defined_metric
-            metrics.append(defined_metric)
+            for task_id in range(self.task_count):
+                task_defined_metric = f"{defined_metric}_{task_id}"
+                metrics.append(task_defined_metric)
             
         for metric in self.defined_train_metrics:
             defined_metric = f"train{path}{self.task_name}_{metric}"
             self.defined_train_metrics[metric] = defined_metric
-            metrics.append(defined_metric)
+            for task_id in range(self.task_count):
+                task_defined_metric = f"{defined_metric}_{task_id}"
+                metrics.append(task_defined_metric)
 
         # metrics.append(f"train{path}segmentation_loss" )
         # metrics.append(f"test{path}segmentation_accuracy")
@@ -138,9 +145,12 @@ class DownstreamSegmentation (Downstream):
         samples = 0
         steps = 0
 
-        if metrics is not None:
-            metrics.define_metrics(self.defined_train_metrics, task_count=1)
-
+        metrics = NodeMetric(phase=NodeMetric.Phase.TRAIN)
+        metrics.define_metrics(self.defined_train_metrics, task_count=1)
+        metrics.task_type = NodeMetric.TaskType.SEGMENTATION
+        metrics.task_name = self.task_name
+        metrics.task_count = 1
+        
         with torch.no_grad():
             for x, y in dataloader:
                 samples += x.shape[0]
@@ -161,34 +171,52 @@ class DownstreamSegmentation (Downstream):
                 loss = self.downstream_loss(output, y)
                 task_loss += loss.item()
 
-            if losses != None:
-                losses[0] = task_loss
-                losses['samples'] = samples
-                losses['aggregated'] = task_loss/steps
+            # if losses != None:
+            #     losses[0] = task_loss
+            #     losses['samples'] = samples
+            #     losses['aggregated'] = task_loss/steps
             task_loss /= steps
 
             if metrics is not None:
-                metrics['steps'] = steps
-                metrics['samples'] = samples
+                metrics[task_index]['steps'] = steps
+                metrics[task_index]['samples'] = samples
                 metrics[task_index]['loss'] = task_loss
 
             # print ( f"Downstream task loss {losses/train_num}")
-            self.train_metrics_log( loss=task_loss, round = self.round)
+            # self.train_metrics_log( metrics=metrics, round = self.round)
 
-    def test_metrics_log(self, round = None, prefix="test"):
-        if round is None:
+        return metrics
+
+    def test_metrics_log(self, round = None, metrics = None, prefix="test"):
+        if metrics is None:
+            return
+
+        if round is None or round < 0:
             round = self.round
 
         if self.wandb_log == True:
-            wandb.log({self.defined_test_metrics['segmentation_accuracy']: self.test_metrics_aggregated['accuracy'], "round": round})
-            wandb.log({self.defined_test_metrics['segmentation_precision']: self.test_metrics_aggregated['precision'], "round": round})
-            wandb.log({self.defined_test_metrics['segmentation_recall']: self.test_metrics_aggregated['recall'], "round": round})
-            wandb.log({self.defined_test_metrics['segmentation_dice']: self.test_metrics_aggregated['dice'], "round": round})
-            wandb.log({self.defined_test_metrics['segmentation_iou']: self.test_metrics_aggregated['iou'], "round": round})
+            for task_id in range(metrics.task_count):
+                for metric_type in metrics._defined_metrics:
+                    if metric_type in self.defined_test_metrics:
+                        metric_path = f"{self.defined_test_metrics[metric_type]}_{task_id}"
+                        wandb.log({metric_path: metrics[task_id][metric_type], "round": round})
+                        # wandb.log({metrics['segmentation_precision']: metrics['precision'], "round": round})
+                        # wandb.log({metrics['segmentation_recall']: metrics['recall'], "round": round})
+                        # wandb.log({metrics['segmentation_iou']: metrics['iou'], "round": round})
     
-    def train_metrics_log(self, loss, round = 0, prefix="train"):
+    def train_metrics_log(self, metrics, round = 0, prefix="train"):
+        if metrics is None:
+            return
+
+        if round is None or round < 0:
+            round = self.round
+
         if self.wandb_log == True:
-            wandb.log({f"train/{self.metrics_path}/segmentation_loss": loss, "round": round})
+            for task_id in range(metrics.task_count):
+                for metric_type in metrics._defined_metrics:
+                    if metric_type in self.defined_train_metrics:
+                        metric_path = f"{self.defined_train_metrics[metric_type]}_{task_id}"
+                        wandb.log({metric_path: metrics[task_id][metric_type], "round": round})
 
     def test_metrics(self, logits, target, samples = None, round = None, metrics = None, task = 0):
 
@@ -200,19 +228,31 @@ class DownstreamSegmentation (Downstream):
         if groundtruth_mask.shape[2] != h or groundtruth_mask.shape[3] != w:
             groundtruth_mask = F.interpolate(groundtruth_mask, size=(h, w), mode='nearest')
 
-        segmentation_metrics = {}
+        # segmentation_metrics = {}
+        metrics = NodeMetric(phase=NodeMetric.Phase.TEST)
+        metrics.task_type = NodeMetric.TaskType.SEGMENTATION
+        metrics.task_name = self.task_name
+        metrics.define_metrics(self.defined_test_metrics, task_count=1)
         threshold = self.mask_threshold if self.mask_threshold != None else 0.5
         pred_mask_binary = ( pred_mask > threshold).int() 
         if pred_mask_binary.shape[1] != groundtruth_mask.shape[1]:
             pred_mask_binary = pred_mask_binary[:, 1:, :, :] 
         groundtruth_mask_binary = groundtruth_mask.int()
 
-        segmentation_metrics['segmentation_precision'] = self.test_metrics_precision(groundtruth_mask_binary, pred_mask_binary) * b
-        segmentation_metrics['segmentation_recall'] = self.test_metrics_recall(groundtruth_mask_binary, pred_mask_binary) * b
-        segmentation_metrics['segmentation_accuracy'] = self.test_metrics_accuracy(groundtruth_mask_binary, pred_mask_binary) * b
-        segmentation_metrics['segmentation_dice'] = self.test_metrics_dice(groundtruth_mask_binary, pred_mask_binary) * b
-        segmentation_metrics['segmentation_iou'] = self.test_metrics_iou(groundtruth_mask_binary, pred_mask_binary) * b
-        segmentation_metrics['samples'] = b
+        metrics[0]['iou'] = self.test_metrics_iou(groundtruth_mask_binary, pred_mask_binary)
+        metrics[0]['precision'] = self.test_metrics_precision(groundtruth_mask_binary, pred_mask_binary)
+        metrics[0]['recall'] = self.test_metrics_recall(groundtruth_mask_binary, pred_mask_binary)
+        metrics[0]['accuracy'] = self.test_metrics_accuracy(groundtruth_mask_binary, pred_mask_binary)
+        metrics[0]['dice'] = self.test_metrics_dice(groundtruth_mask_binary, pred_mask_binary)
+        metrics[0]['samples'] = b
+        metrics[0]['steps'] = 1
+
+        # segmentation_metrics['segmentation_precision'] = self.test_metrics_precision(groundtruth_mask_binary, pred_mask_binary) * b
+        # segmentation_metrics['segmentation_recall'] = self.test_metrics_recall(groundtruth_mask_binary, pred_mask_binary) * b
+        # segmentation_metrics['segmentation_accuracy'] = self.test_metrics_accuracy(groundtruth_mask_binary, pred_mask_binary) * b
+        # segmentation_metrics['segmentation_dice'] = self.test_metrics_dice(groundtruth_mask_binary, pred_mask_binary) * b
+        # segmentation_metrics['segmentation_iou'] = self.test_metrics_iou(groundtruth_mask_binary, pred_mask_binary) * b
+        # segmentation_metrics['samples'] = b
         binary_tensor = None
 
         images_count = target.shape[1] + self.mask_out_layers
@@ -258,7 +298,7 @@ class DownstreamSegmentation (Downstream):
         
         # print ( f"Precision: {segmentation_metrics['segmentation_precision']}, Recall: {segmentation_metrics['segmentation_recall']}, Accuracy: {segmentation_metrics['segmentation_accuracy']} Dice: {segmentation_metrics['segmentation_dice']}")
 
-        return segmentation_metrics
+        return metrics
     
     def test_metrics_calculate(self, logits, labels, round = None):
 
