@@ -215,7 +215,9 @@ class ConfigLoader:
             'global_model_train': False,
             'global_model_train_epochs': 1,
             'global_model_train_from_nodes_adapters': False,
-            'global_model_train_from_nodes_audio_embeddings': False
+            'global_model_train_from_nodes_audio_embeddings': False,
+            'global_model_train_inputs': 'none',
+            'adapter_aggregation_method': 'none'
         },
         'wandb': {
             'disabled': False

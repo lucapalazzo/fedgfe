@@ -88,6 +88,8 @@ class FedA2V(FedRewind):
         self.images_output_dir = getattr(self.config.feda2v, 'images_output_dir', 'output_images')
         self.generate_images_frequency = self.generate_nodes_images_frequency
 
+        self.adapter_aggregation_mode = self.config.feda2v.adapter_aggregation_mode
+
         # Create Encoders models Audio2Visual model
         self.create_global_model(args)
 
@@ -280,7 +282,7 @@ class FedA2V(FedRewind):
                 print("\nEvaluate Audio2Visual models")
                 self.evaluate()
 
-            if self.aggregation_method != 'none':
+            if self.aggregation_method != 'none' or self.adapter_aggregation_mode != 'none':
                 self.send_models()
 
             self.train_nodes(i, training_task=training_task)
@@ -311,7 +313,7 @@ class FedA2V(FedRewind):
         wandb.finish()
 
     def round_ending_hook(self):
-        self.baloon.deflate()
+        # self.baloon.deflate()
         if self.generate_nodes_images_frequency > 0 and self.round % self.generate_nodes_images_frequency == 0:
             self.global_model.diffusion_model.to(self.global_model.diffusion_model_device)
             
@@ -331,7 +333,7 @@ class FedA2V(FedRewind):
             self._move_to_cpu()
             print(f"\nGlobal Audio2Visual model trained from nodes embeddings with loss {loss:.4f}")
         
-        self.baloon.inflate()
+        # self.baloon.inflate()
 
         if self.generate_global_images_frequency > 0 and self.round % self.generate_global_images_frequency == 0:
             all_audio_embeddings = {}
@@ -503,6 +505,9 @@ class FedA2V(FedRewind):
 
         self.gathered_nodes = 0
 
+        if self.adapter_aggregation_mode != 'none':
+            self.receive_nodes_adapters()
+
         if self.aggregation_method == 'per_class_average':
             received_model = self.receive_models_per_class_average()
         else:
@@ -511,6 +516,21 @@ class FedA2V(FedRewind):
         
         self.gathered_nodes = received_model
         return received_model
+    
+    def receive_nodes_adapters(self):
+
+        active_clients = self.selected_clients
+        gathered_nodes = 0
+
+        for node in active_clients:
+            self.nodes_adapters[node.id] = node.adapters
+            self.nodes_adapters_modules[node.id] = node.adapters_modules
+
+            gathered_nodes += 1
+
+        return gathered_nodes
+
+
         
     def receive_models_per_class_average(self):
 
@@ -538,11 +558,6 @@ class FedA2V(FedRewind):
                 self.nodes_per_class_adapters_outputs[node.id] = node.training_adapter_outputs_all
                 self.nodes_per_class_adapters_outputs_means[node.id] = node.training_adapter_outputs_mean
 
-                self.nodes_adapters[node.id] = node.adapters
-                self.nodes_adapters_modules[node.id] = node.adapters_modules
-
-
-
             gathered_nodes += 1
 
         for i, w in enumerate(self.uploaded_weights):
@@ -554,13 +569,29 @@ class FedA2V(FedRewind):
         """Send global Audio2Visual model to clients."""
         assert (len(self.clients) > 0)
 
-        if self.model_aggregation == "per_class_average":
-            self.send_models_per_class_average()
-        else:
-            print(f"Model aggregation method {self.model_aggregation} not recognized.")
-        return
+        for node in self.clients:
+            start_time = time.time()
+            node.update_local_adapters(self.global_adapters)
 
-    def send_models_per_class_average(self):
+            node.send_time_cost['num_rounds'] += 1
+            node.send_time_cost['total_cost'] += 2 * (time.time() - start_time)
+            node._move_to_cpu()
+
+            if self.model_aggregation == "per_class_average":
+                self.send_models_per_class_average(node)
+
+            if self.adapter_aggregation_mode == 'avg':
+                self.send_adapters(node)
+        return
+    
+    def send_adapters(self, node):
+        self.global_model.to(self.device)
+        node.update_local_adapters(self.global_adapters)
+
+        self.global_model.to("cpu")
+
+    def send_models_per_class_average(self,node):
+        return
         self.global_model.to(self.device)
         for client in self.clients:
             start_time = time.time()
@@ -578,7 +609,9 @@ class FedA2V(FedRewind):
 
         if self.aggregation_method == 'per_class_average':
             self.aggregate_audio_encoder_parameters_per_class_avarage()
-            self.aggregate_adapters_parameters_per_class_average()
+
+        if self.adapter_aggregation_mode == 'avg':
+            self.aggregate_adapters_parameters_fedavg()
         else:
             print(f"Model aggregation method {self.aggregation_method} not recognized.")
             return
@@ -643,16 +676,7 @@ class FedA2V(FedRewind):
 
         self.global_output_means = global_mean
 
-
-
-    
-        
-    def aggregate_adapters_parameters_per_class_average(self):
-        # Aggregate adapters and projections by averaging parameters across nodes.
-
-        global_adapters = {}
-        global_projections = {}
-
+    def aggregate_adapters_parameters_fedavg(self):
         nodes_adapters_states = {}
         for node_id, node_adapters in self.nodes_adapters_modules.items():
             if not node_adapters:
@@ -660,19 +684,7 @@ class FedA2V(FedRewind):
             try:
                 nodes_adapters_states[node_id] = node_adapters.state_dict()
             except Exception:
-                # If node_adapters stores raw dicts, accept them too
                 state = node_adapters if isinstance(node_adapters[node_adapters], dict) else {}
-            # for k, v in state.items():
-            #     nodes_adapters_states.setdefault(k, [])
-            #     if isinstance(v, torch.Tensor):
-            #         nodes_adapters_states[k].append(v.detach().cpu().float())
-            #     else:
-            #         try:
-            #             nodes_adapters_states[k].append(torch.tensor(v).float())
-            #         except Exception:
-            #             # skip unsupported types
-            #             continue
-        # compute mean for each parameter
         averaged_state = self.average_state_dicts(nodes_adapters_states)
 
         self.global_adapters_modules.load_state_dict(averaged_state)

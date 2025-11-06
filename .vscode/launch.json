@@ -2437,7 +2437,7 @@
         },
         
         {
-            "name": "feda2v ESC50 3N Global train and generate ",
+            "name": "feda2v ESC50 3N Adapters AVG ",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/fedgfe",
@@ -2445,7 +2445,7 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "subProcess": true,
-            "args": ["--config", "configs/a2v_3n_esc50_global_train_diffusion.json",
+            "args": ["--config", "configs/a2v_esc50_3n_adapter_avg.json",
                 ],
             "env":{
                 "CUDA_VISIBLE_DEVICES": "0"

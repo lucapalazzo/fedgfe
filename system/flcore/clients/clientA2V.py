@@ -482,6 +482,9 @@ class clientA2V(Client):
             self.training_adapter_outputs_mean[class_name] = {}
 
             for adapter_name, outputs_list in adapters_dict.items():
+                if adapter_name not in self.adapters.keys():
+                    continue
+                
                 if len(outputs_list) > 0:
                     # Stack all outputs and compute mean
                     self.training_adapter_outputs_mean[class_name][adapter_name] = torch.mean(
