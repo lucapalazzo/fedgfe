@@ -72,6 +72,10 @@ class clientA2V(Client):
         self.node_data = NodeData(args, node_id,dataset=dataset)
         self.node_data.dataset = self.dataset
 
+        self.experiment_config = getattr(args.json_config, 'experiment', None)
+
+        self.optimizer_memory = getattr(self.experiment_config, 'optimize_memory', False )
+
         self.train_optimizer = None
         self.finetuning_optimizer = None
 
@@ -111,164 +115,6 @@ class clientA2V(Client):
 
         self.audio_embedding_store = {}
 
-    # def get_local_adapter_state_dict(self):
-    #     """
-    #     Get state dict of local adapters and projections.
-    #     This is used by the server for federated aggregation.
-
-    #     Returns:
-    #         dict: State dict containing all local adapter and projection parameters
-    #     """
-    #     state_dict = {}
-
-    #     if hasattr(self, 'local_clip_adapter') and self.local_clip_adapter is not None:
-    #         state_dict['clip_adapter'] = self.local_clip_adapter.state_dict()
-
-    #     if hasattr(self, 'local_clip_projection') and self.local_clip_projection is not None:
-    #         state_dict['clip_projection'] = self.local_clip_projection.state_dict()
-
-    #     if hasattr(self, 'local_t5_adapter') and self.local_t5_adapter is not None:
-    #         state_dict['t5_adapter'] = self.local_t5_adapter.state_dict()
-
-    #     if hasattr(self, 'local_t5_projection') and self.local_t5_projection is not None:
-    #         state_dict['t5_projection'] = self.local_t5_projection.state_dict()
-
-    #     return state_dict
-
-    # def load_local_adapter_state_dict(self, state_dict):
-    #     """
-    #     Load state dict into local adapters and projections.
-
-    #     Args:
-    #         state_dict: State dict containing adapter and projection parameters
-    #     """
-    #     if 'clip_adapter' in state_dict and hasattr(self, 'local_clip_adapter') and self.local_clip_adapter is not None:
-    #         self.local_clip_adapter.load_state_dict(state_dict['clip_adapter'])
-    #         print(f"Node {self.id} - Loaded clip_adapter state dict")
-
-    #     if 'clip_projection' in state_dict and hasattr(self, 'local_clip_projection') and self.local_clip_projection is not None:
-    #         self.local_clip_projection.load_state_dict(state_dict['clip_projection'])
-    #         print(f"Node {self.id} - Loaded clip_projection state dict")
-
-    #     if 't5_adapter' in state_dict and hasattr(self, 'local_t5_adapter') and self.local_t5_adapter is not None:
-    #         self.local_t5_adapter.load_state_dict(state_dict['t5_adapter'])
-    #         print(f"Node {self.id} - Loaded t5_adapter state dict")
-
-    #     if 't5_projection' in state_dict and hasattr(self, 'local_t5_projection') and self.local_t5_projection is not None:
-    #         self.local_t5_projection.load_state_dict(state_dict['t5_projection'])
-    #         print(f"Node {self.id} - Loaded t5_projection state dict")
-
-    # def sync_local_to_global(self):
-    #     """
-    #     Synchronize trained local adapters to the global model.
-
-    #     This method copies the state of local adapters (after training) back to the
-    #     global model's audio2image component. This ensures the global model reflects
-    #     the latest trained state from this node.
-
-    #     Note: The optimizer already tracks the local adapters, so no optimizer update is needed.
-    #     """
-    #     if self.audio2image_model is None:
-    #         print(f"Warning: Node {self.id} - No audio2image model to sync")
-    #         return
-
-    #     global_audio2image = self.global_model.get_audio2image_model() if hasattr(self.global_model, 'get_audio2image_model') else None
-
-    #     if global_audio2image is None:
-    #         print(f"Warning: Node {self.id} - Cannot access global audio2image model")
-    #         return
-
-    #     print(f"Node {self.id} - Syncing local trained adapters to global model")
-    #     updated_components = 0
-
-    #     # Sync clip_adapter
-    #     if hasattr(self, 'local_clip_adapter') and self.local_clip_adapter is not None:
-    #         if hasattr(global_audio2image, 'clip_adapter') and global_audio2image.clip_adapter is not None:
-    #             # Copy parameters from local to global
-    #             for local_param, global_param in zip(self.local_clip_adapter.parameters(),
-    #                                                   global_audio2image.clip_adapter.parameters()):
-    #                 global_param.data.copy_(local_param.data)
-    #             print(f"  - Synced clip_adapter to global model")
-    #             updated_components += 1
-
-    #     # Sync clip_projection
-    #     if hasattr(self, 'local_clip_projection') and self.local_clip_projection is not None:
-    #         if hasattr(global_audio2image, 'clip_projection') and global_audio2image.clip_projection is not None:
-    #             for local_param, global_param in zip(self.local_clip_projection.parameters(),
-    #                                                   global_audio2image.clip_projection.parameters()):
-    #                 global_param.data.copy_(local_param.data)
-    #             print(f"  - Synced clip_projection to global model")
-    #             updated_components += 1
-
-    #     # Sync t5_adapter
-    #     if hasattr(self, 'local_t5_adapter') and self.local_t5_adapter is not None:
-    #         if hasattr(global_audio2image, 't5_adapter') and global_audio2image.t5_adapter is not None:
-    #             for local_param, global_param in zip(self.local_t5_adapter.parameters(),
-    #                                                   global_audio2image.t5_adapter.parameters()):
-    #                 global_param.data.copy_(local_param.data)
-    #             print(f"  - Synced t5_adapter to global model")
-    #             updated_components += 1
-
-    #     # Sync t5_projection
-    #     if hasattr(self, 'local_t5_projection') and self.local_t5_projection is not None:
-    #         if hasattr(global_audio2image, 't5_projection') and global_audio2image.t5_projection is not None:
-    #             for local_param, global_param in zip(self.local_t5_projection.parameters(),
-    #                                                   global_audio2image.t5_projection.parameters()):
-    #                 global_param.data.copy_(local_param.data)
-    #             print(f"  - Synced t5_projection to global model")
-    #             updated_components += 1
-
-    #     print(f"Node {self.id} - Synced {updated_components} components to global model")
-
-    #     # Verify optimizer still tracks local adapters (should be unchanged)
-    #     if hasattr(self, 'train_optimizer') and self.train_optimizer is not None:
-    #         self._verify_optimizer_tracking()
-
-    # def _verify_optimizer_tracking(self):
-    #     """
-    #     Verify that the optimizer is still tracking the local adapter parameters.
-
-    #     This is a sanity check to ensure that after any synchronization, the optimizer
-    #     still has the correct parameter references.
-    #     """
-    #     if self.train_optimizer is None:
-    #         return
-
-    #     optimizer_param_ids = set()
-    #     for param_group in self.train_optimizer.param_groups:
-    #         for param in param_group['params']:
-    #             optimizer_param_ids.add(id(param))
-
-    #     # Check that local adapter parameters are in optimizer
-    #     local_param_ids = set()
-
-    #     if hasattr(self, 'local_clip_adapter') and self.local_clip_adapter is not None:
-    #         for param in self.local_clip_adapter.parameters():
-    #             local_param_ids.add(id(param))
-
-    #     if hasattr(self, 'local_clip_projection') and self.local_clip_projection is not None:
-    #         for param in self.local_clip_projection.parameters():
-    #             local_param_ids.add(id(param))
-
-    #     if hasattr(self, 'local_t5_adapter') and self.local_t5_adapter is not None:
-    #         for param in self.local_t5_adapter.parameters():
-    #             local_param_ids.add(id(param))
-
-    #     if hasattr(self, 'local_t5_projection') and self.local_t5_projection is not None:
-    #         for param in self.local_t5_projection.parameters():
-    #             local_param_ids.add(id(param))
-
-    #     # Verify all local parameters are tracked by optimizer
-    #     tracked_count = len(local_param_ids & optimizer_param_ids)
-    #     total_local = len(local_param_ids)
-
-    #     if tracked_count == total_local:
-    #         print(f"Node {self.id} - Optimizer verification: ✓ All {total_local} local parameters tracked")
-    #     else:
-    #         print(f"Node {self.id} - Optimizer verification: ⚠ Warning! Only {tracked_count}/{total_local} local parameters tracked")
-
-    #     return tracked_count == total_local
-
     def define_metrics(self):
         if self.global_model is not None:
             self.global_model.define_metrics()
@@ -295,6 +141,11 @@ class clientA2V(Client):
             metrics_values[metric_path] = metric_value
 
         return metrics_values
+    
+    def test_genarated_images(self, generated_images):
+
+        print ( "Stub method")
+        return
 
     def train(self, client_device=None, rewind_train_node=None, training_task="both"):
         """Train the Audio2Visual model."""
@@ -891,14 +742,14 @@ class clientA2V(Client):
                 move_optimizer_state(self.optimizer, device)
 
     def _move_to_gpu(self, device):
-        """Move Audio2Visual model to GPU."""
-        print(f"Node {self.id} moving to GPU: {device}")
-        self._move_to_device(device)
+        if self.optimizer_memory:
+            print(f"Node {self.id} moving to GPU: {device}")
+            self._move_to_device(device)
 
     def _move_to_cpu(self):
-        """Move Audio2Visual model to CPU."""
-        print(f"Node {self.id} moving to CPU for memory optimization")
-        self._move_to_device('cpu')
+        if self.optimizer_memory:
+            print(f"Node {self.id} moving to CPU for memory optimization")
+            self._move_to_device('cpu')
 
     def filter_batch_by_class(self, batch_data, target_class):
         filtered_batch = {}

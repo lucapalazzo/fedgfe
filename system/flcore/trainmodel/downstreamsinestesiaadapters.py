@@ -477,7 +477,7 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
                 
                 # if ( "text_loss" in output ) and ( "recon_loss" in output ) and ( "audio_loss" in output ):
                 if ( "text_loss" in output ):
-                    metrics[0]['text_loss'] += output['text_loss'][0].item()
+                    metrics[0]['text_loss'] += sum(output['text_loss'])/len(output['text_loss'])
                     metrics[0]['samples'] += audio_data.shape[0]
                     metrics[0]['steps'] += 1
 

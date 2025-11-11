@@ -48,6 +48,10 @@ import logging, sys
 # sys.path.append('/home/lpala/fedgfe/system/flcore/trainmodel/Audio2Visual_NoData')
 from flcore.trainmodel.Audio2Visual_NoData.src.models.audio2image import Audio2Image, SDImageModel, ImageDiffusion
 
+# Import generators
+from flcore.trainmodel.generators import ConditionedVAEGenerator, VAELoss, GANGenerator, GANDiscriminator
+import torch.nn.functional as F
+
 logger = logging.getLogger(__name__)
 
 class FedA2V(FedRewind):
@@ -74,24 +78,43 @@ class FedA2V(FedRewind):
 
         # Audio2Visual specific configuration
         self.diffusion_type = getattr(self.config.federation, 'diffusion_type', 'sd')
+        self.diffusion_device = self.device
         self.use_act_loss = getattr(args, 'use_act_loss', True)
         self.audio_model_name = getattr(args, 'audio_model_name', "MIT/ast-finetuned-audioset-10-10-0.4593")
         self.img_pipe_name = getattr(args, 'img_pipe_name', "runwayml/stable-diffusion-v1-5")
         self.img_lcm_lora_id = getattr(args, 'img_lcm_lora_id', "latent-consistency/lcm-lora-sdv1-5")
 
+        
+        
+        self.optimize_memory_usage = getattr(self.config.experiment, 'optimize_memory_usage', False)
 
         self.global_model_train = getattr(self.config.feda2v, 'global_model_train', False)
         self.global_model_train_epochs = getattr(self.config.feda2v, 'global_model_train_epochs', 1)
         self.generate_nodes_images_frequency = getattr(self.config.feda2v, 'generate_nodes_images_frequency', 0)
         self.generate_global_images_frequency = getattr(self.config.feda2v, 'generate_global_images_frequency', 0)
+        self.generate_low_memomy_footprint = getattr(self.config.feda2v, 'generate_low_memomy_footprint', False)
         self.generate_global_images_average_text_embeddings = getattr(self.config.feda2v, 'generate_global_images_average_text_embeddings', False)
         self.images_output_dir = getattr(self.config.feda2v, 'images_output_dir', 'output_images')
         self.generate_images_frequency = self.generate_nodes_images_frequency
 
         self.adapter_aggregation_mode = self.config.feda2v.adapter_aggregation_mode
 
+        # Generator configuration
+        self.generator_type = getattr(self.config.feda2v, 'generator_type', 'vae')
+        self.use_generator = getattr(self.config.feda2v, 'use_generator', False)
+        self.prompt_generator = None
+        self.prompt_generator_clip = None
+        self.prompt_generator_t5 = None
+        self.discriminator_clip = None
+        self.discriminator_t5 = None
+        self.generator_optimizer = None
+        self.generator_loss_fn = None
+
         # Create Encoders models Audio2Visual model
         self.create_global_model(args)
+
+        #FIXME for testing only
+        self.test_metrics_from_images()
 
         self.nodes_backbone_model = self.global_model
 
@@ -148,7 +171,62 @@ class FedA2V(FedRewind):
         self.num_classes = args.num_classes
         self.statistics_dataframe = None
 
-       
+    def test_node_metrics_from_images ( self, node, generated_images ):
+        test_images = getattr ( generated_images, 'on_test', {})
+        train_images = getattr ( generated_images, 'on_train', {})
+
+        found_classes = list(test_images.values())
+        filenames = list(test_images.keys())
+        # found_classes.append(list(train_images.values()))
+
+        candidate_labels = {}
+        enriched_candidate_labels = {}
+        unique_labels = list(set(found_classes))
+        for label_id, label in enumerate(unique_labels):
+            candidate_labels[label] = label_id
+            text_label = label.replace('_', ' ')
+            enriched_candidate_labels[label] = f'This is a photo of {text_label}.'
+
+        ground_truth_classes = []
+
+        for ground_truth_class in classes:
+            ground_truth_classes.append(candidate_labels[ground_truth_class])
+
+        ground_truth_classes = torch.tensor(ground_truth_classes) 
+
+        # candidate_labels = [f'This is a photo of {label}.' for label in classes]
+
+        predictions = self.global_model.compute_zero_shot( filenames, candidate_labels )
+        labels = torch.tensor(list(candidate_labels.values()))
+        metrics = self.global_model._compute_classification_metrics (predictions, ground_truth_classes)
+        print ( metrics )
+
+    def test_metrics_from_images ( self ):
+        images_path = '/home/lpala/fedgfe/esc50-6n-global-train'
+        images = load_images_with_class_from_path(images_path=images_path)
+        images, classes, filenames = prepare_for_metrics (images)
+
+        candidate_labels = {}
+        enriched_candidate_labels = {}
+        unique_labels = list(set(classes))
+        for label_id, label in enumerate(unique_labels):
+            candidate_labels[label] = label_id
+            text_label = label.replace('_', ' ')
+            enriched_candidate_labels[label] = f'This is a photo of {text_label}.'
+
+        ground_truth_classes = []
+
+        for ground_truth_class in classes:
+            ground_truth_classes.append(candidate_labels[ground_truth_class])
+
+        ground_truth_classes = torch.tensor(ground_truth_classes) 
+
+        # candidate_labels = [f'This is a photo of {label}.' for label in classes]
+
+        predictions = self.global_model.compute_zero_shot( filenames, candidate_labels )
+        labels = torch.tensor(list(candidate_labels.values()))
+        metrics = self.global_model._compute_classification_metrics (predictions, ground_truth_classes)
+        print ( metrics )
                                                  
     def create_global_model(self, args):
 
@@ -167,36 +245,21 @@ class FedA2V(FedRewind):
         if self.generate_global_images_frequency > 0 or self.generate_nodes_images_frequency:
             self.global_model.enable_diffusion = True
             self.global_model.image_generation_frequency = self.generate_global_images_frequency
-            self.global_model.start_diffusion()
+            self.global_model.generate_low_memomy_footprint = self.generate_low_memomy_footprint
+            self.global_model.start_diffusion( low_memory_footprint = self.global_model.generate_low_memomy_footprint)
 
-            # self.generator_model = ImageDiffusion(
-            #     audio_model_name=self.audio_model_name,
-            #     img_pipe_name=img_pipe_name,
-            #     img_lcm_lora_id=self.img_lcm_lora_id,
-            #     diffusion_type=self.diffusion_type,
-            #     use_act_loss=self.use_act_loss,
-            #     device1=self.device1,
-            #     device2=self.device2,
-            #     mode='train_nodata'
-            # )
 
         self.global_adapters = self.global_model.adapters
-        # self.global_projections = self.global_model.projections
         self.global_adapters_modules = self.global_model.adapters_modules
 
         self.global_optimizers = self.create_global_model_optimizers()
 
+        # Initialize generators if enabled
+        if self.use_generator:
+            self.initialize_generators()
+
         return self.global_model, self.generator_model
     
-    # def create_global_modules_list(self):
-    #     global_module_list = {}
-    #     for module_name in self.global_adapters.keys():
-    #         module_list = torch.nn.ModuleList()
-    #         module_list.add_module ( module_name+"_adapter", self.global_adapters[module_name] )
-    #         module_list.add_module ( module_name+"_projection", self.global_projections[module_name] )
-    #         global_module_list[module_name] = module_list
-    #     return global_module_list
-
     def create_global_model_optimizers(self):
         optimizers = {}
         for module_name, module in self.global_adapters.items():
@@ -205,8 +268,72 @@ class FedA2V(FedRewind):
 
         return optimizers
 
+    def initialize_generators(self):
+        """Initialize prompt generators (VAE or GAN) for server-side training."""
+        logger.info(f"Initializing {self.generator_type} generator on server")
+
+        if self.generator_type == 'vae':
+            # VAE for conditioned prompt generation
+            self.prompt_generator = ConditionedVAEGenerator(
+                input_dim=512,      # Audio embeddings dimension from AST
+                visual_dim=768,     # CLIP embeddings dimension
+                hidden_dim=512,
+                latent_dim=256,
+                sequence_length=4
+            ).to(self.device)
+
+            self.generator_loss_fn = VAELoss()
+
+            # Optimizer for VAE
+            self.generator_optimizer = torch.optim.AdamW(
+                self.prompt_generator.parameters(),
+                lr=self.config.training.learning_rate * 0.1  # Lower LR for generator
+            )
+
+            logger.info("VAE generator initialized")
+
+        elif self.generator_type == 'gan':
+            # GAN generators for CLIP and T5
+            self.prompt_generator_clip = GANGenerator(
+                latent_dim=256,
+                hidden_dim=512,
+                output_dim=768  # CLIP dimension
+            ).to(self.device)
+
+            if self.diffusion_type == 'flux':
+                self.prompt_generator_t5 = GANGenerator(
+                    latent_dim=256,
+                    hidden_dim=512,
+                    output_dim=4096  # T5 dimension
+                ).to(self.device)
+
+            # Discriminators
+            self.discriminator_clip = GANDiscriminator(
+                input_dim=768,
+                hidden_dim=512
+            ).to(self.device)
+
+            if self.diffusion_type == 'flux':
+                self.discriminator_t5 = GANDiscriminator(
+                    input_dim=4096,
+                    hidden_dim=512
+                ).to(self.device)
+
+            # Optimizers for GAN
+            gen_params = list(self.prompt_generator_clip.parameters())
+            if self.prompt_generator_t5:
+                gen_params += list(self.prompt_generator_t5.parameters())
+
+            disc_params = list(self.discriminator_clip.parameters())
+            if self.discriminator_t5:
+                disc_params += list(self.discriminator_t5.parameters())
+
+            self.generator_optimizer = torch.optim.AdamW(gen_params, lr=1e-4)
+            self.discriminator_optimizer = torch.optim.AdamW(disc_params, lr=1e-4)
+
+            logger.info("GAN generators and discriminators initialized")
+
     def create_nodes_model(self, model_string=None, global_model=None):
-        """Create a node-specific Audio2Visual model."""
         if global_model != None:
             return copy.deepcopy(global_model)
 
@@ -314,24 +441,46 @@ class FedA2V(FedRewind):
 
     def round_ending_hook(self):
         # self.baloon.deflate()
+        generated_images = {}
         if self.generate_nodes_images_frequency > 0 and self.round % self.generate_nodes_images_frequency == 0:
-            self.global_model.diffusion_model.to(self.global_model.diffusion_model_device)
+            if not self.optimize_memory_usage:
+                self.global_model.diffusion_model.to(self.diffusion_device)
             
             for client in self.clients:
-                 self.generate_images(client)
+                generated_images[client.id] = self.generate_images(client)
 
-            self.global_model.diffusion_model.to("cpu")
+            if not self.optimize_memory_usage:
+                self.global_model.diffusion_model.to(torch.device('cpu'))
 
         if self.global_model_train and (self.config.feda2v.global_model_train_from_nodes_audio_embeddings or self.config.feda2v.global_model_train_from_nodes_adapters):
             self._move_to_gpu(self.device)
 
             if self.config.feda2v.global_model_train_from_nodes_audio_embeddings:
                 loss = self.global_model_train_from_nodes_text_embeddings()
-            if self.config.feda2v.global_model_train_from_nodes_adapters:
-                loss = self.global_model_train_from_nodes_adapters_output()
+                self._move_to_cpu()
+                print(f"\nGlobal Audio2Visual model trained from nodes embeddings with loss {loss:.4f}")
 
-            self._move_to_cpu()
-            print(f"\nGlobal Audio2Visual model trained from nodes embeddings with loss {loss:.4f}")
+            if self.config.feda2v.global_model_train_from_nodes_adapters:
+                logger.info(f"\n=== Round {self.round}: Training Generator and Global Adapters ===")
+                result = self.global_model_train_from_nodes_adapters_output()
+
+                # Handle return values
+                if isinstance(result, tuple) and len(result) == 2:
+                    generator_loss, adapter_loss = result
+                    print(f"\nGenerator Loss: {generator_loss:.4f}, Adapter Fine-tuning Loss: {adapter_loss:.4f}")
+
+                    # Log to wandb
+                    if not self.no_wandb:
+                        self.data_log({
+                            "server/generator_loss": generator_loss,
+                            "server/adapter_finetuning_loss": adapter_loss,
+                            "round": self.round
+                        })
+                else:
+                    # Fallback for single value return
+                    print(f"\nGlobal model trained with loss {result:.4f}")
+
+                self._move_to_cpu()
         
         # self.baloon.inflate()
 
@@ -341,6 +490,20 @@ class FedA2V(FedRewind):
             for client in self.clients:
                 if hasattr(client, 'audio_embedding_store') and client.audio_embedding_store is not None:
                     all_audio_embeddings.update(client.audio_embedding_store)
+
+        self.federation_test_metric(generated_images)
+
+    def federation_test_metric ( self, generated_images):
+
+        for node in self.clients:
+            node_id = node.id
+            if node_id not in generated_images:
+                logger.warn(f"Node {node_id} not found in generated images")
+                continue
+
+            node_metrics = self.test_node_metrics_from_images(node, generated_images[node_id])
+
+            
 
     def generate_global_images_average_text_embeddings_from_nodes(self):
         nodes_classes_text_embeddings = {}
@@ -400,61 +563,251 @@ class FedA2V(FedRewind):
                         optimizer.step()
 
     def global_model_train_from_nodes_adapters_output(self):
+        """
+        Train generator using adapter outputs from clients, then fine-tune global adapters.
+        """
         self.global_model.to(self.device)
 
-        loss = 0.0
-        nodes_class_losses = {}
+        # Step 1: Collect adapter outputs per class from all clients
+        all_class_prompts = defaultdict(list)  # {class_name: [prompt_tensors from all clients]}
+
         for node_id, per_class_adapters_outputs in self.nodes_per_class_adapters_outputs_means.items():
-            node = self.clients[node_id]
-            node_dataset = node.node_data.train_dataset if not isinstance(node.node_data.train_dataset, torch.utils.data.Subset) else node.node_data.train_dataset.dataset
+            for class_name, adapters_dict in per_class_adapters_outputs.items():
+                # adapters_dict contains {'clip': tensor, 't5': tensor, 'audio_embeddings': tensor}
+                all_class_prompts[class_name].append({
+                    'clip': adapters_dict.get('clip', None),
+                    't5': adapters_dict.get('t5', None),
+                    'audio_embeddings': adapters_dict.get('audio_embeddings', None)
+                })
 
-            print (f"Training global model using adapters outputs from node {node_id}")
-            node_loss = 0.0
-            for step in range(self.global_model_train_epochs):
+        if not all_class_prompts:
+            logger.warning("No adapter outputs received from clients")
+            return 0.0
 
-                for class_output_name, per_class_output in per_class_adapters_outputs.items():
-                    if class_output_name not in nodes_class_losses:
-                        nodes_class_losses[class_output_name] = []
+        # Step 2: Train generator from class prompts (if enabled)
+        generator_loss = 0.0
+        if self.use_generator and self.prompt_generator is not None:
+            logger.info(f"\nTraining {self.generator_type} generator from {len(all_class_prompts)} classes")
+            generator_loss = self.train_generator_from_class_prompts(all_class_prompts)
 
-                    # for adapter_name, adapter_module in self.global_adapters_modules:
+        # Step 3: Fine-tune global adapters with generated prompts
+        logger.info(f"\nFine-tuning global adapters")
+        adapter_loss = self.finetune_adapters_with_prompts(all_class_prompts)
 
-                    output = self.global_model( per_class_output, img_target_prompt_embeds=prompt_embeds, img_target_pooled_prompt_embeds=pooled_prompt_embeds, audio_embedding = audio_embedding)
-
-                    for module_name, optimizer in self.global_optimizers.items():
-                        optimizer.zero_grad()
-
-                    losses = output['text_loss']
-
-
-                    total_loss = torch.tensor(0.0)
-                    for loss in losses:
-                        total_loss = total_loss.to(loss.device)
-                        total_loss += loss
-
-                    total_loss.backward()
-                    nodes_class_losses[class_output_name].append(total_loss.item())
-
-                    for module_name, optimizer in self.global_optimizers.items():
-                        optimizer.step()
-
-        for class_name, class_losses in nodes_class_losses.items():
-            class_loss = sum(class_losses)/len(class_losses)
-            print ( f"Loss for class {class_name} {class_loss:.2f}")
-                
-
-
-        return loss
+        return generator_loss, adapter_loss
     
     def global_model_step_per_node (self):
         pass
 
+    def train_generator_from_class_prompts(self, all_class_prompts):
+        """
+        Train the VAE/GAN generator to replicate adapter prompts from clients.
+
+        Args:
+            all_class_prompts: dict {class_name: [{adapter_outputs}, ...]}
+
+        Returns:
+            Average generator loss
+        """
+        if self.prompt_generator is None:
+            logger.warning("No generator initialized")
+            return 0.0
+
+        self.prompt_generator.train()
+        total_loss = 0.0
+        num_batches = 0
+
+        for epoch in range(self.global_model_train_epochs):
+            epoch_loss = 0.0
+
+            for class_name, prompts_list in all_class_prompts.items():
+                # Filter and stack valid prompts
+                clip_prompts = [p['clip'] for p in prompts_list if p['clip'] is not None]
+                audio_embs = [p['audio_embeddings'] for p in prompts_list if p['audio_embeddings'] is not None]
+
+                if not clip_prompts or not audio_embs:
+                    continue
+
+                # Stack tensors
+                clip_prompts = torch.stack(clip_prompts).to(self.device)
+                audio_embs = torch.stack(audio_embs).to(self.device)
+
+                if self.generator_type == 'vae':
+                    # VAE Training
+                    self.generator_optimizer.zero_grad()
+
+                    # Forward pass through VAE
+                    recon_prompts, mu, logvar = self.prompt_generator(
+                        audio_embs,
+                        visual_condition=clip_prompts
+                    )
+
+                    # Compute VAE loss
+                    total_vae_loss, recon_loss, kl_loss, sim_loss = self.generator_loss_fn(
+                        recon_prompts,
+                        audio_embs,
+                        mu,
+                        logvar,
+                        epoch
+                    )
+
+                    # Backward and optimize
+                    total_vae_loss.backward()
+                    self.generator_optimizer.step()
+
+                    epoch_loss += total_vae_loss.item()
+
+                    if num_batches % 5 == 0:
+                        logger.info(f"  Class '{class_name}': VAE Loss={total_vae_loss.item():.4f} "
+                                  f"(Recon={recon_loss.item():.4f}, KL={kl_loss.item():.4f}, Sim={sim_loss.item():.4f})")
+
+                elif self.generator_type == 'gan':
+                    # GAN Training
+                    gan_loss = self.train_gan_step(clip_prompts, audio_embs, class_name)
+                    epoch_loss += gan_loss
+
+                num_batches += 1
+
+            if len(all_class_prompts) > 0:
+                avg_epoch_loss = epoch_loss / len(all_class_prompts)
+                logger.info(f"Generator Epoch {epoch+1}/{self.global_model_train_epochs}: Loss = {avg_epoch_loss:.4f}")
+                total_loss += avg_epoch_loss
+
+        avg_loss = total_loss / self.global_model_train_epochs if self.global_model_train_epochs > 0 else 0.0
+        logger.info(f"Generator training completed. Average loss: {avg_loss:.4f}")
+
+        return avg_loss
+
+    def train_gan_step(self, clip_prompts, audio_embs, class_name):
+        """
+        Perform one GAN training step.
+
+        Args:
+            clip_prompts: Target CLIP embeddings
+            audio_embs: Audio embeddings
+            class_name: Name of the class being trained
+
+        Returns:
+            Total GAN loss
+        """
+        batch_size = clip_prompts.size(0)
+
+        # Train Discriminator
+        self.discriminator_optimizer.zero_grad()
+
+        # Real samples
+        real_output = self.discriminator_clip(clip_prompts)
+        real_label = torch.ones_like(real_output)
+        d_loss_real = F.binary_cross_entropy_with_logits(real_output, real_label)
+
+        # Fake samples
+        z = torch.randn(batch_size, 256).to(self.device)
+        fake_prompts = self.prompt_generator_clip(z)
+        fake_output = self.discriminator_clip(fake_prompts.detach())
+        fake_label = torch.zeros_like(fake_output)
+        d_loss_fake = F.binary_cross_entropy_with_logits(fake_output, fake_label)
+
+        d_loss = d_loss_real + d_loss_fake
+        d_loss.backward()
+        self.discriminator_optimizer.step()
+
+        # Train Generator
+        self.generator_optimizer.zero_grad()
+
+        z = torch.randn(batch_size, 256).to(self.device)
+        fake_prompts = self.prompt_generator_clip(z)
+        fake_output = self.discriminator_clip(fake_prompts)
+        g_loss = F.binary_cross_entropy_with_logits(fake_output, real_label)
+
+        g_loss.backward()
+        self.generator_optimizer.step()
+
+        logger.debug(f"  Class '{class_name}': D_loss={d_loss.item():.4f}, G_loss={g_loss.item():.4f}")
+
+        return g_loss.item()
+
+    def finetune_adapters_with_prompts(self, all_class_prompts):
+        """
+        Fine-tune global adapters using prompts from clients (and optionally generated ones).
+
+        Args:
+            all_class_prompts: dict {class_name: [{adapter_outputs}, ...]}
+
+        Returns:
+            Average fine-tuning loss
+        """
+        self.global_model.train()
+        total_loss = 0.0
+        num_samples = 0
+
+        for class_name, prompts_list in all_class_prompts.items():
+            # Get target prompts from clients
+            target_clips = [p['clip'] for p in prompts_list if p['clip'] is not None]
+            target_audios = [p['audio_embeddings'] for p in prompts_list if p['audio_embeddings'] is not None]
+
+            if not target_clips or not target_audios:
+                continue
+
+            target_clip = torch.stack(target_clips).to(self.device)
+            target_audio = torch.stack(target_audios).to(self.device)
+
+            # Compute mean target for this class
+            mean_target_clip = target_clip.mean(dim=0, keepdim=True)
+            mean_target_audio = target_audio.mean(dim=0, keepdim=True)
+
+            # Generate synthetic audio embeddings if generator is available
+            if self.use_generator and self.prompt_generator is not None:
+                self.prompt_generator.eval()
+                with torch.no_grad():
+                    num_synthetic = 5  # Generate 5 synthetic samples per class
+                    synthetic_audio_embs = self.prompt_generator.sample(
+                        num_samples=num_synthetic,
+                        visual_condition=mean_target_clip,
+                        device=self.device
+                    )
+                # Combine real and synthetic
+                combined_audio = torch.cat([mean_target_audio, synthetic_audio_embs], dim=0)
+            else:
+                combined_audio = mean_target_audio
+
+            # Fine-tune adapters
+            for optimizer in self.global_optimizers.values():
+                optimizer.zero_grad()
+
+            # Forward through global adapters
+            outputs = {}
+            for adapter_name, adapter_module in self.global_adapters.items():
+                outputs[adapter_name] = adapter_module(combined_audio)
+
+            # Compute loss against target prompts
+            loss = torch.tensor(0.0, device=self.device)
+            if 'clip' in outputs and 'clip' in self.global_adapters:
+                # Target should match the shape of the output
+                target_expanded = mean_target_clip.expand_as(outputs['clip'][:1])
+                loss += F.mse_loss(outputs['clip'][:1], target_expanded)
+
+            # Backward and optimize
+            if loss.item() > 0:
+                loss.backward()
+                for optimizer in self.global_optimizers.values():
+                    optimizer.step()
+
+                total_loss += loss.item()
+                num_samples += 1
+
+                logger.debug(f"  Class '{class_name}': Adapter fine-tuning loss = {loss.item():.4f}")
+
+        avg_loss = total_loss / num_samples if num_samples > 0 else 0.0
+        logger.info(f"Adapter fine-tuning completed. Average loss: {avg_loss:.4f}")
+
+        return avg_loss
 
     def global_model_create_images(self, audio_embeddings, num_images=1):
         """Generate images using the global Audio2Visual model."""
         self.global_model.diffusion_model.to(self.global_model.diffusion_model_device)
 
-        prompt_embeds = audio_embeddings['t5'].to(self.global_model.diffusion_model_device)
-        pooled_prompt_embeds = audio_embeddings['clip'].to(self.global_model.diffusion_model_device)
+        prompt_embeds = audio_embeddings['t5'].to(self.global_model.diffusion_model_device).to(torch.bfloat16)
+        pooled_prompt_embeds = audio_embeddings['clip'].to(self.global_model.diffusion_model_device).to(torch.bfloat16)
 
         imgs = self.global_model.diffusion_model(
                                         prompt_embeds= prompt_embeds,
@@ -530,8 +883,6 @@ class FedA2V(FedRewind):
 
         return gathered_nodes
 
-
-        
     def receive_models_per_class_average(self):
 
         active_clients = self.selected_clients
@@ -781,9 +1132,22 @@ class FedA2V(FedRewind):
             print ('Text embeddings is missing something')
             return[]
         
-        prompt_embeds = text_embeddings['t5'].to(self.global_model.diffusion_model_device)
-        pooled_prompt_embeds = text_embeddings['clip'].to(self.global_model.diffusion_model_device)
+        prompt_embeds = text_embeddings['t5'].to(self.global_model.diffusion_dtype).to(self.diffusion_device)
+        pooled_prompt_embeds = text_embeddings['clip'].to(self.global_model.diffusion_dtype).to(self.diffusion_device)
 
+
+        if self.generate_low_memomy_footprint:
+            imgs = self.global_model.diffusion_model(
+                                        prompt_embeds=prompt_embeds,
+                                        pooled_prompt_embeds=pooled_prompt_embeds,
+                                        num_inference_steps=1,
+                                        output_type="pt",
+                                        ).images
+        else:
+            imgs = self.generate_single_images_from_diffusion(prompt_embeds, pooled_prompt_embeds)
+        return imgs
+    
+    def generate_single_images_from_diffusion(self, prompt_embeds, pooled_prompt_embeds):
         imgs = []
         for pe, ppe in zip(prompt_embeds, pooled_prompt_embeds):
             pe = pe.unsqueeze(0)
@@ -800,13 +1164,16 @@ class FedA2V(FedRewind):
         return imgs
     
     def save_generated_images(self, imgs, client, embeddings, suffix=""):
+        saved_images = {}  
         for idx, img in enumerate(imgs):
             class_name = embeddings['class_name'][idx]
             img_save_path = os.path.join(self.images_output_dir, f"round_{self.round}_node_{client.id}_img_{class_name}_{idx}{suffix}.png")
+            saved_images[img_save_path] = class_name
             img = img.squeeze(0)
-            converted_img = transforms.ToPILImage()(img.cpu())
+            converted_img = transforms.ToPILImage()(img.to(torch.float32).cpu())
             converted_img.save(img_save_path)
             print(f"Saved generated image to {img_save_path}")
+        return saved_images
 
 
     def generate_images(self, client):
@@ -820,52 +1187,32 @@ class FedA2V(FedRewind):
                 pass
 
         embeddings = client.get_audio_embeddings_for_generation(num_embeddings=5)
-        prompt_embeds = embeddings['t5'].to(self.global_model.diffusion_model_device)
-        pooled_prompt_embeds = embeddings['clip'].to(self.global_model.diffusion_model_device)
-        self.global_model.diffusion_model.to(self.global_model.diffusion_model_device)
 
-        imgs = self.generate_images_from_diffusion(embeddings)
+        on_test_imgs = self.generate_images_from_diffusion(embeddings)
 
-        self.save_generated_images(imgs, client, embeddings)
+        on_test_imgs_files = self.save_generated_images(on_test_imgs, client, embeddings)
         
-        # for idx, img in enumerate(imgs):
-        #     class_name = embeddings['class_name'][idx]
-        #     img_save_path = os.path.join(self.images_output_dir, f"round_{self.round}_node_{client.id}_img_{class_name}_{idx}.png")
-        #     img = img.squeeze(0)
-        #     converted_img = transforms.ToPILImage()(img.cpu())
-        #     converted_img.save(img_save_path)
-        #     print(f"Saved generated image to {img_save_path}")
-
         embeddings = client.get_audio_embeddings_for_generation(num_embeddings=2, from_train=True )
-        prompt_embeds = embeddings['t5'].to(self.global_model.diffusion_model_device)
-        pooled_prompt_embeds = embeddings['clip'].to(self.global_model.diffusion_model_device)
 
-        imgs = self.generate_images_from_diffusion(embeddings)
-        self.save_generated_images(imgs, client, embeddings, "_train")
+        on_train_imgs = self.generate_images_from_diffusion(embeddings)
+        on_train_images_files = self.save_generated_images(on_train_imgs, client, embeddings, "_train")
 
-        # for idx, img in enumerate(imgs):
-        #     class_name = embeddings['class_name'][idx]
-        #     img_save_path = os.path.join(self.images_output_dir, f"round_{self.round}_node_{client.id}_img_{class_name}_{idx}_train.png")
-        #     img = img.squeeze(0)
-        #     converted_img = transforms.ToPILImage()(img.cpu())
+        # node_dataset = client.node_data.train_dataset.dataset
+        # text_embs = node_dataset.text_embs
+        # for node_class in node_dataset.active_classes.keys():
+        #     prompt_embeds = text_embs[node_class][self.diffusion_type]['prompt_embeds']
+        #     pooled_prompt_embeds = text_embs[node_class][self.diffusion_type]['pooled_prompt_embeds']
+        #     imgs = self.global_model.diffusion_model(
+        #                                 prompt_embeds= prompt_embeds,
+        #                                 pooled_prompt_embeds=pooled_prompt_embeds,
+        #                                 num_inference_steps=1,
+        #                                 output_type="pt",
+        #                                 ).images
+        #     img_save_path = os.path.join(self.images_output_dir, f"round_{self.round}_node_{client.id}_img_{node_class}_from_textembs.png")
+        #     converted_img = transforms.ToPILImage()(imgs[0].cpu().detach())
         #     converted_img.save(img_save_path)
-        #     print(f"Saved generated image from trainset to {img_save_path}")
-
-        node_dataset = client.node_data.train_dataset.dataset
-        text_embs = node_dataset.text_embs
-        for node_class in node_dataset.active_classes.keys():
-            prompt_embeds = text_embs[node_class][self.diffusion_type]['prompt_embeds']
-            pooled_prompt_embeds = text_embs[node_class][self.diffusion_type]['pooled_prompt_embeds']
-            imgs = self.global_model.diffusion_model(
-                                        prompt_embeds= prompt_embeds,
-                                        pooled_prompt_embeds=pooled_prompt_embeds,
-                                        num_inference_steps=1,
-                                        output_type="pt",
-                                        ).images
-            img_save_path = os.path.join(self.images_output_dir, f"round_{self.round}_node_{client.id}_img_{node_class}_from_textembs.png")
-            converted_img = transforms.ToPILImage()(imgs[0].cpu().detach())
-            converted_img.save(img_save_path)
-            print(f"Saved generated image from text embeddings to {img_save_path}")
+        #     print(f"Saved generated image from text embeddings to {img_save_path}")
+        return { 'on_train': on_train_images_files, 'on_test': on_test_imgs_files }
             
     def create_clients(self, clientObj):
         config = self.args.json_config if hasattr(self.args, 'json_config') else None 
@@ -915,7 +1262,7 @@ class FedA2V(FedRewind):
                 node_dataset = ESC50Dataset(
                     selected_classes=selected_classes,
                     excluded_classes=excluded_classes,
-                    # split=split,
+                    # split='train',
                     # use_folds=use_folds,
                     train_folds=train_folds,
                     test_folds=test_folds,
@@ -933,6 +1280,13 @@ class FedA2V(FedRewind):
             )
         
             self.clients.append(node)
+
+        self.federation_available_classes = []
+        for node in self.clients:
+            self.federation_available_classes.extend(node.node_data.train_dataset.dataset.available_classes)
+            self.federation_available_classes.extend(node.node_data.test_dataset.dataset.available_classes)
+
+        self.federation_available_classes = list(set(self.federation_available_classes))
 
         return self.clients
 
@@ -983,8 +1337,8 @@ class FedA2V(FedRewind):
         nodes_train_metrics = {}
 
         for client_index, c in enumerate(self.clients):
-            if c.node_data.test_data == None:
-                print(f"Client {c.id} test data is None")
+            if c.node_data.train_dataset == None:
+                print(f"Client {c.id} train data is None")
                 continue
             c._move_to_gpu(self.device)
             node_train_metrics = c.train_metrics()
@@ -998,7 +1352,7 @@ class FedA2V(FedRewind):
         test_clients_stats = {}
 
         for client_index, c in enumerate(self.clients):
-            if c.node_data.test_data == None:
+            if c.node_data.test_dataset == None:
                 print(f"Client {c.id} test data is None")
                 continue
 
@@ -1061,12 +1415,14 @@ class FedA2V(FedRewind):
                     move_optimizer_state(optimizer, device)
 
     def _move_to_gpu(self, device):
-        print(f"Server moving to GPU: {device}")
-        self._move_to_device(device)
+        if self.optimize_memory_usage:
+            logger.debug(f"Server moving to GPU: {device}")
+            self._move_to_device(device)
 
     def _move_to_cpu(self):
-        print(f"Server moving to CPU for memory optimization")
-        self._move_to_device('cpu')
+        if self.optimize_memory_usage:
+            logger.debug(f"Server moving to CPU for memory optimization")
+            self._move_to_device('cpu')
 
 @torch.no_grad()
 def move_optimizer_state(optimizer, device):
@@ -1079,3 +1435,184 @@ def move_optimizer_state(optimizer, device):
                 if torch.is_tensor(v):
                     st[k] = v.to(device)
     torch.cuda.empty_cache()
+
+
+def load_images_with_class_from_path(images_path, device='cuda', filter_round=None, use_last_round=False,
+                                      filter_node=None, include_train=True, include_test=True,
+                                      include_textembs=True):
+    """
+    Carica immagini da una directory e estrae classe e metadati dal nome file.
+
+    Formato nome file atteso: round_X_node_Y_img_CLASSNAME_Z.png
+                              round_X_node_Y_img_CLASSNAME_Z_train.png
+                              round_X_node_Y_img_CLASSNAME_from_textembs.png
+
+    Args:
+        images_path: Path alla directory con le immagini
+        device: Device su cui caricare i tensor
+        filter_round: int o None - Carica solo immagini da un round specifico
+        use_last_round: bool - Se True, carica solo le immagini dell'ultimo round disponibile
+        filter_node: int o None - Carica solo immagini da un nodo specifico
+        include_train: bool - Include immagini con suffisso "_train"
+        include_test: bool - Include immagini senza suffisso (test/validation)
+        include_textembs: bool - Include immagini generate da text embeddings
+
+    Returns:
+        dict: {
+            class_name: {
+                'images': torch.Tensor (N, C, H, W),
+                'filenames': list of str,
+                'paths': list of str,
+                'rounds': list of int,
+                'nodes': list of int,
+                'image_types': list of str  # 'train', 'test', 'textembs'
+            }
+        }
+    """
+    import re
+    from pathlib import Path
+    from PIL import Image
+    from collections import defaultdict
+
+    # Trasformazione standard per le immagini
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                           std=[0.229, 0.224, 0.225])
+    ])
+
+    images_path = Path(images_path)
+    data_by_class = defaultdict(lambda: {
+        'images': [],
+        'filenames': [],
+        'paths': [],
+        'rounds': [],
+        'nodes': [],
+        'image_types': []
+    })
+
+    # Pattern completo per estrarre round, node, classe e tipo
+    # Formato: round_X_node_Y_img_CLASSNAME_Z.png
+    pattern_standard = re.compile(r'round_(\d+)_node_(\d+)_img_(.+?)_(\d+)\.png')
+    # Formato: round_X_node_Y_img_CLASSNAME_Z_train.png
+    pattern_train = re.compile(r'round_(\d+)_node_(\d+)_img_(.+?)_(\d+)_train\.png')
+    # Formato: round_X_node_Y_img_CLASSNAME_from_textembs.png
+    pattern_textembs = re.compile(r'round_(\d+)_node_(\d+)_img_(.+?)_from_textembs\.png')
+
+    # Prima fase: trova tutti i round disponibili se use_last_round è True
+    all_rounds = set()
+    if use_last_round:
+        for img_file in images_path.glob('*.png'):
+            filename = img_file.name
+            for pattern in [pattern_standard, pattern_train, pattern_textembs]:
+                match = pattern.match(filename)
+                if match:
+                    all_rounds.add(int(match.group(1)))
+                    break
+
+        if all_rounds:
+            filter_round = max(all_rounds)
+            print(f"Using last round: {filter_round}")
+        else:
+            print("Warning: No rounds found in image filenames")
+
+    # Seconda fase: carica le immagini con i filtri
+    for img_file in sorted(images_path.glob('*.png')):
+        filename = img_file.name
+
+        match = None
+        image_type = None
+
+        # Prova i pattern in ordine
+        if include_test:
+            match = pattern_standard.match(filename)
+            if match:
+                image_type = 'test'
+
+        if not match and include_train:
+            match = pattern_train.match(filename)
+            if match:
+                image_type = 'train'
+
+        if not match and include_textembs:
+            match = pattern_textembs.match(filename)
+            if match:
+                image_type = 'textembs'
+
+        if match:
+            round_num = int(match.group(1))
+            node_num = int(match.group(2))
+            class_name = match.group(3)
+
+            # Applica filtri
+            if filter_round is not None and round_num != filter_round:
+                continue
+
+            if filter_node is not None and node_num != filter_node:
+                continue
+
+            try:
+                # Carica l'immagine
+                img = Image.open(img_file).convert('RGB')
+                img_tensor = transform(img)
+
+                # Salva i dati
+                data_by_class[class_name]['images'].append(img_tensor)
+                data_by_class[class_name]['filenames'].append(filename)
+                data_by_class[class_name]['paths'].append(str(img_file))
+                data_by_class[class_name]['rounds'].append(round_num)
+                data_by_class[class_name]['nodes'].append(node_num)
+                data_by_class[class_name]['image_types'].append(image_type)
+
+            except Exception as e:
+                print(f"Error loading {filename}: {e}")
+        else:
+            print(f"Warning: Could not parse metadata from {filename}")
+
+    # Converti liste di tensor in batch tensor
+    result = {}
+    for class_name, data in data_by_class.items():
+        if len(data['images']) > 0:
+            result[class_name] = {
+                'images': torch.stack(data['images']).to(device),
+                'filenames': data['filenames'],
+                'paths': data['paths'],
+                'rounds': data['rounds'],
+                'nodes': data['nodes'],
+                'image_types': data['image_types']
+            }
+            print(f"Loaded class '{class_name}': {len(data['filenames'])} images "
+                  f"(rounds: {sorted(set(data['rounds']))}, nodes: {sorted(set(data['nodes']))})")
+
+    return result
+
+
+def prepare_for_metrics(data_by_class):
+    """
+    Prepara i dati per passarli alle metriche del modello.
+
+    Args:
+        data_by_class: Output di load_images_with_class_from_path()
+
+    Returns:
+        Tuple (images, class_names, filenames):
+        - images: torch.Tensor (N, C, H, W)
+        - class_names: List[str] - classe per ogni immagine
+        - filenames: List[str] - nome file per ogni immagine
+    """
+    all_images = []
+    all_class_names = []
+    all_filenames = []
+
+    for class_name, data in data_by_class.items():
+        num_images = len(data['filenames'])
+
+        all_images.append(data['images'])
+        all_class_names.extend([class_name] * num_images)
+        all_filenames.extend(data['paths'])
+
+    # Concatena tutti i tensor
+    all_images = torch.cat(all_images, dim=0)
+
+    return all_images, all_class_names, all_filenames

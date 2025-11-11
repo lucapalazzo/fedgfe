@@ -152,7 +152,7 @@ class DownstreamClassification (Downstream):
 
         for task_index, task_labels in enumerate(self.classification_labels_used):
             task_labels_id = self.classification_labels_used[task_index]
-            task_labels_count = max(classification_tasks_labels[task_labels_id])+1
+            task_labels_count = classification_tasks_labels[task_labels_id]['num_classes']
             self.classification_head.add_module(f"classification_head_{task_index}", self.classification_head_to_use(self.input_dim, task_labels_count, cls_token_only=self.cls_token_only))
 
         self.downstream_head = self.classification_head
@@ -334,7 +334,7 @@ class DownstreamClassification (Downstream):
         batch_size = labels.shape[0]
 
         task_metrics = NodeMetric(phase=NodeMetric.Phase.TEST, task_count=self.classification_task_count)
-        task_metrics.define_metrics( self.defined_test_metrics)
+        task_metrics.define_metrics( self.defined_test_metrics, task_count=self.classification_task_count)
         task_metrics.task_name = self.task_name
         task_metrics.task_type = NodeMetric.TaskType.CLASSIFICATION
 

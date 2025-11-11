@@ -145,13 +145,14 @@ class clientGFE(clientRewind):
             dataset_labels_count = self.node_data.classification_labels_count()
             if self.classification_labels_count > dataset_labels_count:
                 self.classification_labels_count = dataset_labels_count
-            stats = self.node_data.train_stats_get()
+            classification_task_count, classification_task_stats = self.node_data.train_stats_get()
            
-            classification_labels = stats[0]
-            self.classification_labels_count = len(classification_labels)
+            self.classification_task_count = classification_task_count
+            classification_labels = list(classification_task_stats[0]['label_counts'].keys())
             # classification_labels = [stats[0][i] for i in range(self.classification_labels_count)]
             
-            self.downstream_task = DownstreamClassification(self.model.backbone, num_classes=self.num_classes,wandb_log=(not self.no_wandb), classification_tasks_labels=classification_labels, classification_labels_used = self.classification_labels_used, cls_token_only=self.cls_token_only).to(self.device)
+            # self.downstream_task = DownstreamClassification(self.model.backbone, num_classes=self.num_classes,wandb_log=(not self.no_wandb), classification_tasks_labels=classification_task_stats, classification_labels_used = self.classification_labels_used, cls_token_only=self.cls_token_only).to(self.device)
+            self.downstream_task = DownstreamClassification(self.model.backbone, num_classes=self.num_classes,wandb_log=(not self.no_wandb), classification_tasks_labels=classification_task_stats, cls_token_only=self.cls_token_only).to(self.device)
         elif value == "segmentation":
             masks = self.node_data.segmentation_mask_count()
             self.downstream_task = DownstreamSegmentation(self.model.backbone, num_classes=masks, patch_size=self.patch_size,wandb_log=(not self.no_wandb))

@@ -1578,7 +1578,7 @@
             "args": ["--config", "configs/jsrt_simple_classification.json",
                 ],
                 "env":{
-                    "CUDA_VISIBLE_DEVICES": "2"
+                    "CUDA_VISIBLE_DEVICES": "1"
                 }
 
         },
@@ -2448,7 +2448,22 @@
             "args": ["--config", "configs/a2v_esc50_3n_adapter_avg.json",
                 ],
             "env":{
-                "CUDA_VISIBLE_DEVICES": "0"
+                "CUDA_VISIBLE_DEVICES": "1"
+            }
+        },
+        {
+            "name": "feda2v ESC50 3N Generate",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_esc50_3n_generate.json",
+                ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "1"
             }
         },
         {

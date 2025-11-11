@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import cv2
 import logging
 import sys
+from sklearn.model_selection import train_test_split
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,8 @@ class VEGASDataset(Dataset):
                  excluded_classes: Optional[Union[List[str], List[int]]] = None,
                  split: str = "all",
                  split_ratio: float = 0.8,
+                 val_ratio: float = 0.1,
+                 stratify: bool = True,
                  use_saved_audio_embeddings: bool = True,
                  node_id: Optional[int] = None,
                  enable_cache: bool = False,
@@ -72,10 +75,14 @@ class VEGASDataset(Dataset):
         Args:
             root_dir: Root directory of VEGAS dataset
             embedding_file: Path to text embeddings file
+            audio_embedding_file: Path to audio embeddings file
             selected_classes: List of classes to include (str names or int labels)
             excluded_classes: List of classes to exclude (str names or int labels)
-            split: 'train', 'test', or 'all'
-            split_ratio: Ratio for train/test split
+            split: 'train', 'val', 'test', or 'all'
+            split_ratio: Ratio for train split
+            val_ratio: Ratio for validation split from train set
+            stratify: Whether to use stratified sampling for train/val/test split
+            use_saved_audio_embeddings: Whether to use saved audio embeddings
             node_id: Federated learning node ID for consistent splitting
             enable_cache: Whether to enable caching
             cache_dir: Directory for cache files
@@ -86,12 +93,17 @@ class VEGASDataset(Dataset):
             transform_audio: Audio transform function
             transform_image: Image transform function
             transform_video: Video transform function
+            load_audio: Whether to load audio data
+            load_image: Whether to load image data
+            load_video: Whether to load video data
         """
         self.root_dir = root_dir
         self.embedding_file = embedding_file
         self.audio_embedding_file = audio_embedding_file
         self.split = split
         self.split_ratio = split_ratio
+        self.val_ratio = val_ratio
+        self.stratify = stratify
         self.node_id = node_id
         self.enable_cache = enable_cache
         self.cache_dir = cache_dir
@@ -122,6 +134,14 @@ class VEGASDataset(Dataset):
         self.excluded_classes = self._process_class_selection(excluded_classes)
 
         self.available_classes = list(self.CLASS_LABELS.keys())
+
+        # Load captions if available
+        self.captions = {}
+        captions_path = os.path.join(self.root_dir, "captions.json")
+        if os.path.exists(captions_path):
+            import json
+            with open(captions_path, 'r') as f:
+                self.captions = json.load(f)
 
         self.transform_audio = transform_audio
         self.transform_image = transform_image or self._default_image_transform()
@@ -301,7 +321,8 @@ class VEGASDataset(Dataset):
                         'start_second': row.get('start_second', 0),
                         'end_second': row.get('end_second', self.audio_duration),
                         'sample_idx': len(samples),
-                        'audio_emb': self.audio_embs.get(audio_filename, None)
+                        'audio_emb': self.audio_embs.get(audio_filename, None),
+                        'caption': self.captions.get(video_id, '')
                     }
                     samples.append(sample)
 
@@ -326,32 +347,105 @@ class VEGASDataset(Dataset):
         return hashlib.md5(config_str.encode()).hexdigest()[:8]
 
     def _apply_split(self, samples: List[Dict]) -> List[Dict]:
-        """Apply train/test split to samples."""
+        """
+        Apply train/val/test split to samples with optional stratification.
+
+        Uses scikit-learn's train_test_split for stratified sampling.
+        """
+        if not samples:
+            return samples
+
         # Use reproducible random seed based on node_id
-        rng = np.random.RandomState(42 + (self.node_id or 0))
+        random_state = 42 + (self.node_id or 0)
 
-        # Group samples by class for balanced splitting
-        class_samples = {}
-        for sample in samples:
-            class_name = sample['class_name']
-            if class_name not in class_samples:
-                class_samples[class_name] = []
-            class_samples[class_name].append(sample)
+        # Extract labels for stratification
+        labels = [sample['class_label'] for sample in samples]
 
-        # Split each class
-        split_samples = []
-        for class_name, cls_samples in class_samples.items():
-            cls_samples = sorted(cls_samples, key=lambda x: x['video_id'])  # Ensure deterministic order
-            rng.shuffle(cls_samples)
+        if self.stratify:
+            # Stratified split using sklearn
+            if self.split in ['train', 'val']:
+                # First split: train+val vs test
+                train_val_samples, test_samples = train_test_split(
+                    samples,
+                    test_size=1.0 - self.split_ratio,
+                    stratify=labels if self.stratify else None,
+                    random_state=random_state
+                )
 
-            n_train = int(len(cls_samples) * self.split_ratio)
+                # If we need validation split
+                if self.val_ratio > 0:
+                    # Second split: train vs val
+                    train_val_labels = [s['class_label'] for s in train_val_samples]
+                    # Calculate val size relative to train_val set
+                    val_size_relative = self.val_ratio / self.split_ratio
 
-            if self.split == 'train':
-                split_samples.extend(cls_samples[:n_train])
+                    train_samples, val_samples = train_test_split(
+                        train_val_samples,
+                        test_size=val_size_relative,
+                        stratify=train_val_labels if self.stratify else None,
+                        random_state=random_state
+                    )
+
+                    if self.split == 'train':
+                        return train_samples
+                    elif self.split == 'val':
+                        return val_samples
+                else:
+                    # No validation split needed
+                    if self.split == 'train':
+                        return train_val_samples
+
             elif self.split == 'test':
-                split_samples.extend(cls_samples[n_train:])
+                # Split to get test set
+                _, test_samples = train_test_split(
+                    samples,
+                    test_size=1.0 - self.split_ratio,
+                    stratify=labels if self.stratify else None,
+                    random_state=random_state
+                )
+                return test_samples
 
-        return split_samples
+        else:
+            # Non-stratified split (original behavior)
+            rng = np.random.RandomState(random_state)
+
+            # Group samples by class for balanced splitting
+            class_samples = {}
+            for sample in samples:
+                class_name = sample['class_name']
+                if class_name not in class_samples:
+                    class_samples[class_name] = []
+                class_samples[class_name].append(sample)
+
+            # Split each class
+            split_samples = []
+            for class_name, cls_samples in class_samples.items():
+                cls_samples = sorted(cls_samples, key=lambda x: x['video_id'])
+                rng.shuffle(cls_samples)
+
+                if self.val_ratio > 0:
+                    # Three-way split: train / val / test
+                    n_train = int(len(cls_samples) * self.split_ratio)
+                    n_val = int(len(cls_samples) * self.val_ratio)
+
+                    if self.split == 'train':
+                        split_samples.extend(cls_samples[:n_train])
+                    elif self.split == 'val':
+                        split_samples.extend(cls_samples[n_train:n_train + n_val])
+                    elif self.split == 'test':
+                        split_samples.extend(cls_samples[n_train + n_val:])
+                else:
+                    # Two-way split: train / test
+                    n_train = int(len(cls_samples) * self.split_ratio)
+
+                    if self.split == 'train':
+                        split_samples.extend(cls_samples[:n_train])
+                    elif self.split == 'test':
+                        split_samples.extend(cls_samples[n_train:])
+
+            return split_samples
+
+        return samples
 
     def _load_audio(self, audio_path: str) -> torch.Tensor:
         """Load and preprocess audio."""
@@ -508,7 +602,8 @@ class VEGASDataset(Dataset):
         output.update({
             'ytid': sample['ytid'],
             'start_second': sample['start_second'],
-            'end_second': sample['end_second']
+            'end_second': sample['end_second'],
+            'caption': sample.get('caption', '')
         })
 
         return output
@@ -532,6 +627,72 @@ class VEGASDataset(Dataset):
             class_name = sample['class_name']
             class_counts[class_name] = class_counts.get(class_name, 0) + 1
         return class_counts
+
+    def get_text_embeddings(self, class_name: str):
+        """Get text embeddings for a given class name."""
+        if self.text_embs is not None and class_name.lower() in self.text_embs:
+            return self.text_embs[class_name.lower()]
+        return None
+
+    def get_class_distribution(self) -> Dict[str, float]:
+        """
+        Get class distribution as percentages.
+
+        Returns:
+            Dictionary mapping class names to their percentage in the dataset
+        """
+        counts = self.get_samples_per_class()
+        total = sum(counts.values())
+        return {cls: (count / total) * 100 for cls, count in counts.items()}
+
+    def print_split_statistics(self):
+        """Print statistics about the current split."""
+        logger.info(f"\n=== VEGAS Dataset Statistics ({self.split} split) ===")
+        logger.info(f"Total samples: {len(self.samples)}")
+        logger.info(f"Number of classes: {len(self.active_classes)}")
+        logger.info(f"Stratified: {self.stratify}")
+
+        samples_per_class = self.get_samples_per_class()
+        distribution = self.get_class_distribution()
+
+        logger.info("\nClass distribution:")
+        for class_name in sorted(self.active_classes.keys()):
+            count = samples_per_class.get(class_name, 0)
+            percent = distribution.get(class_name, 0.0)
+            logger.info(f"  {class_name}: {count} samples ({percent:.2f}%)")
+
+    def verify_stratification(self, other_dataset: 'VEGASDataset', tolerance: float = 0.05) -> bool:
+        """
+        Verify that class distributions are similar between this and another dataset.
+
+        Args:
+            other_dataset: Another VEGASDataset to compare with
+            tolerance: Maximum allowed difference in class percentages (default 5%)
+
+        Returns:
+            True if distributions are similar within tolerance
+        """
+        dist1 = self.get_class_distribution()
+        dist2 = other_dataset.get_class_distribution()
+
+        all_classes = set(dist1.keys()) | set(dist2.keys())
+
+        is_stratified = True
+        logger.info("\n=== Stratification Verification ===")
+
+        for class_name in sorted(all_classes):
+            pct1 = dist1.get(class_name, 0.0)
+            pct2 = dist2.get(class_name, 0.0)
+            diff = abs(pct1 - pct2)
+
+            status = "✓" if diff <= tolerance * 100 else "✗"
+            logger.info(f"{status} {class_name}: {pct1:.2f}% vs {pct2:.2f}% (diff: {diff:.2f}%)")
+
+            if diff > tolerance * 100:
+                is_stratified = False
+
+        logger.info(f"\nStratification {'PASSED' if is_stratified else 'FAILED'} (tolerance: {tolerance*100:.1f}%)")
+        return is_stratified
 
     def clear_cache(self):
         """Clear dataset cache."""
@@ -608,7 +769,8 @@ def _vegas_collate_fn(batch):
         'sample_indices': [item['sample_idx'] for item in batch],
         'ytids': [item['ytid'] for item in batch],
         'start_seconds': [item['start_second'] for item in batch],
-        'end_seconds': [item['end_second'] for item in batch]
+        'end_seconds': [item['end_second'] for item in batch],
+        'captions': [item.get('caption', '') for item in batch]
     }
 
     return {

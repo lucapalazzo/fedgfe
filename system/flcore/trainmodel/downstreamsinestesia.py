@@ -7,9 +7,10 @@ import wandb
 from utils.node_metric import NodeMetric
 from flcore.trainmodel.Audio2Visual_NoData.src.models.sinestesia import SinestesiaWithClassifier
 from flcore.trainmodel.Audio2Visual_NoData.src.models.audio2image import Audio2Image
-from transformers import ASTFeatureExtractor
+from transformers import ASTFeatureExtractor, pipeline
 from diffusers import StableDiffusionPipeline, LCMScheduler, FluxPipeline, CogVideoXPipeline
 
+from sklearn.metrics import balanced_accuracy_score, f1_score, accuracy_score, precision_score, recall_score
 
 class DownstreamSinestesia(Downstream):
     """
@@ -63,6 +64,10 @@ class DownstreamSinestesia(Downstream):
         self.diffusion_type = args.diffusion_type if diffusion_type is None else diffusion_type
         self.enable_diffusion = enable_diffusion
         self.diffusion_model = None
+        self.generate_low_memomy_footprint = False
+        self.diffusion_dtype = torch.float32
+
+
 
 
         if self.diffusion_type not in ['sd', 'flux']:
@@ -106,8 +111,22 @@ class DownstreamSinestesia(Downstream):
         # Classification loss function
         self.classification_loss = nn.CrossEntropyLoss()
 
+        self.zero_shot_model = pipeline(
+            "zero-shot-image-classification",
+            model="openai/clip-vit-base-patch32",
+            device=self.device
+        )
+
         # Define metrics
-        self.defined_test_metrics = {"text_loss": None}
+        self.defined_test_metrics = {
+            'accuracy': None,
+            'balanced_accuracy': None,
+            'f1_score': None,
+            'precision': None,
+            'recall': None,
+            'f1_score_weighted': None
+        }
+
         self.defined_train_metrics = {"text_loss": None}
         # self.defined_train_metrics = {"loss": None, "text_loss": None, "img_text_loss": None,
         #                              "image_loss": None, "audio_text_loss": None}
@@ -223,23 +242,24 @@ class DownstreamSinestesia(Downstream):
         )
 
 
-    def start_diffusion(self):
+    def start_diffusion(self, low_memory_footprint = False):
+
+        if low_memory_footprint:
+            self.diffusion_dtype = torch.bfloat16
 
         if self.enable_diffusion:
             img_lcm_lora_id="latent-consistency/lcm-lora-sdv1-5"
 
             if self.diffusion_type == 'sd':
                 img_pipe_name="runwayml/stable-diffusion-v1-5",
-                self.diffusion_model = StableDiffusionPipeline.from_pretrained(img_pipe_name).to(self.diffusion_model_device)
+                self.diffusion_model = StableDiffusionPipeline.from_pretrained(img_pipe_name, torch_dtype=self.diffusion_dtype).to(self.diffusion_model_device)
             elif self.diffusion_type == 'flux':
                 img_pipe_name="black-forest-labs/FLUX.1-schnell"
                 img_lcm_lora_id="strangerzonehf/Flux-Midjourney-Mix2-LoRA"
-                # img_pipe_name="black-forest-labs/FLUX.1-dev"
-                self.diffusion_model = FluxPipeline.from_pretrained(img_pipe_name, torch_dtype=self.torch_dtype,map=self.diffusion_model_device)
-                # self.diffusion_model.load_lora_weights(img_lcm_lora_id)
+                self.diffusion_model = FluxPipeline.from_pretrained(img_pipe_name, torch_dtype=self.diffusion_dtype)
 
             print( f"Started diffusion model {self.diffusion_type}")
-            self.diffusion_model.to(torch.device('cpu'))
+            # self.diffusion_model.to(torch.device('cpu'))
             
 
 
@@ -457,18 +477,46 @@ class DownstreamSinestesia(Downstream):
                 wandb.log(log_dict)
 
         return avg_loss if train_num > 0 else 0.0
+    
+    def compute_zero_shot(self, imgs_out_path, classes):
+        prediction = self.zero_shot_model(imgs_out_path, candidate_labels=classes.keys()) #classes is a list of all the textual labels [train, airplane, ...]
+        preds = []
 
-    def test_metrics(self, dataloader, metrics=None):
-        """
-        Compute test metrics on a dataloader.
+        # result = [
+        #     {"score": score, "label": candidate_label}
+        #     for score, candidate_label in sorted(zip(prediction, classes.keys()), key=lambda x: -x[0])
+        # ]
+        for i, pred in enumerate(prediction):
+            predicted_label = classes[pred[0]['label']] #classes_dict è un dizionario che puoi creare che mappa l'id testuale in id numerico
+            preds.append(predicted_label)
 
-        Args:
-            dataloader: DataLoader with test data
-            metrics: Optional existing metrics object
+        preds = torch.tensor(preds)
+        return preds
 
-        Returns:
-            Dictionary with test metrics
-        """
+    def _compute_classification_metrics(self, preds, labels):
+        preds = preds.numpy()
+        labels = labels.cpu().numpy() # qui labels sono tutte le annotazioni corrette dei sample 
+
+        accuracy = accuracy_score(labels, preds)
+        balanced_acc = balanced_accuracy_score(labels, preds)
+        f1 = f1_score(labels, preds, average='macro')
+        precision = precision_score(labels, preds, average='macro', zero_division=0)
+        recall = recall_score(labels, preds, average='macro', zero_division=0)
+        f1w = f1_score(labels, preds, average='weighted', zero_division=0)
+
+        return {
+            'accuracy': accuracy,
+            'balanced_accuracy': balanced_acc,
+            'f1_score': f1,
+            'precision': precision,
+            'recall': recall,
+            'f1_score_weighted': f1w
+        }
+
+#1) calcola le pred passando immagini e lista classi a compute_zero_shot
+#2) passa predizioni e ground truth a _compute_classification_metrics
+
+    def test_metrics(self, dataloader, test_images = None):
         test_num = 0
         total_loss = 0.0
         total_correct = 0

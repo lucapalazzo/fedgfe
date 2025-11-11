@@ -131,7 +131,9 @@ class ConfigLoader:
             'runs': 1,
             'seed': -1,
             'optimize_memory': False,
-            'debug': False
+            'debug': False,
+            'optimize_memory_usage': False,
+            'use_balooning': False
         },
         'federation': {
             'algorithm': 'FedAvg',
@@ -212,6 +214,7 @@ class ConfigLoader:
             'audio_embedding_file_name': 'audio_embeddings.pt',
             'generate_nodes_images_frequency': 0,
             'generate_global_images_frequency': 0,
+            "generate_low_memomy_footprint": False,
             'global_model_train': False,
             'global_model_train_epochs': 1,
             'global_model_train_from_nodes_adapters': False,

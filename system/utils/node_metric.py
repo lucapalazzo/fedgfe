@@ -116,17 +116,29 @@ class NodeMetric(MutableSequence, MutableMapping):
             raise TypeError("Metrics must be a dict.")
         self._defined_metrics = list(metrics.keys()) if isinstance(metrics, dict) else metrics
         self._metrics = metrics
-        self._task_count = task_count
+
         if task_count > 0:
-            for i in range(task_count):
-                # self._dict[i] = {metric: None for metric in metrics}
-                self._dict[i] = NodeMetric(phase=self._phase, task_count=0)
-                self._dict[i].define_metrics(self._metrics, task_count=0)
-            for metric in self._defined_metrics:
-                self._dict[metric] = { 'mean': None, 'std': None, 'min': None, 'max': None }
+            self._task_count = task_count
+            task_range = task_count
         else:
-           for metric in self._defined_metrics:
-                self._dict[metric] = None
+            task_range = self._task_count
+
+        for i in range(task_range):
+
+            if i in self._dict:
+                continue
+            # self._dict[i] = {metric: None for metric in metrics}
+            self._dict[i] = NodeMetric(phase=self._phase, task_count=0)
+            self._dict[i].define_metrics(self._metrics, task_count=0)
+
+        for metric in self._defined_metrics:
+            if metric not in self._dict:
+                if task_count > 0:
+                    self._dict[metric] = { 'mean': None, 'std': None, 'min': None, 'max': None }
+                else:
+                    self._dict[metric] = None
+
+
         return self
     
     def min(self):
