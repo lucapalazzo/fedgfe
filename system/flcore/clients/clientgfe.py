@@ -42,7 +42,7 @@ import torch.nn.functional as F
 
 from tqdm import tqdm
 
-from torchviz import make_dot
+from torchviz  import make_dot
 
 from collections import Counter
 

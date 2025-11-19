@@ -1,0 +1,131 @@
+{
+  "experiment": {
+    "goal": "test",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42,
+    "use_balooning": false,
+    "optimize_memory_usage": false
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 2,
+    "global_rounds": 40,
+    "local_epochs": 5,
+    "eval_gap": 10,
+    "diffusion_type": "flux",
+    "model_aggregation": "none",
+    "use_saved_audio_embeddings": false
+  },
+  "feda2v": {
+    "generate_nodes_images_frequency": 5,
+    "generate_global_images_frequency": 0,
+    "generate_low_memomy_footprint": true,
+    "adapter_aggregation_mode": "avg",
+    "global_model_train": true,
+    "global_model_train_from_nodes_adapters": false,
+    "global_model_train_from_generator": true,
+    "global_model_train_from_nodes_audio_embeddings": false,
+    "global_model_train_epochs": 5,
+    "use_generator": true,
+    "generator_type": "vae",
+    "store_audio_embeddings": false,
+    "audio_embedding_file_name": null,
+    "images_output_dir": "esc50-12n-avg"
+  },
+  "nodes": {
+    "0": {
+      "dataset": "ESC50",
+      "selected_classes": ["dog"],
+      "_comment": "Node 0 uses text dog",
+      "diffusion_type": "flux"
+    },
+    "1": {
+      "dataset": "ESC50",
+      "selected_classes": ["rooster"],
+      "diffusion_type": "flux",
+      "_comment": "Node 1 uses text rooster"
+    },
+    "2": {
+      "dataset": "ESC50",
+      "selected_classes": ["pig"],
+      "diffusion_type": "flux",
+      "_comment": "Node 2 uses text pig"
+    },
+    "3": {
+      "dataset": "ESC50",
+      "selected_classes": ["cow"],
+      "diffusion_type": "flux",
+      "_comment": "Node 3 uses text cow"
+    },
+    "4": {
+      "dataset": "ESC50",
+      "selected_classes": ["frog"],
+      "diffusion_type": "flux",
+      "_comment": "Node 4 uses text frog"
+    },
+    "5": {
+      "dataset": "ESC50",
+      "selected_classes": ["cat"],
+      "diffusion_type": "flux",
+      "_comment": "Node 5 uses text cat"
+    },
+    "6": {
+      "dataset": "ESC50",
+      "selected_classes": ["hen"],
+      "diffusion_type": "flux",
+      "_comment": "Node 6 uses text hen"
+    },
+    "7": {
+      "dataset": "ESC50",
+      "selected_classes": ["insects"],
+      "diffusion_type": "flux",
+      "_comment": "Node 7 uses text insects"
+    },
+    "8": {
+      "dataset": "ESC50",
+      "selected_classes": ["sheep"],
+      "diffusion_type": "flux",
+      "_comment": "Node 8 uses text sheep"
+    },
+    "9": {
+      "dataset": "ESC50",
+      "selected_classes": ["crow"],
+      "diffusion_type": "flux",
+      "_comment": "Node 9 uses text crow"
+    },
+    "10": {
+      "dataset": "ESC50",
+      "selected_classes": ["rain"],
+      "diffusion_type": "flux",
+      "_comment": "Node 10 uses text rain"
+    },
+    "11": {
+      "dataset": "ESC50",
+      "selected_classes": ["sea_waves"],
+      "diffusion_type": "flux",
+      "_comment": "Node 11 uses text sea_waves"
+    }
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "batch_size": 32,
+    "weight_decay": 0.0001,
+    "momentum": 0.9
+  },
+  "dataset": {
+    "name": "VEGAS",
+    "path": "./data"
+
+  },
+  "wandb": {
+    "disabled": false
+  }
+}

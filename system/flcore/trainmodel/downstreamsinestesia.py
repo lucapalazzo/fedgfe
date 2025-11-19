@@ -52,11 +52,11 @@ class DownstreamSinestesia(Downstream):
         self.device = device
         self.diffusion_model_device = torch.device("cuda:1") if torch.cuda.device_count() > 1 else torch.device("cuda" if torch.cuda.is_available() else "cpu")  
         if self.device is None:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         self.device1 = self.device
-        self.device2 = torch.device("cuda:1" if torch.cuda.device_count() > 1 else self.device)
-        self.device3 = torch.device("cuda:2" if torch.cuda.device_count() > 2 else self.device)
+        self.device2 = torch.device("cuda:0" if torch.cuda.device_count() > 1 else self.device)
+        self.device3 = torch.device("cuda:1" if torch.cuda.device_count() > 2 else self.device)
         self.torch_dtype = torch_dtype
 
         self.task_name = "sinestesia"
@@ -128,15 +128,6 @@ class DownstreamSinestesia(Downstream):
         }
 
         self.defined_train_metrics = {"text_loss": None}
-        # self.defined_train_metrics = {"loss": None, "text_loss": None, "img_text_loss": None,
-        #                              "image_loss": None, "audio_text_loss": None}
-
-        # if self.use_classifier_loss:
-        #     self.defined_train_metrics["classifier_loss"] = None
-        #     self.defined_train_metrics["accuracy"] = None
-        #     self.defined_test_metrics["accuracy"] = None
-
-        # self.init_metrics()
 
         max_lenght1 = 77
         if self.diffusion_type == 'flux':
@@ -157,7 +148,7 @@ class DownstreamSinestesia(Downstream):
     # def audio2image_model(self):
     #     return self.get_audio2image_model_from_sinestesia()
     def to(self, device):
-        self.audio2image_model.to(device)
+        self.audio2image_model.to(self.device)
         return self
     
     def get_audio2image_model_from_sinestesia(self):
@@ -167,12 +158,6 @@ class DownstreamSinestesia(Downstream):
     
     def get_audio2image_model(self):
         return self.audio2image_model
-
-    # def init_metrics(self):
-    #     """Initialize metrics storage."""
-    #     self.train_metrics_storage = {metric: [] for metric in self.defined_train_metrics}
-    #     self.test_metrics_storage = {metric: [] for metric in self.defined_test_metrics}
-    #     return self.train_metrics_storage
 
     def train(self, mode: bool = True) -> None:
         """Set training mode."""

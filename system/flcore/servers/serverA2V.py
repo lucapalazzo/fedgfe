@@ -66,19 +66,21 @@ class FedA2V(FedRewind):
         self.config = args.json_config if hasattr(args, 'json_config') else None
 
         self.balooning_size = 0
-        self.bolooning_reserve_mb = 0.1
+        self.bolooning_reserve_mb = 1024
         if self.config.experiment.use_balooning:
-            self.balooning_size = 38*1024*1024*1024
-        self.baloon = GPUMemoryBalloon(gpu_id=0, chunk_size_mb=256,reserve_mb=self.bolooning_reserve_mb)
+            self.balooning_size = 34*1024
+        self.baloon_gpu_id = 1 if torch.cuda.device_count() > 1 else 0
+        self.baloon = GPUMemoryBalloon(gpu_id=self.baloon_gpu_id, chunk_size_mb=256,reserve_mb=self.bolooning_reserve_mb)
         self.baloon.allocate_memory(self.balooning_size)
 
-        self.device1 = self.device if torch.cuda.is_available() else 'cpu'
-        self.device2 = self.device if torch.cuda.is_available() else 'cpu'
-        self.device3 = self.device if torch.cuda.is_available() else 'cpu'
+        self.device = torch.device("cuda:0" if torch.cuda.is_available()else 'cpu')
+
+        self.device1 = torch.device("cuda:0" if torch.cuda.device_count() > 1 else self.device)
+        self.device2 = torch.device("cuda:1" if torch.cuda.device_count() > 1 else self.device)
 
         # Audio2Visual specific configuration
         self.diffusion_type = getattr(self.config.federation, 'diffusion_type', 'sd')
-        self.diffusion_device = self.device
+        self.diffusion_device = torch.device("cuda:1" if torch.cuda.device_count() > 1 else self.device)
         self.use_act_loss = getattr(args, 'use_act_loss', True)
         self.audio_model_name = getattr(args, 'audio_model_name', "MIT/ast-finetuned-audioset-10-10-0.4593")
         self.img_pipe_name = getattr(args, 'img_pipe_name', "runwayml/stable-diffusion-v1-5")
@@ -98,6 +100,8 @@ class FedA2V(FedRewind):
         self.generate_images_frequency = self.generate_nodes_images_frequency
 
         self.adapter_aggregation_mode = self.config.feda2v.adapter_aggregation_mode
+        self.global_model_train_from_nodes_adapters = self.config.feda2v.global_model_train_from_nodes_adapters
+        self.global_model_train_from_generator = self.config.feda2v.global_model_train_from_generator
 
         # Generator configuration
         self.generator_type = getattr(self.config.feda2v, 'generator_type', 'vae')
@@ -113,8 +117,8 @@ class FedA2V(FedRewind):
         # Create Encoders models Audio2Visual model
         self.create_global_model(args)
 
-        #FIXME for testing only
-        self.test_metrics_from_images()
+        # #FIXME for testing only
+        # self.test_metrics_from_images()
 
         self.nodes_backbone_model = self.global_model
 
@@ -172,8 +176,8 @@ class FedA2V(FedRewind):
         self.statistics_dataframe = None
 
     def test_node_metrics_from_images ( self, node, generated_images ):
-        test_images = getattr ( generated_images, 'on_test', {})
-        train_images = getattr ( generated_images, 'on_train', {})
+        test_images = generated_images['on_test'] if 'on_test' in generated_images else {}
+        train_images = generated_images['on_train'] if 'on_train' in generated_images else {}
 
         found_classes = list(test_images.values())
         filenames = list(test_images.keys())
@@ -182,6 +186,9 @@ class FedA2V(FedRewind):
         candidate_labels = {}
         enriched_candidate_labels = {}
         unique_labels = list(set(found_classes))
+        federation_available_classes = self.federation_available_classes
+        federation_active_classes = self.federation_active_classes
+
         for label_id, label in enumerate(unique_labels):
             candidate_labels[label] = label_id
             text_label = label.replace('_', ' ')
@@ -189,17 +196,25 @@ class FedA2V(FedRewind):
 
         ground_truth_classes = []
 
-        for ground_truth_class in classes:
-            ground_truth_classes.append(candidate_labels[ground_truth_class])
+        for ground_truth_class in found_classes:
+            ground_truth_classes.append(federation_available_classes[ground_truth_class])
 
         ground_truth_classes = torch.tensor(ground_truth_classes) 
 
         # candidate_labels = [f'This is a photo of {label}.' for label in classes]
 
-        predictions = self.global_model.compute_zero_shot( filenames, candidate_labels )
+        predictions = self.global_model.compute_zero_shot( filenames, federation_available_classes )
         labels = torch.tensor(list(candidate_labels.values()))
         metrics = self.global_model._compute_classification_metrics (predictions, ground_truth_classes)
-        print ( metrics )
+
+        node_metrics = NodeMetric(phase=NodeMetric.Phase.TEST, task_count=1)
+        node_metrics.define_metrics(self.global_model.defined_test_metrics, task_count=1)
+        for metric in node_metrics.defined_metrics:
+            node_metrics[0][metric] = metrics[metric]
+        node_metrics['samples'] = len(generated_images)
+        node_metrics['steps'] = 1
+        print ( node_metrics )
+        return node_metrics
 
     def test_metrics_from_images ( self ):
         images_path = '/home/lpala/fedgfe/esc50-6n-global-train'
@@ -440,16 +455,20 @@ class FedA2V(FedRewind):
         wandb.finish()
 
     def round_ending_hook(self):
-        # self.baloon.deflate()
+        self.baloon.deflate()
         generated_images = {}
         if self.generate_nodes_images_frequency > 0 and self.round % self.generate_nodes_images_frequency == 0:
-            if not self.optimize_memory_usage:
+            if self.optimize_memory_usage or self.round == 1:
                 self.global_model.diffusion_model.to(self.diffusion_device)
             
             for client in self.clients:
                 generated_images[client.id] = self.generate_images(client)
+                node_metrics = self.test_node_metrics_from_images(client, generated_images=generated_images[client.id])
+                if not self.no_wandb:
+                    wandb_metrics = client.log_metrics(node_metrics, round=self.round)
+                    wandb.log(wandb_metrics)
 
-            if not self.optimize_memory_usage:
+            if self.optimize_memory_usage:
                 self.global_model.diffusion_model.to(torch.device('cpu'))
 
         if self.global_model_train and (self.config.feda2v.global_model_train_from_nodes_audio_embeddings or self.config.feda2v.global_model_train_from_nodes_adapters):
@@ -460,7 +479,10 @@ class FedA2V(FedRewind):
                 self._move_to_cpu()
                 print(f"\nGlobal Audio2Visual model trained from nodes embeddings with loss {loss:.4f}")
 
-            if self.config.feda2v.global_model_train_from_nodes_adapters:
+            if self.global_model_train_from_generator:
+                self.train_generator_from_class_prompts()
+
+            if self.feda2v.global_model_train_from_nodes_adapters:
                 logger.info(f"\n=== Round {self.round}: Training Generator and Global Adapters ===")
                 result = self.global_model_train_from_nodes_adapters_output()
 
@@ -482,7 +504,7 @@ class FedA2V(FedRewind):
 
                 self._move_to_cpu()
         
-        # self.baloon.inflate()
+        self.baloon.inflate()
 
         if self.generate_global_images_frequency > 0 and self.round % self.generate_global_images_frequency == 0:
             all_audio_embeddings = {}
@@ -1197,8 +1219,16 @@ class FedA2V(FedRewind):
         on_train_imgs = self.generate_images_from_diffusion(embeddings)
         on_train_images_files = self.save_generated_images(on_train_imgs, client, embeddings, "_train")
 
-        # node_dataset = client.node_data.train_dataset.dataset
-        # text_embs = node_dataset.text_embs
+        node_dataset = client.node_data.train_dataset.dataset
+        text_embs = node_dataset.text_embs
+
+        for node_class in node_dataset.active_classes.keys():
+            embeddings = { 'clip': text_embs[node_class][self.diffusion_type]['pooled_prompt_embeds'],
+                          't5': text_embs[node_class][self.diffusion_type]['prompt_embeds'],
+                          'class_name': node_class }
+                          
+            from_text_imgs = self.generate_images_from_diffusion(embeddings)
+            from_text_images_files = self.save_generated_images(from_text_imgs, client, embeddings, "_from_embs")
         # for node_class in node_dataset.active_classes.keys():
         #     prompt_embeds = text_embs[node_class][self.diffusion_type]['prompt_embeds']
         #     pooled_prompt_embeds = text_embs[node_class][self.diffusion_type]['pooled_prompt_embeds']
@@ -1212,7 +1242,7 @@ class FedA2V(FedRewind):
         #     converted_img = transforms.ToPILImage()(imgs[0].cpu().detach())
         #     converted_img.save(img_save_path)
         #     print(f"Saved generated image from text embeddings to {img_save_path}")
-        return { 'on_train': on_train_images_files, 'on_test': on_test_imgs_files }
+        return { 'on_train': on_train_images_files, 'on_test': on_test_imgs_files, 'from_embeddings': from_text_images_files }
             
     def create_clients(self, clientObj):
         config = self.args.json_config if hasattr(self.args, 'json_config') else None 
@@ -1282,11 +1312,22 @@ class FedA2V(FedRewind):
             self.clients.append(node)
 
         self.federation_available_classes = []
+        self.federation_active_classes = []
         for node in self.clients:
             self.federation_available_classes.extend(node.node_data.train_dataset.dataset.available_classes)
             self.federation_available_classes.extend(node.node_data.test_dataset.dataset.available_classes)
+            self.federation_active_classes.extend(node.node_data.train_dataset.dataset.available_classes)
+            self.federation_active_classes.extend(node.node_data.test_dataset.dataset.available_classes)
+            
 
-        self.federation_available_classes = list(set(self.federation_available_classes))
+        self.federation_available_classes = list((set(self.federation_available_classes)))
+        self.federation_active_classes = list((set(self.federation_active_classes)))
+
+        self.federation_available_classes.sort()
+        self.federation_active_classes.sort()
+
+        self.federation_available_classes = {v: i for i, v in enumerate(self.federation_available_classes)}
+        self.federation_active_classes = {v: i for i, v in enumerate(self.federation_active_classes)}
 
         return self.clients
 
@@ -1294,7 +1335,6 @@ class FedA2V(FedRewind):
         return self.create_clients(clientObj)
 
     def define_metrics(self):
-        """Define metrics for Audio2Visual federated learning."""
         wandb.define_metric(f"round")
 
         for client in self.clients:

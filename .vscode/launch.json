@@ -2437,7 +2437,7 @@
         },
         
         {
-            "name": "feda2v ESC50 3N Adapters AVG ",
+            "name": "feda2v ESC50 3N SA",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/fedgfe",
@@ -2445,14 +2445,14 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "subProcess": true,
-            "args": ["--config", "configs/a2v_esc50_3n_adapter_avg.json",
+            "args": ["--config", "configs/a2v_esc50_3n_generate_sa.json",
                 ],
             "env":{
-                "CUDA_VISIBLE_DEVICES": "1"
+                "CUDA_VISIBLE_DEVICES": "3,1"
             }
         },
         {
-            "name": "feda2v ESC50 3N Generate",
+            "name": "feda2v ESC50 12N SA",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/fedgfe",
@@ -2460,10 +2460,10 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "subProcess": true,
-            "args": ["--config", "configs/a2v_esc50_3n_generate.json",
+            "args": ["--config", "configs/a2v_esc50_12n_generate_sa.json",
                 ],
             "env":{
-                "CUDA_VISIBLE_DEVICES": "1"
+                "CUDA_VISIBLE_DEVICES": "3,1"
             }
         },
         {
@@ -2482,7 +2482,7 @@
             }
         },
         {
-            "name": "feda2v ESC50 1N Config ",
+            "name": "feda2v ESC50 1N",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/fedgfe",
@@ -2490,10 +2490,42 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "subProcess": true,
-            "args": ["--config", "configs/a2v_1n_esc50_class_selection.json",
+            "args": ["--config", "configs/a2v_esc50_1n.json",
                 ],
             "env":{
-                "CUDA_VISIBLE_DEVICES": "3"
+                "CUDA_VISIBLE_DEVICES": "3,1"
+            }
+
+        },
+        {
+            "name": "feda2v ESC50 1N Generate ",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_esc50_1n_generate.json",
+                ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "3,1"
+            }
+
+        },
+        {
+            "name": "feda2v ESC50 1N Generate 10C",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_esc50_1n_generate_10c.json",
+                ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "3,1"
             }
 
         },

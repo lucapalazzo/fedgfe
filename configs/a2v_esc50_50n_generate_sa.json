@@ -1,0 +1,359 @@
+{
+  "experiment": {
+    "goal": "test",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42,
+    "use_balooning": true,
+    "optimize_memory_usage": true
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 2,
+    "global_rounds": 40,
+    "local_epochs": 5,
+    "eval_gap": 10,
+    "diffusion_type": "flux",
+    "model_aggregation": "none",
+    "use_saved_audio_embeddings": false
+  },
+  "feda2v": {
+    "generate_nodes_images_frequency": 5,
+    "generate_global_images_frequency": 0,
+    "generate_low_memomy_footprint": true,
+    "adapter_aggregation_mode": "none",
+    "global_model_train": false,
+    "global_model_train_from_nodes_adapters": false,
+    "global_model_train_from_generator": false,
+    "global_model_train_from_nodes_audio_embeddings": false,
+    "global_model_train_epochs": 5,
+    "use_generator": true,
+    "generator_type": "vae",
+    "store_audio_embeddings": false,
+    "audio_embedding_file_name": null,
+    "images_output_dir": "esc50-50n-sa"
+  },
+  "nodes": {
+    "0": {
+      "dataset": "ESC50",
+      "selected_classes": ["dog"],
+      "_comment": "Node 0 uses text dog",
+      "diffusion_type": "flux"
+    },
+    "1": {
+      "dataset": "ESC50",
+      "selected_classes": ["rooster"],
+      "diffusion_type": "flux",
+      "_comment": "Node 1 uses text rooster"
+    },
+    "2": {
+      "dataset": "ESC50",
+      "selected_classes": ["pig"],
+      "diffusion_type": "flux",
+      "_comment": "Node 2 uses text pig"
+    },
+    "3": {
+      "dataset": "ESC50",
+      "selected_classes": ["cow"],
+      "diffusion_type": "flux",
+      "_comment": "Node 3 uses text cow"
+    },
+    "4": {
+      "dataset": "ESC50",
+      "selected_classes": ["frog"],
+      "diffusion_type": "flux",
+      "_comment": "Node 4 uses text frog"
+    },
+    "5": {
+      "dataset": "ESC50",
+      "selected_classes": ["cat"],
+      "diffusion_type": "flux",
+      "_comment": "Node 5 uses text cat"
+    },
+    "6": {
+      "dataset": "ESC50",
+      "selected_classes": ["hen"],
+      "diffusion_type": "flux",
+      "_comment": "Node 6 uses text hen"
+    },
+    "7": {
+      "dataset": "ESC50",
+      "selected_classes": ["insects"],
+      "diffusion_type": "flux",
+      "_comment": "Node 7 uses text insects"
+    },
+    "8": {
+      "dataset": "ESC50",
+      "selected_classes": ["sheep"],
+      "diffusion_type": "flux",
+      "_comment": "Node 8 uses text sheep"
+    },
+    "9": {
+      "dataset": "ESC50",
+      "selected_classes": ["crow"],
+      "diffusion_type": "flux",
+      "_comment": "Node 9 uses text crow"
+    },
+    "10": {
+      "dataset": "ESC50",
+      "selected_classes": ["rain"],
+      "diffusion_type": "flux",
+      "_comment": "Node 10 uses text rain"
+    },
+    "11": {
+      "dataset": "ESC50",
+      "selected_classes": ["sea_waves"],
+      "diffusion_type": "flux",
+      "_comment": "Node 11 uses text sea_waves"
+    },
+    "12": {
+      "dataset": "ESC50",
+      "selected_classes": ["crackling_fire"],
+      "diffusion_type": "flux",
+      "_comment": "Node 12 uses text crackling_fire"
+    },
+    "13": {
+      "dataset": "ESC50",
+      "selected_classes": ["crickets"],
+      "diffusion_type": "flux",
+      "_comment": "Node 13 uses text crickets"
+    },
+    "14": {
+      "dataset": "ESC50",
+      "selected_classes": ["chirping_birds"],
+      "diffusion_type": "flux",
+      "_comment": "Node 14 uses text chirping_birds"
+    },
+    "15": {
+      "dataset": "ESC50",
+      "selected_classes": ["water_drops"],
+      "diffusion_type": "flux",
+      "_comment": "Node 15 uses text water_drops"
+    },
+    "16": {
+      "dataset": "ESC50",
+      "selected_classes": ["wind"],
+      "diffusion_type": "flux",
+      "_comment": "Node 16 uses text wind"
+    },
+    "17": {
+      "dataset": "ESC50",
+      "selected_classes": ["pouring_water"],
+      "diffusion_type": "flux",
+      "_comment": "Node 17 uses text pouring_water"
+    },
+    "18": {
+      "dataset": "ESC50",
+      "selected_classes": ["toilet_flush"],
+      "diffusion_type": "flux",
+      "_comment": "Node 18 uses text toilet_flush"
+    },
+    "19": {
+      "dataset": "ESC50",
+      "selected_classes": ["thunderstorm"],
+      "diffusion_type": "flux",
+      "_comment": "Node 19 uses text thunderstorm"
+    },
+    "20": {
+      "dataset": "ESC50",
+      "selected_classes": ["crying_baby"],
+      "diffusion_type": "flux",
+      "_comment": "Node 20 uses text crying_baby"
+    },
+    "21": {
+      "dataset": "ESC50",
+      "selected_classes": ["sneezing"],
+      "diffusion_type": "flux",
+      "_comment": "Node 21 uses text sneezing"
+    },
+    "22": {
+      "dataset": "ESC50",
+      "selected_classes": ["clapping"],
+      "diffusion_type": "flux",
+      "_comment": "Node 22 uses text clapping"
+    },
+    "23": {
+      "dataset": "ESC50",
+      "selected_classes": ["breathing"],
+      "diffusion_type": "flux",
+      "_comment": "Node 23 uses text breathing"
+    },
+    "24": {
+      "dataset": "ESC50",
+      "selected_classes": ["coughing"],
+      "diffusion_type": "flux",
+      "_comment": "Node 24 uses text coughing"
+    },
+    "25": {
+      "dataset": "ESC50",
+      "selected_classes": ["footsteps"],
+      "diffusion_type": "flux",
+      "_comment": "Node 25 uses text footsteps"
+    },
+    "26": {
+      "dataset": "ESC50",
+      "selected_classes": ["laughing"],
+      "diffusion_type": "flux",
+      "_comment": "Node 26 uses text laughing"
+    },
+    "27": {
+      "dataset": "ESC50",
+      "selected_classes": ["brushing_teeth"],
+      "diffusion_type": "flux",
+      "_comment": "Node 27 uses text brushing_teeth"
+    },
+    "28": {
+      "dataset": "ESC50",
+      "selected_classes": ["snoring"],
+      "diffusion_type": "flux",
+      "_comment": "Node 28 uses text snoring"
+    },
+    "29": {
+      "dataset": "ESC50",
+      "selected_classes": ["drinking_sipping"],
+      "diffusion_type": "flux",
+      "_comment": "Node 29 uses text drinking_sipping"
+    },
+    "30": {
+      "dataset": "ESC50",
+      "selected_classes": ["door_wood_knock"],
+      "diffusion_type": "flux",
+      "_comment": "Node 30 uses text door_wood_knock"
+    },
+    "31": {
+      "dataset": "ESC50",
+      "selected_classes": ["mouse_click"],
+      "diffusion_type": "flux",
+      "_comment": "Node 31 uses text mouse_click"
+    },
+    "32": {
+      "dataset": "ESC50",
+      "selected_classes": ["keyboard_typing"],
+      "diffusion_type": "flux",
+      "_comment": "Node 32 uses text keyboard_typing"
+    },
+    "33": {
+      "dataset": "ESC50",
+      "selected_classes": ["door_wood_creaks"],
+      "diffusion_type": "flux",
+      "_comment": "Node 33 uses text door_wood_creaks"
+    },
+    "34": {
+      "dataset": "ESC50",
+      "selected_classes": ["can_opening"],
+      "diffusion_type": "flux",
+      "_comment": "Node 34 uses text can_opening"
+    },
+    "35": {
+      "dataset": "ESC50",
+      "selected_classes": ["washing_machine"],
+      "diffusion_type": "flux",
+      "_comment": "Node 35 uses text washing_machine"
+    },
+    "36": {
+      "dataset": "ESC50",
+      "selected_classes": ["vacuum_cleaner"],
+      "diffusion_type": "flux",
+      "_comment": "Node 36 uses text vacuum_cleaner"
+    },
+    "37": {
+      "dataset": "ESC50",
+      "selected_classes": ["clock_alarm"],
+      "diffusion_type": "flux",
+      "_comment": "Node 37 uses text clock_alarm"
+    },
+    "38": {
+      "dataset": "ESC50",
+      "selected_classes": ["clock_tick"],
+      "diffusion_type": "flux",
+      "_comment": "Node 38 uses text clock_tick"
+    },
+    "39": {
+      "dataset": "ESC50",
+      "selected_classes": ["glass_breaking"],
+      "diffusion_type": "flux",
+      "_comment": "Node 39 uses text glass_breaking"
+    },
+    "40": {
+      "dataset": "ESC50",
+      "selected_classes": ["helicopter"],
+      "diffusion_type": "flux",
+      "_comment": "Node 40 uses text helicopter"
+    },
+    "41": {
+      "dataset": "ESC50",
+      "selected_classes": ["chainsaw"],
+      "diffusion_type": "flux",
+      "_comment": "Node 41 uses text chainsaw"
+    },
+    "42": {
+      "dataset": "ESC50",
+      "selected_classes": ["siren"],
+      "diffusion_type": "flux",
+      "_comment": "Node 42 uses text siren"
+    },
+    "43": {
+      "dataset": "ESC50",
+      "selected_classes": ["car_horn"],
+      "diffusion_type": "flux",
+      "_comment": "Node 43 uses text car_horn"
+    },
+    "44": {
+      "dataset": "ESC50",
+      "selected_classes": ["engine"],
+      "diffusion_type": "flux",
+      "_comment": "Node 44 uses text engine"
+    },
+    "45": {
+      "dataset": "ESC50",
+      "selected_classes": ["train"],
+      "diffusion_type": "flux",
+      "_comment": "Node 45 uses text train"
+    },
+    "46": {
+      "dataset": "ESC50",
+      "selected_classes": ["church_bells"],
+      "diffusion_type": "flux",
+      "_comment": "Node 46 uses text church_bells"
+    },
+    "47": {
+      "dataset": "ESC50",
+      "selected_classes": ["airplane"],
+      "diffusion_type": "flux",
+      "_comment": "Node 47 uses text airplane"
+    },
+    "48": {
+      "dataset": "ESC50",
+      "selected_classes": ["fireworks"],
+      "diffusion_type": "flux",
+      "_comment": "Node 48 uses text fireworks"
+    },
+    "49": {
+      "dataset": "ESC50",
+      "selected_classes": ["hand_saw"],
+      "diffusion_type": "flux",
+      "_comment": "Node 49 uses text hand_saw"
+    }
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "batch_size": 32,
+    "weight_decay": 0.0001,
+    "momentum": 0.9
+  },
+  "dataset": {
+    "name": "VEGAS",
+    "path": "./data"
+
+  },
+  "wandb": {
+    "disabled": false
+  }
+}

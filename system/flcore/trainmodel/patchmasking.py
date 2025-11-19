@@ -10,7 +10,8 @@ import numpy as np
 
 from timm.models.vision_transformer import Block
 from transformers import ViTMAEModel, ViTMAEForPreTraining, ViTMAEConfig, ViTModel, AutoImageProcessor, ViTFeatureExtractor
-from torchmetrics import Dice, JaccardIndex, Accuracy
+from torchmetrics import JaccardIndex, Accuracy
+from torchmetrics.segmentation import DiceScore as Dice
 import wandb
 
 class PatchMasking (PatchPretextTask):

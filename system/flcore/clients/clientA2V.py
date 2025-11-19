@@ -41,10 +41,17 @@ from transformers import ASTModel, ASTFeatureExtractor
 sys.path.append('/home/lpala/fedgfe/system/flcore/trainmodel/Audio2Visual_NoData')
 from flcore.trainmodel.Audio2Visual_NoData.src.models.audio2image import Audio2Image, SDImageModel, ImageDiffusion
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 class clientA2V(Client):
     def __init__(self, args, node_id, node_config=None, global_model=None, dataset=None, store_audio_embedding=False, **kwargs):
         super().__init__(args, node_id, None, None, **kwargs)
+
+        logger = logging.getLogger(f"{__name__}_{node_id}")
+
+
 
         self.id = node_id
         self.learning_rate = args.local_learning_rate
@@ -74,7 +81,7 @@ class clientA2V(Client):
 
         self.experiment_config = getattr(args.json_config, 'experiment', None)
 
-        self.optimizer_memory = getattr(self.experiment_config, 'optimize_memory', False )
+        self.optimize_memory_usage = getattr(self.experiment_config, 'optimize_memory_usage', False )
 
         self.train_optimizer = None
         self.finetuning_optimizer = None
@@ -85,13 +92,8 @@ class clientA2V(Client):
         self.defined_test_metrics = {}
         self.use_saved_audio_embeddings = getattr(args, 'use_saved_audio_embeddings', False)
 
-        # Initialize optimizer manager
-        self.optimizer_manager = OptimizerManager(
-            optimizer_type=self.model_optimizer,
-            learning_rate=self.learning_rate
-            # momentum=self.optimizer_momentum
-        )
-        
+        self.text_losses_summed = True
+
         # Audio2Visual specific initialization
         self.diffusion_type = getattr(node_config, 'diffusion_type', 'sd')  # 'sd', 'flux', or 'cogx'
         self.use_act_loss = getattr(args, 'use_act_loss', True)
@@ -116,10 +118,10 @@ class clientA2V(Client):
         self.audio_embedding_store = {}
 
     def define_metrics(self):
-        if self.global_model is not None:
-            self.global_model.define_metrics()
-
         self.metrics_path = "node_" + str(self.id) + "/"
+        if self.global_model is not None:
+            self.global_model.define_metrics(metrics_path=self.metrics_path)
+
 
         return
 
@@ -131,9 +133,11 @@ class clientA2V(Client):
 
         for metric_name in metrics._defined_metrics:
             if metrics.phase == NodeMetric.Phase.TRAIN:
-                metric_path = f"train/{self.metrics_path}a2v_{prefix}{metric_name}{suffix}"
+                metric_path = f"train/{self.metrics_path}{prefix}{metric_name}{suffix}"
+                # metric_path = f"train/{self.metrics_path}a2v_{prefix}{metric_name}{suffix}"
             elif metrics.phase == NodeMetric.Phase.TEST:
-                metric_path = f"test/{self.metrics_path}a2v_{prefix}{metric_name}{suffix}"
+                metric_path = f"test/{self.metrics_path}{prefix}{metric_name}{suffix}"
+                # metric_path = f"test/{self.metrics_path}a2v_{prefix}{metric_name}{suffix}"
             metric_value = metrics[metric_name]['mean']
             if round == None:
                 round = self.round
@@ -144,13 +148,20 @@ class clientA2V(Client):
     
     def test_genarated_images(self, generated_images):
 
+        if type(generated_images) is not dict:
+            print ( "Generated images is not dict")
+            return
+        
+        if 'on_test' not in generated_images and 'on_train' not in generated_images:
+            print ( "Generated images does not contain train or test images")
+            return
+
         print ( "Stub method")
         return
 
     def train(self, client_device=None, rewind_train_node=None, training_task="both"):
         """Train the Audio2Visual model."""
-        print(f"*** Node {self.id} memory before training {torch.cuda.memory_allocated(self.device)//(1024**2)} MB")
-
+        logger.debug(f"*** Node {self.id} memory before training {torch.cuda.memory_allocated(self.device)//(1024**2)} MB")
 
         self.model = self.global_model
 
@@ -287,33 +298,39 @@ class clientA2V(Client):
 
                 if epoch == epochs - 1:
                     training_adapter_outputs = self.store_adapters_output_per_class ( outputs, training_adapter_outputs )
-                
-                
-                # Calculate loss
-                loss = torch.tensor(0.0)
-                if outputs['text_loss'] is not None:
-                    if isinstance(outputs['text_loss'], tuple):
-                        for l in outputs['text_loss']:
-                            loss = loss.to(l.device)
-                            loss += l
-                    else:
-                        loss = outputs['text_loss']
 
-                # Backward pass
-                if loss != 0.0:
+                losses = outputs['text_loss'] 
+                if self.text_losses_summed:
+                    loss = torch.tensor(0.0)
+                    if outputs['text_loss'] is not None:
+                        if isinstance(outputs['text_loss'], tuple):
+                            for l in outputs['text_loss']:
+                                loss = loss.to(l.device)
+                                loss += l
+                        else:
+                            loss = outputs['text_loss']
                     loss.backward()
-                    self.optimizer.step()
                     epoch_loss += loss.item()
-                    num_batches += 1
+                else:
+                    losses_count = len(losses)
+                    losses_output = ""
+                    for loss_index,loss in enumerate(outputs['text_loss']):
+                        retain_graph = True
+                        if loss_index >= losses_count-1:
+                            retain_graph = False
+                        loss.backward(retain_graph=retain_graph)
+                        epoch_loss += loss.item()
+                        losses_output = f"{losses_output} {loss.item():.03f} "
 
-                # Log training progress
+                self.optimizer.step()
+                num_batches += 1
+
                 if batch_idx % 10 == 0:
-                    print(f"Node {self.id} Epoch {epoch+1}/{epochs}, Batch {batch_idx}/{len(dataloader)}, Loss: {loss.item():.4f}")
+                    print(f"Node {self.id} Epoch {epoch+1}/{epochs}, Batch {batch_idx}/{len(dataloader)}, Loss: {losses_output}")
 
-            # Log epoch metrics
             if num_batches > 0:
                 avg_loss = epoch_loss / num_batches
-                print(f"Node {self.id} Epoch {epoch+1}/{epochs} completed. Average Loss: {avg_loss:.4f}")
+                print(f"Node {self.id} Epoch {epoch+1}/{epochs} completed. Average Loss: {avg_loss:.3f}")
             
             for class_name, output in training_adapter_outputs.items():
                 for k in output:
@@ -742,12 +759,12 @@ class clientA2V(Client):
                 move_optimizer_state(self.optimizer, device)
 
     def _move_to_gpu(self, device):
-        if self.optimizer_memory:
+        if self.optimize_memory_usage:
             print(f"Node {self.id} moving to GPU: {device}")
             self._move_to_device(device)
 
     def _move_to_cpu(self):
-        if self.optimizer_memory:
+        if self.optimize_memory_usage:
             print(f"Node {self.id} moving to CPU for memory optimization")
             self._move_to_device('cpu')
 
@@ -803,6 +820,7 @@ class clientA2V(Client):
             dataloader = DataLoader(self.node_data.test_dataset, batch_size=num_embeddings, shuffle=False)
 
         with torch.no_grad():
+
             for batch_idx, samples in enumerate(dataloader):
                 # Move data to device
                 if 'audio' in samples and isinstance(samples['audio'], torch.Tensor):

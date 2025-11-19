@@ -38,9 +38,12 @@ class ESC50Dataset(Dataset):
                  audio_embedding_file: Optional[str] = None,
                  selected_classes: Optional[Union[List[str], List[int]]] = None,
                  excluded_classes: Optional[Union[List[str], List[int]]] = None,
-                 split: str = "all",
-                 split_ratio: float = 0.8,
+                 split: Optional[str] = None,
+                 splits_to_load: Optional[List[str]] = None,
+                 train_ratio: float = 0.7,
                  val_ratio: float = 0.1,
+                 test_ratio: float = 0.2,
+                 split_ratio: Optional[float] = None,
                  use_folds: bool = False,
                  train_folds: List[int] = [0, 1, 2, 3],
                  val_folds: Optional[List[int]] = None,
@@ -63,9 +66,17 @@ class ESC50Dataset(Dataset):
             audio_embedding_file: Path to audio embeddings file
             selected_classes: List of classes to include (str names or int labels)
             excluded_classes: List of classes to exclude (str names or int labels)
-            split: 'train', 'val', 'test', or 'all'
-            split_ratio: Ratio for train split (used if use_folds=False)
-            val_ratio: Ratio for validation split from train set
+            split: 'train', 'val', 'test', 'all', or None (default).
+                  - None: Auto-creates train/val/test splits accessible as .train, .val, .test
+                  - 'train'/'val'/'test': Returns only specified split
+                  - 'all': Returns all samples together (legacy behavior)
+            splits_to_load: List of splits to load data from (e.g., ['train', 'val']).
+                          If None, loads based on 'split' parameter
+            train_ratio: Ratio for training split (default 0.7 = 70%)
+            val_ratio: Ratio for validation split (default 0.1 = 10%)
+            test_ratio: Ratio for test split (default 0.2 = 20%)
+            split_ratio: [DEPRECATED] Legacy parameter, use train_ratio instead.
+                        If provided, sets train+val ratio (1-test_ratio)
             use_folds: Whether to use official fold splits
             train_folds: List of fold indices for training (0-4)
             val_folds: List of fold indices for validation (0-4), if None uses val_ratio from train
@@ -84,8 +95,41 @@ class ESC50Dataset(Dataset):
         self.embedding_file = text_embedding_file
         self.audio_embedding_file = audio_embedding_file
         self.split = split
-        self.split_ratio = split_ratio
-        self.val_ratio = val_ratio
+
+        # Handle legacy split_ratio parameter for backwards compatibility
+        if split_ratio is not None:
+            logger.warning("split_ratio is deprecated. Use train_ratio, val_ratio, test_ratio instead.")
+            # Convert old split_ratio to new format
+            # old: split_ratio=0.8 meant 80% train+val, 20% test
+            self.train_ratio = train_ratio if train_ratio != 0.7 else split_ratio * (1 - val_ratio)
+            self.val_ratio = val_ratio
+            self.test_ratio = 1 - split_ratio
+            self.split_ratio = split_ratio  # Keep for compatibility
+        else:
+            # Validate that ratios sum to ~1.0
+            total_ratio = train_ratio + val_ratio + test_ratio
+            if not (0.99 <= total_ratio <= 1.01):
+                logger.warning(f"train_ratio + val_ratio + test_ratio = {total_ratio:.3f}, normalizing to 1.0")
+                self.train_ratio = train_ratio / total_ratio
+                self.val_ratio = val_ratio / total_ratio
+                self.test_ratio = test_ratio / total_ratio
+            else:
+                self.train_ratio = train_ratio
+                self.val_ratio = val_ratio
+                self.test_ratio = test_ratio
+            # Set split_ratio for backwards compatibility with _apply_split logic
+            self.split_ratio = 1 - test_ratio
+
+        # Handle splits_to_load parameter
+        self.splits_to_load = splits_to_load
+        if splits_to_load is not None:
+            # Validate splits_to_load
+            valid_splits = {'train', 'val', 'test', 'all'}
+            for s in splits_to_load:
+                if s not in valid_splits:
+                    raise ValueError(f"Invalid split in splits_to_load: {s}. Must be one of {valid_splits}")
+            logger.info(f"Loading data only from splits: {splits_to_load}")
+
         self.stratify = stratify
         self.use_folds = use_folds
         self.train_folds = train_folds
@@ -128,6 +172,37 @@ class ESC50Dataset(Dataset):
         self.audio_embs = None
         if audio_embedding_file and os.path.exists(audio_embedding_file):
             self.audio_embs = torch.load(audio_embedding_file, map_location=self.device)
+
+        # Handle auto-split creation when split=None
+        if split is None:
+            logger.info("Auto-creating train/val/test splits (split=None)")
+            self._create_all_splits(
+                root_dir=root_dir,
+                text_embedding_file=text_embedding_file,
+                audio_embedding_file=audio_embedding_file,
+                selected_classes=selected_classes,
+                excluded_classes=excluded_classes,
+                splits_to_load=splits_to_load,
+                train_ratio=self.train_ratio,
+                val_ratio=self.val_ratio,
+                test_ratio=self.test_ratio,
+                use_folds=use_folds,
+                train_folds=train_folds,
+                val_folds=val_folds,
+                test_folds=test_folds,
+                stratify=stratify,
+                node_id=node_id,
+                enable_cache=enable_cache,
+                cache_dir=cache_dir,
+                audio_sample_rate=audio_sample_rate,
+                audio_duration=audio_duration,
+                image_size=image_size,
+                transform_audio=transform_audio,
+                transform_image=transform_image
+            )
+            # For split=None, dataset itself contains all samples (train+val+test combined)
+            # Individual splits are accessible via .train, .val, .test attributes
+            self.split = 'all'  # Internally treat as 'all' for combined access
 
         self._excluded_classes = None
         self._selected_classes = None
@@ -173,6 +248,36 @@ class ESC50Dataset(Dataset):
         if self.text_embs is not None and class_name in self.text_embs:
             return self.text_embs[class_name]
         return None
+
+    def _create_all_splits(self, **kwargs):
+        """
+        Create train, val, and test splits automatically.
+
+        This method is called when split=None to auto-create all three splits.
+        The splits are exposed as .train, .val, and .test attributes.
+
+        Args:
+            **kwargs: All dataset initialization parameters
+        """
+        logger.info("Creating train split...")
+        self.train = ESC50Dataset(
+            split='train',
+            **kwargs
+        )
+
+        logger.info("Creating validation split...")
+        self.val = ESC50Dataset(
+            split='val',
+            **kwargs
+        )
+
+        logger.info("Creating test split...")
+        self.test = ESC50Dataset(
+            split='test',
+            **kwargs
+        )
+
+        logger.info(f"Auto-split created: train={len(self.train)}, val={len(self.val)}, test={len(self.test)}")
 
     def _process_class_selection(self, classes: Optional[Union[List[str], List[int]]]) -> Optional[List[str]]:
         """Process class selection, converting indices to names."""
@@ -241,6 +346,51 @@ class ESC50Dataset(Dataset):
         # Load samples from fold JSON files
         samples = []
 
+        # Handle splits_to_load parameter
+        if self.splits_to_load is not None:
+            # Load data from multiple specified splits and combine them
+            all_split_samples = []
+
+            for split_name in self.splits_to_load:
+                if split_name == 'all':
+                    # Load all data
+                    temp_split = 'all'
+                else:
+                    temp_split = split_name
+
+                # Temporarily set split to load specific data
+                original_split = self.split
+                self.split = temp_split
+
+                # Determine folds to use for this split
+                if self.use_folds:
+                    if temp_split == 'train':
+                        folds_to_use = self.train_folds
+                    elif temp_split == 'val':
+                        folds_to_use = self.val_folds if self.val_folds else self.train_folds
+                    elif temp_split == 'test':
+                        folds_to_use = self.test_folds
+                    else:  # 'all'
+                        folds_to_use = [0, 1, 2, 3, 4]
+                else:
+                    # Will load all and split later
+                    folds_to_use = [0, 1, 2, 3, 4]
+
+                # Load samples for this split
+                split_samples = self._load_samples_from_folds(folds_to_use)
+
+                # Apply split if not using folds
+                if not self.use_folds and temp_split != 'all':
+                    split_samples = self._apply_split(split_samples)
+
+                all_split_samples.extend(split_samples)
+
+                # Restore original split
+                self.split = original_split
+
+            return all_split_samples
+
+        # Normal loading (single split)
         if self.use_folds:
             # Use official fold splits
             if self.split == 'train':
@@ -259,6 +409,35 @@ class ESC50Dataset(Dataset):
         else:
             # Use all folds and split later
             folds_to_use = [0, 1, 2, 3, 4]
+
+        samples = self._load_samples_from_folds(folds_to_use)
+
+        # Apply train/test split if not using folds
+        if not self.use_folds and self.split != 'all':
+            samples = self._apply_split(samples)
+
+        # Save to cache
+        if self.enable_cache:
+            try:
+                with open(cache_file, 'wb') as f:
+                    pickle.dump(samples, f)
+                logger.info(f"Saved {len(samples)} samples to cache")
+            except Exception as e:
+                logger.warning(f"Failed to save cache: {e}")
+
+        return samples
+
+    def _load_samples_from_folds(self, folds_to_use: List[int]) -> List[Dict]:
+        """
+        Load samples from specified folds.
+
+        Args:
+            folds_to_use: List of fold indices to load
+
+        Returns:
+            List of sample dictionaries
+        """
+        samples = []
 
         for fold_idx in folds_to_use:
             fold_file = os.path.join(self.root_dir, f"fold0{fold_idx}.json")
@@ -304,19 +483,6 @@ class ESC50Dataset(Dataset):
                     }
                     samples.append(sample)
 
-        # Apply train/test split if not using folds
-        if not self.use_folds and self.split != 'all':
-            samples = self._apply_split(samples)
-
-        # Save to cache
-        if self.enable_cache:
-            try:
-                with open(cache_file, 'wb') as f:
-                    pickle.dump(samples, f)
-                logger.info(f"Saved {len(samples)} samples to cache")
-            except Exception as e:
-                logger.warning(f"Failed to save cache: {e}")
-
         return samples
 
     def _get_cache_key(self) -> str:
@@ -330,6 +496,7 @@ class ESC50Dataset(Dataset):
         Apply train/val/test split to samples with optional stratification.
 
         Uses scikit-learn's train_test_split for stratified sampling.
+        Supports custom train_ratio, val_ratio, test_ratio (default 70-10-20).
         """
         if not samples:
             return samples
@@ -341,12 +508,12 @@ class ESC50Dataset(Dataset):
         labels = [sample['class_label'] for sample in samples]
 
         if self.stratify:
-            # Stratified split using sklearn
+            # Stratified split using sklearn with custom ratios
             if self.split in ['train', 'val']:
-                # First split: train+val vs test
+                # First split: train+val vs test using test_ratio
                 train_val_samples, test_samples = train_test_split(
                     samples,
-                    test_size=1.0 - self.split_ratio,
+                    test_size=self.test_ratio,
                     stratify=labels if self.stratify else None,
                     random_state=random_state
                 )
@@ -356,7 +523,8 @@ class ESC50Dataset(Dataset):
                     # Second split: train vs val
                     train_val_labels = [s['class_label'] for s in train_val_samples]
                     # Calculate val size relative to train_val set
-                    val_size_relative = self.val_ratio / self.split_ratio
+                    # val_ratio is relative to total, so we need to adjust
+                    val_size_relative = self.val_ratio / (self.train_ratio + self.val_ratio)
 
                     train_samples, val_samples = train_test_split(
                         train_val_samples,
@@ -375,17 +543,17 @@ class ESC50Dataset(Dataset):
                         return train_val_samples
 
             elif self.split == 'test':
-                # Split to get test set
+                # Split to get test set using test_ratio
                 _, test_samples = train_test_split(
                     samples,
-                    test_size=1.0 - self.split_ratio,
+                    test_size=self.test_ratio,
                     stratify=labels if self.stratify else None,
                     random_state=random_state
                 )
                 return test_samples
 
         else:
-            # Non-stratified split (original behavior)
+            # Non-stratified split (original behavior) with custom ratios
             rng = np.random.RandomState(random_state)
 
             # Group samples by class for balanced splitting
@@ -403,8 +571,8 @@ class ESC50Dataset(Dataset):
                 rng.shuffle(cls_samples)
 
                 if self.val_ratio > 0 and not (self.use_folds and self.val_folds):
-                    # Three-way split: train / val / test
-                    n_train = int(len(cls_samples) * self.split_ratio)
+                    # Three-way split: train / val / test using custom ratios
+                    n_train = int(len(cls_samples) * self.train_ratio)
                     n_val = int(len(cls_samples) * self.val_ratio)
 
                     if self.split == 'train':
@@ -414,8 +582,8 @@ class ESC50Dataset(Dataset):
                     elif self.split == 'test':
                         split_samples.extend(cls_samples[n_train + n_val:])
                 else:
-                    # Two-way split: train / test
-                    n_train = int(len(cls_samples) * self.split_ratio)
+                    # Two-way split: train / test using custom ratios
+                    n_train = int(len(cls_samples) * self.train_ratio)
 
                     if self.split == 'train':
                         split_samples.extend(cls_samples[:n_train])

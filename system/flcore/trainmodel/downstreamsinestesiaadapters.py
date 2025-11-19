@@ -101,23 +101,24 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
 
 
     def define_metrics(self, metrics_path=None):
-        """Define wandb metrics."""
-        if self.wandb_log == False:
-            return None
+        # if self.wandb_log == False:
+        #     return None
 
         super().define_metrics(metrics_path=metrics_path)
         defined_metrics = []
-        path = "/" if metrics_path is None else "/" + metrics_path + "/"
+        path = "/" if metrics_path is None else "/" + metrics_path 
 
         # Train metrics
         for metric in self.defined_train_metrics:
-            metric_name = f"train{path}{self.task_name}_{metric}"
+            metric_name = f"train{path}{metric}"
+            # metric_name = f"train{path}{self.task_name}_{metric}"
             self.defined_train_metrics[metric] = metric_name
             defined_metrics.append(metric_name)
 
         # Test metrics
         for metric in self.defined_test_metrics:
-            metric_name = f"test{path}{self.task_name}_{metric}"
+            # metric_name = f"test{path}{self.task_name}_{metric}"
+            metric_name = f"test{path}{metric}"
             self.defined_test_metrics[metric] = metric_name
             defined_metrics.append(metric_name)
 
@@ -452,15 +453,16 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
 
                 if isinstance(text_embeddings, dict) and self.diffusion_type in text_embeddings:
                     if self.diffusion_type == 'sd':
-                        target_prompt_embeds = text_embeddings['sd']
+                        target_prompt_embeds = text_embeddings['sd'].to(self.device)
                     elif self.diffusion_type == 'flux':
-                        target_prompt_embeds = text_embeddings['flux'].get('prompt_embeds', None)
-                        target_pooled_prompt_embeds = text_embeddings['flux'].get('pooled_prompt_embeds', None)
+                        target_prompt_embeds = text_embeddings['flux'].get('prompt_embeds', None).to(self.device)
+                        target_pooled_prompt_embeds = text_embeddings['flux'].get('pooled_prompt_embeds', None).to(self.device)
                 else:
                     raise ValueError("Text embeddings not found or invalid format in audio_data.")
 
                 steps += 1
                 if ( 'audio' in audio_data and isinstance(audio_data['audio'], torch.Tensor) ):
+                    print ( f"Filenames {audio_data['audio_filename']} classes {audio_data['class_name']}")
                     audio_data = audio_data['audio']
 
                 samples_count += audio_data.shape[0]
