@@ -300,6 +300,7 @@ class clientA2V(Client):
                     training_adapter_outputs = self.store_adapters_output_per_class ( outputs, training_adapter_outputs )
 
                 losses = outputs['text_loss'] 
+                losses_output = ""
                 if self.text_losses_summed:
                     loss = torch.tensor(0.0)
                     if outputs['text_loss'] is not None:
@@ -307,13 +308,15 @@ class clientA2V(Client):
                             for l in outputs['text_loss']:
                                 loss = loss.to(l.device)
                                 loss += l
+                                losses_output = f"{l.item()} "
                         else:
                             loss = outputs['text_loss']
+
                     loss.backward()
+                    losses_output = f"{loss.item()}"
                     epoch_loss += loss.item()
                 else:
                     losses_count = len(losses)
-                    losses_output = ""
                     for loss_index,loss in enumerate(outputs['text_loss']):
                         retain_graph = True
                         if loss_index >= losses_count-1:

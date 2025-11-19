@@ -85,8 +85,6 @@ class FedA2V(FedRewind):
         self.audio_model_name = getattr(args, 'audio_model_name', "MIT/ast-finetuned-audioset-10-10-0.4593")
         self.img_pipe_name = getattr(args, 'img_pipe_name', "runwayml/stable-diffusion-v1-5")
         self.img_lcm_lora_id = getattr(args, 'img_lcm_lora_id', "latent-consistency/lcm-lora-sdv1-5")
-
-        
         
         self.optimize_memory_usage = getattr(self.config.experiment, 'optimize_memory_usage', False)
 

@@ -6,7 +6,7 @@
     "runs": 1,
     "seed": 42,
     "use_balooning": true,
-    "optimize_memory_usage": true
+    "optimize_memory_usage": false
   },
   "federation": {
     "algorithm": "FedA2V",
