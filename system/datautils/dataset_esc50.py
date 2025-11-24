@@ -92,7 +92,7 @@ class ESC50Dataset(Dataset):
             transform_image: Image transform function
         """
         self.root_dir = root_dir
-        self.embedding_file = text_embedding_file
+        self.text_embedding_file = text_embedding_file
         self.audio_embedding_file = audio_embedding_file
         self.split = split
 
@@ -145,7 +145,7 @@ class ESC50Dataset(Dataset):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.load_audio = True
-        self.load_image = True
+        self.load_image = False
 
         # Load class labels from JSON
         class_labels_path = os.path.join(self.root_dir, "class_labels.json")
@@ -164,9 +164,8 @@ class ESC50Dataset(Dataset):
         # Load text embeddings if provided
         self.text_embs = None
         if text_embedding_file and os.path.exists(text_embedding_file):
-            self.text_embs = torch.load(text_embedding_file, map_location=self.device)
-            # Convert keys to lowercase
-            self.text_embs = {k.lower(): v for k, v in self.text_embs.items()}
+            self.text_embs_from_file = torch.load(text_embedding_file, map_location=self.device)
+            self.text_embs = {k.lower(): v for k, v in self.text_embs_from_file.items()}
 
         # Load audio embeddings if provided
         self.audio_embs = None
@@ -270,6 +269,7 @@ class ESC50Dataset(Dataset):
             split='val',
             **kwargs
         )
+
 
         logger.info("Creating test split...")
         self.test = ESC50Dataset(
@@ -511,12 +511,16 @@ class ESC50Dataset(Dataset):
             # Stratified split using sklearn with custom ratios
             if self.split in ['train', 'val']:
                 # First split: train+val vs test using test_ratio
-                train_val_samples, test_samples = train_test_split(
-                    samples,
-                    test_size=self.test_ratio,
-                    stratify=labels if self.stratify else None,
-                    random_state=random_state
-                )
+                if (self.test_ratio > 0):
+                    train_val_samples, test_samples = train_test_split(
+                        samples,
+                        test_size=self.test_ratio,
+                        stratify=labels if self.stratify else None,
+                        random_state=random_state
+                    )
+                else:
+                    train_val_samples = samples
+                    test_samples = []
 
                 # If we need validation split
                 if self.val_ratio > 0 and not (self.use_folds and self.val_folds):
@@ -544,6 +548,9 @@ class ESC50Dataset(Dataset):
 
             elif self.split == 'test':
                 # Split to get test set using test_ratio
+                if (self.test_ratio == 0):
+                    return []
+                
                 _, test_samples = train_test_split(
                     samples,
                     test_size=self.test_ratio,

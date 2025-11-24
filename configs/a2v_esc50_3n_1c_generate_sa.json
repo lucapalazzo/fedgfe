@@ -1,0 +1,77 @@
+{
+  "experiment": {
+    "goal": "test",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42,
+    "use_balooning": false,
+    "optimize_memory_usage": false
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 2,
+    "global_rounds": 40,
+    "local_epochs": 10,
+    "eval_gap": 10,
+    "diffusion_type": "flux",
+    "model_aggregation": "none",
+    "use_saved_audio_embeddings": false
+  },
+  "feda2v": {
+    "generate_nodes_images_frequency": 1,
+    "generate_global_images_frequency": 0,
+    "generate_low_memomy_footprint": true,
+    "adapter_aggregation_mode": "none",
+    "global_model_train": false,
+    "global_model_train_from_nodes_adapters": false,
+    "global_model_train_from_generator": false,
+    "global_model_train_from_nodes_audio_embeddings": false,
+    "global_model_train_epochs": 5,
+    "use_generator": false,
+    "generator_type": "vae",
+    "store_audio_embeddings": false,
+    "audio_embedding_file_name": null,
+    "images_output_dir": "esc50-3n-sa"
+  },
+  "nodes": {
+    "0": {
+      "dataset": "ESC50",
+      "selected_classes": ["airplane"],
+      "_comment": "Node 0 uses text airplane",
+      "diffusion_type": "flux"
+    },
+    "1": {
+      "dataset": "ESC50",
+      "selected_classes": ["breathing"],
+      "diffusion_type": "flux",
+      "_comment": "Node 1 uses text breathing"
+    },
+    "2": {
+      "dataset": "ESC50",
+      "selected_classes": ["brushing_teeth"],
+      "diffusion_type": "flux",
+      "_comment": "Node 1 uses text brushing_teeth"
+    }
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.01,
+    "batch_size": 32,
+    "weight_decay": 0.0001,
+    "momentum": 0.9
+  },
+  "dataset": {
+    "name": "VEGAS",
+    "path": "./data"
+    
+  },
+  "wandb": {
+    "disabled": true
+  }
+}

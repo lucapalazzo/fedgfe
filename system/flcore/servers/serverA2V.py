@@ -244,7 +244,8 @@ class FedA2V(FedRewind):
     def create_global_model(self, args):
 
         self.global_model = DownstreamSinestesiaAdapters( args, diffusion_type=self.diffusion_type )
-
+        for param in self.global_model.audio2image_model.ast_model.parameters():
+            param.requires_grad = False
 
         self.encoder_audio = None
         self.encoder_image = None
@@ -453,7 +454,7 @@ class FedA2V(FedRewind):
         wandb.finish()
 
     def round_ending_hook(self):
-        self.baloon.deflate()
+        self.baloon.deflate_if_inflated()
         generated_images = {}
         if self.generate_nodes_images_frequency > 0 and self.round % self.generate_nodes_images_frequency == 0:
             if self.optimize_memory_usage or self.round == 1:
@@ -502,7 +503,7 @@ class FedA2V(FedRewind):
 
                 self._move_to_cpu()
         
-        self.baloon.inflate()
+        self.baloon.inflate_if_not_inflated()
 
         if self.generate_global_images_frequency > 0 and self.round % self.generate_global_images_frequency == 0:
             all_audio_embeddings = {}
@@ -529,7 +530,7 @@ class FedA2V(FedRewind):
         nodes_classes_text_embeddings = {}
 
         for node in self.clients:
-            node_dataset = node.node_data.train_dataset.dataset
+            node_dataset = node.node_data.dataset.dataset if isinstance(node.node_data.dataset, torch.utils.data.Subset) else node.node_data.dataset
             node_classes = node_dataset.active_classes
             node_text_embeddings = node_dataset.text_embs
             print ( f"Node {node.id} classes {node_classes}")
@@ -1116,10 +1117,10 @@ class FedA2V(FedRewind):
                     server_param.data += client_param.data.clone() * w
 
     def client_round_starting_hook(self, client):
-        """Hook called at the start of each client's training round."""
         print(f"\nStarting training round for Node {client.id}.")
-        round_train_metrics = self.round_train_metrics(client)
-        round_test_metrics = self.round_test_metrics(client)
+        node_metrics = self.node_metrics(client)
+        round_train_metrics = node_metrics['train_metrics']
+        round_test_metrics = node_metrics['test_metrics']
 
         if not self.no_wandb:
             wandb_metrics = client.log_metrics(round_train_metrics, round=self.round, suffix="_start")
@@ -1129,13 +1130,14 @@ class FedA2V(FedRewind):
                 metrics = {wandb_metric: wandb_metrics[wandb_metric], "round": self.round}
                 self.data_log(metrics)
 
-        print (f"Node {client.id} pre round metric train {round_train_metrics['text_loss']['mean']:.2f}. test {round_test_metrics['text_loss']['mean']:.2f}")
+        print (f"Node {client.id} pre round metric train {round_train_metrics['text_loss']['mean']:.4}. test {round_test_metrics['text_loss']['mean']:.4f}")
 
 
     def client_round_ending_hook(self, client):
         """Hook called at the end of each client's training round."""
-        round_train_metrics = self.round_train_metrics(client)
-        round_test_metrics = self.round_test_metrics(client)
+        node_metrics = self.node_metrics(client)
+        round_train_metrics = node_metrics['train_metrics']
+        round_test_metrics = node_metrics['test_metrics']
 
         if not self.no_wandb:
             wandb_metrics = client.log_metrics(round_train_metrics, round=self.round, suffix="_end")
@@ -1145,7 +1147,17 @@ class FedA2V(FedRewind):
                 metrics = {wandb_metric: wandb_metrics[wandb_metric], "round": self.round}
                 self.data_log(metrics)
 
-        print (f"Node {client.id} post metric train {round_train_metrics['text_loss']['mean']:.2f}. test {round_test_metrics['text_loss']['mean']:.2f}")
+        print (f"Node {client.id} post metric train {round_train_metrics['text_loss']['mean']:.4f}. test {round_test_metrics['text_loss']['mean']:.4f}")
+
+    def node_metrics(self, client):
+        """Compute metrics for a client node."""
+        train_metrics = self.round_train_metrics(client)
+        test_metrics = self.round_test_metrics(client)
+
+        return {
+            "train_metrics": train_metrics,
+            "test_metrics": test_metrics
+        }   
 
     def generate_images_from_diffusion(self, text_embeddings):
         if 't5' not in text_embeddings or 'clip' not in text_embeddings:
@@ -1156,7 +1168,7 @@ class FedA2V(FedRewind):
         pooled_prompt_embeds = text_embeddings['clip'].to(self.global_model.diffusion_dtype).to(self.diffusion_device)
 
 
-        if self.generate_low_memomy_footprint:
+        if not self.generate_low_memomy_footprint:
             imgs = self.global_model.diffusion_model(
                                         prompt_embeds=prompt_embeds,
                                         pooled_prompt_embeds=pooled_prompt_embeds,
@@ -1186,7 +1198,11 @@ class FedA2V(FedRewind):
     def save_generated_images(self, imgs, client, embeddings, suffix=""):
         saved_images = {}  
         for idx, img in enumerate(imgs):
-            class_name = embeddings['class_name'][idx]
+            if type(embeddings['class_name']) == list:
+                class_name = embeddings['class_name'][idx]
+            else:
+                class_name = embeddings['class_name']
+
             img_save_path = os.path.join(self.images_output_dir, f"round_{self.round}_node_{client.id}_img_{class_name}_{idx}{suffix}.png")
             saved_images[img_save_path] = class_name
             img = img.squeeze(0)
@@ -1194,7 +1210,6 @@ class FedA2V(FedRewind):
             converted_img.save(img_save_path)
             print(f"Saved generated image to {img_save_path}")
         return saved_images
-
 
     def generate_images(self, client):
         """Generate images using the client's Audio2Visual model."""
@@ -1206,27 +1221,46 @@ class FedA2V(FedRewind):
             except FileExistsError:
                 pass
 
-        embeddings = client.get_audio_embeddings_for_generation(num_embeddings=5)
+        # Generate images from all validation samples for this node
+        node_val_dataset = client.node_data.get_val_dataset()
+        node_test_dataset = client.node_data.get_test_dataset()
+        node_train_dataset = client.node_data.get_train_dataset()
+        test_dataset = None
+        suffix = ''
+        if node_val_dataset is not None and len(node_val_dataset) > 0:
+            test_dataset = node_val_dataset
+            suffix = '_val'
+        elif node_test_dataset is not None and len (node_test_dataset) > 0:
+            test_dataset = node_test_dataset
+            suffix = '_test'
 
-        on_test_imgs = self.generate_images_from_diffusion(embeddings)
+        if test_dataset is not None:
+            embeddings = client.get_audio_embeddings_from_dataset(test_dataset)
+            on_test_imgs = self.generate_images_from_diffusion(embeddings)
+            on_test_imgs_files = self.save_generated_images(on_test_imgs, client, embeddings, suffix=suffix)
+        else:
+            print ( f"Unable to get test or validation split from node {client.id}" )
+            on_test_imgs = self.generate_images_from_diffusion(embeddings)
 
-        on_test_imgs_files = self.save_generated_images(on_test_imgs, client, embeddings)
+        on_train_images_files = None
+        from_text_images_files = None
+
         
-        embeddings = client.get_audio_embeddings_for_generation(num_embeddings=2, from_train=True )
+        # embeddings = client.get_audio_embeddings_for_generation(num_embeddings=2, from_train=True )
 
-        on_train_imgs = self.generate_images_from_diffusion(embeddings)
-        on_train_images_files = self.save_generated_images(on_train_imgs, client, embeddings, "_train")
+        # on_train_imgs = self.generate_images_from_diffusion(embeddings)
+        # on_train_images_files = self.save_generated_images(on_train_imgs, client, embeddings, "_train")
 
-        node_dataset = client.node_data.train_dataset.dataset
-        text_embs = node_dataset.text_embs
+        # node_dataset = client.node_data.train_dataset.dataset if isinstance( client.node_data.train_dataset, torch.utils.data.Subset) else client.node_data.train_dataset
+        # text_embs = node_dataset.text_embs
 
-        for node_class in node_dataset.active_classes.keys():
-            embeddings = { 'clip': text_embs[node_class][self.diffusion_type]['pooled_prompt_embeds'],
-                          't5': text_embs[node_class][self.diffusion_type]['prompt_embeds'],
-                          'class_name': node_class }
+        # for node_class in node_dataset.active_classes.keys():
+        #     embeddings = { 'clip': text_embs[node_class][self.diffusion_type]['pooled_prompt_embeds'],
+        #                   't5': text_embs[node_class][self.diffusion_type]['prompt_embeds'],
+        #                   'class_name': node_class }
                           
-            from_text_imgs = self.generate_images_from_diffusion(embeddings)
-            from_text_images_files = self.save_generated_images(from_text_imgs, client, embeddings, "_from_embs")
+        #     from_text_imgs = self.generate_images_from_diffusion(embeddings)
+        #     from_text_images_files = self.save_generated_images(from_text_imgs, client, embeddings, "_from_embs")
         # for node_class in node_dataset.active_classes.keys():
         #     prompt_embeds = text_embs[node_class][self.diffusion_type]['prompt_embeds']
         #     pooled_prompt_embeds = text_embs[node_class][self.diffusion_type]['pooled_prompt_embeds']
@@ -1290,16 +1324,16 @@ class FedA2V(FedRewind):
                 node_dataset = ESC50Dataset(
                     selected_classes=selected_classes,
                     excluded_classes=excluded_classes,
-                    # split='train',
-                    # use_folds=use_folds,
-                    train_folds=train_folds,
-                    test_folds=test_folds,
-                    node_id=int(node_id)
+                    node_id=int(node_id),
+                    test_ratio=0.1,
+                    train_ratio=0.9,
+                    val_ratio=0.1
                 )
 
             if node_dataset is None:
                 logger.warn("No dataset assigned to node, skipping node creation")
                 continue
+
             node = clientObj(self.args,
                              int(node_id),
                              node_config=node_config,
@@ -1312,11 +1346,57 @@ class FedA2V(FedRewind):
         self.federation_available_classes = []
         self.federation_active_classes = []
         for node in self.clients:
-            self.federation_available_classes.extend(node.node_data.train_dataset.dataset.available_classes)
-            self.federation_available_classes.extend(node.node_data.test_dataset.dataset.available_classes)
-            self.federation_active_classes.extend(node.node_data.train_dataset.dataset.available_classes)
-            self.federation_active_classes.extend(node.node_data.test_dataset.dataset.available_classes)
-            
+            node_dataset = node.node_data.dataset if not isinstance(node.node_data.dataset, torch.utils.data.Subset) else node.node_data.dataset.dataset
+            self.federation_available_classes.extend(node_dataset.available_classes)
+            self.federation_available_classes.extend(node_dataset.available_classes)
+            self.federation_active_classes.extend(node_dataset.available_classes)
+            self.federation_active_classes.extend(node_dataset.available_classes)
+
+        # Create a merged NodeData with all validation datasets from all nodes
+        from datautils.node_dataset import NodeData
+        from torch.utils.data import ConcatDataset
+
+        # Collect all validation datasets
+        val_datasets = []
+        test_datasets = []
+        for node in self.clients:
+            val_dataset = node.node_data.get_val_dataset()
+            test_dataset = node.node_data.get_test_dataset()
+            if val_dataset is not None:
+                val_datasets.append(val_dataset)
+            if test_dataset is not None:
+                test_datasets.append(test_dataset)
+
+        # Create merged validation dataset
+        if val_datasets:
+            merged_val_dataset = ConcatDataset(val_datasets)
+
+            # Create a NodeData instance with the merged validation dataset
+            self.federation_val_data = NodeData(
+                self.args,
+                node_id=-1,  # Use -1 to indicate this is the federation-level data
+                dataset_split_id=-1,
+                custom_val_dataset=merged_val_dataset
+            )
+            print(f"Created federation validation dataset with {len(merged_val_dataset)} samples from {len(val_datasets)} nodes")
+        else:
+            self.federation_val_data = None
+            print("Warning: No validation datasets found in any node")
+        
+        if test_datasets:
+            merged_test_dataset = ConcatDataset(test_datasets)
+
+            # Create a NodeData instance with the merged validation dataset
+            self.federation_test_data = NodeData(
+                self.args,
+                node_id=-1,  # Use -1 to indicate this is the federation-level data
+                dataset_split_id=-1,
+                custom_test_dataset=merged_test_dataset
+            )
+            print(f"Created federation test dataset with {len(merged_test_dataset)} samples from {len(val_datasets)} nodes")
+        else:
+            self.federationtest_data = None
+            print("Warning: No test datasets found in any node")
 
         self.federation_available_classes = list((set(self.federation_available_classes)))
         self.federation_active_classes = list((set(self.federation_active_classes)))
@@ -1378,7 +1458,7 @@ class FedA2V(FedRewind):
             if c.node_data.train_dataset == None:
                 print(f"Client {c.id} train data is None")
                 continue
-            c._move_to_gpu(self.device)
+            c._move_to_gpu(self.device, force=True)
             node_train_metrics = c.train_metrics()
             nodes_train_metrics[c.id] = node_train_metrics
             c._move_to_cpu()
@@ -1403,7 +1483,7 @@ class FedA2V(FedRewind):
             test_clients = self.clients if not standalone else [c]
 
             for t in test_clients:
-                if c.node_data.test_data == None:
+                if c.node_data.test_dataset == None:
                     print(f"Client {c.id} test data is None")
                     continue
 

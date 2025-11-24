@@ -60,12 +60,14 @@ class NodeData():
         if custom_test_dataset is not None:
             self.test_dataset = custom_test_dataset
             self.test_samples = len(custom_test_dataset) if hasattr(custom_test_dataset, '__len__') else 0
+            self.use_custom_dataset = True
         else:
             self.test_dataset = None
 
         if custom_val_dataset is not None:
             self.val_dataset = custom_val_dataset
             self.val_samples = len(custom_val_dataset) if hasattr(custom_val_dataset, '__len__') else 0
+            self.use_custom_dataset = True
         else:
             self.val_dataset = None
 
@@ -137,9 +139,23 @@ class NodeData():
 
                 # Create subset datasets
                 from torch.utils.data import Subset
-                self.train_dataset = Subset(self.dataset, train_indices)
-                self.test_dataset = Subset(self.dataset, test_indices)
-                if val_size > 0:
+
+                dataset_train = getattr ( self.dataset, 'train', None )
+                dataset_test = getattr ( self.dataset, 'test', None )
+                dataset_val = getattr ( self.dataset, 'val', None )
+
+                if dataset_train != None:
+                    self.train_dataset = dataset_train
+                else:
+                    self.train_dataset = Subset(self.dataset, train_indices)
+
+                if dataset_test != None:
+                    self.test_dataset = dataset_test
+                else:
+                    self.test_dataset = Subset(self.dataset, test_indices)
+                if val_size > 0 and dataset_val != None:
+                    self.val_dataset = dataset_val
+                elif val_size > 0:
                     self.val_dataset = Subset(self.dataset, val_indices)
 
                 self.train_samples = len(self.train_dataset)

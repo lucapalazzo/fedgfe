@@ -19,7 +19,7 @@
     "use_saved_audio_embeddings": false
   },
   "feda2v": {
-    "generate_nodes_images_frequency": 5,
+    "generate_nodes_images_frequency": 1,
     "generate_global_images_frequency": 0,
     "generate_low_memomy_footprint": true,
     "adapter_aggregation_mode": "none",
@@ -50,14 +50,13 @@
   "training": {
     "optimizer": "AdamW",
     "learning_rate": 0.001,
-    "batch_size": 32,
+    "batch_size": 8,
     "weight_decay": 0.0001,
     "momentum": 0.9
   },
   "dataset": {
-    "name": "VEGAS",
+    "name": "ESC50",
     "path": "./data"
-    
   },
   "wandb": {
     "disabled": false

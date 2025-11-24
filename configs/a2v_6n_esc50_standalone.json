@@ -4,23 +4,35 @@
     "device": "cuda",
     "device_id": "0",
     "runs": 1,
-    "seed": 42
+    "seed": 42,
+    "use_balooning": false,
+    "optimize_memory_usage": false
   },
   "federation": {
     "algorithm": "FedA2V",
     "num_clients": 6,
     "global_rounds": 20,
-    "local_epochs": 5,
+    "local_epochs": 1,
     "eval_gap": 10,
     "diffusion_type": "flux",
     "model_aggregation": "none",
     "use_saved_audio_embeddings": false
   },
   "feda2v": {
-    "generate_nodes_images_frequency": 10,
+    "generate_nodes_images_frequency": 1,
     "generate_global_images_frequency": 0,
+    "generate_low_memomy_footprint": true,
+    "adapter_aggregation_mode": "none",
+    "global_model_train": false,
+    "global_model_train_from_nodes_adapters": false,
+    "global_model_train_from_generator": false,
+    "global_model_train_from_nodes_audio_embeddings": false,
+    "global_model_train_epochs": 5,
+    "use_generator": true,
+    "generator_type": "vae",
+    "store_audio_embeddings": false,
+    "audio_embedding_file_name": null,
     "images_output_dir": "esc50-6n-standalone"
-
   },
   "nodes": {
     "0": {

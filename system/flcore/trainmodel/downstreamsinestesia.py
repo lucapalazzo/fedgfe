@@ -30,7 +30,8 @@ class DownstreamSinestesia(Downstream):
                  diffusion_type=None,
                  loss_weights=None,
                  torch_dtype=torch.float32,
-                 enable_diffusion=False):
+                 enable_diffusion=False,
+                 global_model = None):
         """
         Initialize DownstreamSinestesia.
 
@@ -160,19 +161,22 @@ class DownstreamSinestesia(Downstream):
         return self.audio2image_model
 
     def train(self, mode: bool = True) -> None:
-        """Set training mode."""
         super(DownstreamSinestesia, self).train(mode)
         if self.sinestesia_model is not None:
             self.sinestesia_model.train(mode)
 
+        if self.audio2image_model is not None:
+            self.audio2image_model.train(mode)
+
     def eval(self, mode: bool = True) -> None:
-        """Set evaluation mode."""
         super(DownstreamSinestesia, self).eval()
         if self.sinestesia_model is not None:
             self.sinestesia_model.eval()
+        
+        if self.audio2image_model is not None:
+            self.audio2image_model.eval()
 
     def parameters(self, recurse=True):
-        """Return model parameters."""
         if self.sinestesia_model is not None:
             return self.sinestesia_model.parameters(recurse)
         return []

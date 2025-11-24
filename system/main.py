@@ -27,6 +27,8 @@ import warnings
 import numpy as np
 import torchvision
 import logging
+
+logger = logging.getLogger(__name__)
 import timm
 from timm.models.vision_transformer import VisionTransformer as timmVisionTransformer
 

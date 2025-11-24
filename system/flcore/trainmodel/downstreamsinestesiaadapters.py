@@ -46,13 +46,19 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
         self.mse = nn.MSELoss().to(self.torch_dtype)
 
         self.adapters = {}
-        self.projections = {}
         self.adapters_modules = None
 
         self.ast_transformer = self.get_ast_transformer()
         self.ast_feature_extractor = self.get_ast_feature_extractor()
 
         self.get_sinestesia_adapters()
+
+    def to(self, device):
+        self.audio2image_model.to(device)
+        self.ast_transformer.to(device)
+        self.adapters_modules.to(device)
+        self.device = device
+        return self
 
     def parameters(self, recurse = True):
         return self.adapters_modules.parameters()        
@@ -77,7 +83,7 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
         if self.diffusion_type == 'sd' or self.diffusion_type == 'flux':
             self.adapters['clip'] = torch.nn.Sequential()
             self.adapters['clip'].add_module ( "adapter_clip", a2i_model.clip_adapter)
-            self.adapters['clip'].add_module ( "projecton_clip", a2i_model.clip_projection )
+            self.adapters['clip'].add_module ( "projection_clip", a2i_model.clip_projection )
             self.adapters_modules.add_module ( "clip", self.adapters['clip'])
 
         if self.diffusion_type == 'flux':
@@ -85,6 +91,8 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
             self.adapters['t5'].add_module ( "adapter_t5", a2i_model.t5_adapter)
             self.adapters['t5'].add_module (  "projection_t5", a2i_model.t5_projection )
             self.adapters_modules.add_module ( "t5", self.adapters['t5'])
+        
+        return self.adapters
         
     def train(self, mode: bool = True) -> None:
         """Set training mode."""
@@ -147,10 +155,8 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
         output = {}
 
         output['audio_embeddings'] = x
-        for model in self.adapters.keys():
-            output[model] = self.adapters[model](x)
-            # x = self.adapters[model](x)
-            # output[model] = self.projections[model](x)
+        for adapter_name, adapter in self.adapters.items():
+            output[adapter_name] = adapter(x)
 
         text_loss = self.text_mse( output, target_prompt_embeds= img_target_prompt_embeds, target_pooled_prompt_embeds=img_target_pooled_prompt_embeds)
 
@@ -462,7 +468,7 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
 
                 steps += 1
                 if ( 'audio' in audio_data and isinstance(audio_data['audio'], torch.Tensor) ):
-                    print ( f"Filenames {audio_data['audio_filename']} classes {audio_data['class_name']}")
+                    # print ( f"Filenames {audio_data['audio_filename']} classes {audio_data['class_name']}")
                     audio_data = audio_data['audio']
 
                 samples_count += audio_data.shape[0]

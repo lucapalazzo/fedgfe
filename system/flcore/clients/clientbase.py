@@ -37,7 +37,7 @@ class Client(object):
     Base class for clients in federated learning.
     """
 
-    def __init__(self, args, node_id, train_samples, test_samples, train_data = None, test_data = None, val_data = None, model = None, **kwargs):
+    def __init__(self, args, node_id, train_samples, test_samples, train_data = None, test_data = None, val_data = None, model = None, dataset = None, **kwargs):
         self.args = args
         self.model = FLModel(args, node_id, model=model)
         self.optimizer = None
@@ -62,8 +62,8 @@ class Client(object):
                     # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                     transforms.Resize([self.dataset_image_size, self.dataset_image_size]),
                 ])
-       
-        self.node_data = NodeData(args, self.id, transform=self.transform, **kwargs)
+
+        self.node_data = NodeData(args, self.id, transform=self.transform, dataset=dataset, **kwargs)
 
         self.num_classes = args.num_classes
         self.train_samples = train_samples

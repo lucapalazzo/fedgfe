@@ -24,6 +24,7 @@ from torchvision.ops.focal_loss import sigmoid_focal_loss
 from torchvision import transforms
 from utils.check_parameters import check_optimizer_params, print_model_gradients_status
 from utils.node_metric import NodeMetric
+from utils.check_loss_optimizer import check_params_graph_vs_optimizer
 
 from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR, ConstantLR
 
@@ -47,11 +48,9 @@ logger = logging.getLogger(__name__)
 
 class clientA2V(Client):
     def __init__(self, args, node_id, node_config=None, global_model=None, dataset=None, store_audio_embedding=False, **kwargs):
-        super().__init__(args, node_id, None, None, **kwargs)
+        super().__init__(args, node_id, None, None, dataset = dataset, **kwargs)
 
-        logger = logging.getLogger(f"{__name__}_{node_id}")
-
-
+        self.logger = logging.getLogger(f"{__name__}_{node_id}")
 
         self.id = node_id
         self.learning_rate = args.local_learning_rate
@@ -64,7 +63,22 @@ class clientA2V(Client):
 
         self.store_audio_embedding = self.args.json_config.feda2v.store_audio_embeddings
 
-        self.model = global_model
+        # Create local instance using DownstreamSinestesiaAdapters without diffusion
+        from flcore.trainmodel.downstreamsinestesiaadapters import DownstreamSinestesiaAdapters
+
+        self.model = DownstreamSinestesiaAdapters(
+            args=args,
+            wandb_log=not args.no_wandb,
+            device=self.device,
+            use_classifier_loss=False,
+            diffusion_type=self.global_model.diffusion_type,
+            enable_diffusion=False  # Explicitly disable diffusion for local nodes
+        )
+
+        # Share the AST model from global model (read-only, not trainable)
+        self.model.audio2image_model.ast_model = self.global_model.audio2image_model.ast_model.to(self.device)
+        self.model.audio2image_model.feature_extractor = self.global_model.audio2image_model.feature_extractor
+        self.audio2image_model = self.model.get_audio2image_model()
 
         if 'data_log' in kwargs:
             self.data_log = kwargs['data_log']
@@ -72,12 +86,14 @@ class clientA2V(Client):
             self.data_log = None
 
         if node_config.dataset != None:
-            self.dataset = node_config.dataset
+            self.dataset_name = node_config.dataset
         else:
-            self.dataset = args.dataset
+            self.dataset_name = args.dataset
+
+        self.dataset = self.dataset_name
 
         self.node_data = NodeData(args, node_id,dataset=dataset)
-        self.node_data.dataset = self.dataset
+        self.node_data.dataset_name = self.dataset_name
 
         self.experiment_config = getattr(args.json_config, 'experiment', None)
 
@@ -85,6 +101,8 @@ class clientA2V(Client):
 
         self.train_optimizer = None
         self.finetuning_optimizer = None
+        self.train_optimizers = {}
+        self.finetuning_optimizers = {}
 
         self.model_optimizer = args.model_optimizer
 
@@ -101,8 +119,6 @@ class clientA2V(Client):
         self.img_pipe_name = getattr(args, 'img_pipe_name', "runwayml/stable-diffusion-v1-5")
         self.img_lcm_lora_id = getattr(args, 'img_lcm_lora_id', "latent-consistency/lcm-lora-sdv1-5")
 
-        self.audio2image_model = self.global_model.get_audio2image_model()
-
         self.per_class_outputs = None  # Will be computed at the end of each round
         self.per_class_outputs_mean = None  # Will be computed at the end of each round
 
@@ -114,6 +130,8 @@ class clientA2V(Client):
 
         self.adapters = self.model.adapters if hasattr(self.model, 'adapters') else {}
         self.adapters_modules = self.model.adapters_modules if hasattr(self.model, 'adapters_modules') else None
+
+        self._move_to_gpu(self.device)
 
         self.audio_embedding_store = {}
 
@@ -163,8 +181,6 @@ class clientA2V(Client):
         """Train the Audio2Visual model."""
         logger.debug(f"*** Node {self.id} memory before training {torch.cuda.memory_allocated(self.device)//(1024**2)} MB")
 
-        self.model = self.global_model
-
         node_trainloader = self.load_train_data()
         node_testloader = self.load_test_data()
 
@@ -212,7 +228,7 @@ class clientA2V(Client):
 
         # Move model to CPU after training to save GPU memory
         self._move_to_cpu()
-        print(f"*** Node {self.id} memory after training and moving to CPU {torch.cuda.memory_allocated(device)//1024**2} MB")
+        logger.debug(f"*** Node {self.id} memory after training and moving to CPU {torch.cuda.memory_allocated(device)//1024**2} MB")
 
     def update_local_adapters(self, adapters = None, projections = None):
         for module_name, module in self.adapters.items():
@@ -231,6 +247,9 @@ class clientA2V(Client):
 
         # Initialize storage for adapter outputs per class during training
         # Structure: {class_name: {adapter_name: [list of outputs]}}
+
+        # Cache per audio embeddings: {audio_filename: embedding_tensor}
+        epoch_audio_embedding_cache = {}
 
         for epoch in range(epochs):
             epoch_loss = 0.0
@@ -266,18 +285,49 @@ class clientA2V(Client):
                         if target_pooled_prompt_embeds is not None:
                             target_pooled_prompt_embeds = target_pooled_prompt_embeds.to(device)
 
-                audio_embedding = samples.get('audio_emb', None)
+                # Gestione cache audio embedding - recupera PRIMA della forward pass
+                audio_filename = samples.get('audio_filename', None)
+                audio_embedding = None
 
-                # Zero gradients
+                # Recupera dalla cache nelle epoche successive (epoch > 0)
+                if epoch > 0 or self.round > 1:
+                    file_ids = samples.get('file_id', None)
+                    if file_ids is not None:
+                        train_dataset = self.node_data.train_dataset
+                        if hasattr(train_dataset, 'dataset'):
+                            base_dataset = train_dataset.dataset
+                        else:
+                            base_dataset = train_dataset
+
+                        if hasattr(base_dataset, 'audio_embs') and base_dataset.audio_embs is not None:
+                            cached_embeddings = []
+                            all_cached = True
+
+                            for file_id in file_ids:
+                                if file_id in base_dataset.audio_embs:
+                                    cached_embeddings.append(base_dataset.audio_embs[file_id])
+                                else:
+                                    all_cached = False
+                                    break
+
+                            if all_cached:
+                                # Usa gli embeddings dalla cache
+                                audio_embedding = torch.stack(cached_embeddings).to(device)
+                                print(f"Node {self.id} Epoch {epoch+1} Batch {batch_idx}: Recuperati {len(cached_embeddings)} audio embeddings dal dataset")
+
+                # Se non in cache, usa quello fornito dal dataloader
+                if audio_embedding is None:
+                    audio_embedding = samples.get('audio_emb', None)
+
+                for optimizer_name, optimizer in self.train_optimizers.items():
+                    optimizer.zero_grad()
                 self.optimizer.zero_grad()
 
-
-
-                # Forward pass
-                if isinstance(audio_data, torch.Tensor) and isinstance(self.audio2image_model.feature_extractor, ASTFeatureExtractor):
+                if audio_embedding is None and isinstance(audio_data, torch.Tensor) and isinstance(self.audio2image_model.feature_extractor, ASTFeatureExtractor):
                     audio_data = audio_data.to('cpu').numpy()
+                else:
+                    audio_data = None
 
-                # outputs = self.audio2image_model(audio_data, target_prompt_embeds, target_pooled_prompt_embeds)
                 outputs = self.model( audio_data,
                                         img_target_prompt_embeds=target_prompt_embeds,
                                         img_target_pooled_prompt_embeds=target_pooled_prompt_embeds,
@@ -285,6 +335,30 @@ class clientA2V(Client):
                                     )
 
                 outputs['class_name'] = samples.get('class_name', None)
+
+                # Salva gli audio embeddings nel dataset per riutilizzo nelle epoche successive (epoch 0)
+                if epoch == 0 and self.round == 1 and 'audio_embeddings' in outputs:
+                    audio_embeddings_batch = outputs['audio_embeddings']
+                    file_ids = samples.get('file_id', None)
+
+                    if file_ids is not None:
+                        # Ottieni riferimento al dataset sottostante
+                        train_dataset = self.node_data.train_dataset
+                        # Unwrap Subset se necessario
+                        if hasattr(train_dataset, 'dataset'):
+                            base_dataset = train_dataset.dataset
+                        else:
+                            base_dataset = train_dataset
+
+                        #  audio_embs se non esiste
+                        if not hasattr(base_dataset, 'audio_embs') or base_dataset.audio_embs is None:
+                            base_dataset.audio_embs = {}
+
+                        for idx, file_id in enumerate(file_ids):
+                            base_dataset.audio_embs[file_id] = audio_embeddings_batch[idx].detach().cpu()
+                            epoch_audio_embedding_cache[file_id] = audio_embeddings_batch[idx].detach().cpu()
+
+                        print(f"Node {self.id} Epoch 1 Batch {batch_idx}: Salvati {len(file_ids)} audio embeddings nel dataset (totale: {len(base_dataset.audio_embs)})")
 
                 if self.store_audio_embedding:
                     outputs['audio_filename'] = samples.get('audio_filename', None)
@@ -299,7 +373,7 @@ class clientA2V(Client):
                 if epoch == epochs - 1:
                     training_adapter_outputs = self.store_adapters_output_per_class ( outputs, training_adapter_outputs )
 
-                losses = outputs['text_loss'] 
+                losses = outputs['text_loss']
                 losses_output = ""
                 if self.text_losses_summed:
                     loss = torch.tensor(0.0)
@@ -308,12 +382,12 @@ class clientA2V(Client):
                             for l in outputs['text_loss']:
                                 loss = loss.to(l.device)
                                 loss += l
-                                losses_output = f"{l.item()} "
+                                losses_output = f"{losses_output} {l.item():.3f} "
+                            losses_output = f"{losses_output} {loss.item():.3f} "
+
                         else:
                             loss = outputs['text_loss']
-
                     loss.backward()
-                    losses_output = f"{loss.item()}"
                     epoch_loss += loss.item()
                 else:
                     losses_count = len(losses)
@@ -325,7 +399,13 @@ class clientA2V(Client):
                         epoch_loss += loss.item()
                         losses_output = f"{losses_output} {loss.item():.03f} "
 
-                self.optimizer.step()
+
+                if len(self.train_optimizers) > 0:
+                    for optimizer_name, optimizer in self.train_optimizers.items():
+                        optimizer.step()
+
+                else:
+                    self.optimizer.step()
                 num_batches += 1
 
                 if batch_idx % 10 == 0:
@@ -520,7 +600,7 @@ class clientA2V(Client):
 
             return avg_test_loss
         
-        self.model.train_
+        self.model.train()
         return 0.0
 
     def print_optimizer_info(self, client_id):
@@ -544,6 +624,10 @@ class clientA2V(Client):
         trainable_params = []
 
         trainable_params.extend(self.model.parameters())
+        trainable_params_dict = {}
+
+        for adapter_name, adapter in self.adapters.items():
+            trainable_params_dict[adapter_name] = adapter.parameters()
 
         if len(trainable_params) == 0:
             raise ValueError(f"Node {self.id}: No trainable parameters found in local adapters!")
@@ -555,6 +639,12 @@ class clientA2V(Client):
                 lr=self.learning_rate,
                 # weight_decay=self.optimizer_weight_decay
             )
+            for module_name, params in trainable_params_dict.items():
+                self.train_optimizers[module_name] = torch.optim.AdamW(
+                    params,
+                    lr=self.learning_rate,
+                # weight_decay=self.optimizer_weight_decay
+                )
         elif self.model_optimizer.lower() == "sgd":
             self.train_optimizer = torch.optim.SGD(
                 trainable_params,
@@ -570,6 +660,8 @@ class clientA2V(Client):
             )
 
         self.finetuning_optimizer = self.train_optimizer
+        self.optimizer = self.train_optimizer
+        self.optimizers = self.train_optimizers
 
     def setup_learning_rate_scheduler(self, rounds):
         """Setup learning rate scheduler for Audio2Visual model."""
@@ -760,15 +852,19 @@ class clientA2V(Client):
         if hasattr(self, 'optimizer') and self.optimizer is not None:
             if isinstance(self.optimizer, torch.optim.AdamW):
                 move_optimizer_state(self.optimizer, device)
+        if hasattr(self, 'optimizers') and self.optimizers is not None:
+            for optimizer in self.optimizers:
+                if isinstance(optimizer, torch.optim.AdamW):
+                    move_optimizer_state(optimizer, device)
 
-    def _move_to_gpu(self, device):
-        if self.optimize_memory_usage:
-            print(f"Node {self.id} moving to GPU: {device}")
+    def _move_to_gpu(self, device, force = True ):
+        if self.optimize_memory_usage or force:
+            self.logger.debug(f"Node {self.id} moving to GPU: {device}")
             self._move_to_device(device)
 
-    def _move_to_cpu(self):
-        if self.optimize_memory_usage:
-            print(f"Node {self.id} moving to CPU for memory optimization")
+    def _move_to_cpu(self, force = True):
+        if self.optimize_memory_usage or force:
+            self.logger.debug(f"Node {self.id} moving to CPU for memory optimization")
             self._move_to_device('cpu')
 
     def filter_batch_by_class(self, batch_data, target_class):
@@ -853,10 +949,52 @@ class clientA2V(Client):
                     adapter.eval()
                     output = adapter(audio_embeddings)
                     embeddings[module_name] = output
-                
+
                 embeddings['class_name'] = samples.get('class_name', None)
 
         print(f"Node {self.id} - Retrieved {audio_embeddings.shape[0]} audio embeddings for generation")
+
+        return embeddings
+
+    def get_audio_embeddings_from_dataset(self, dataset):
+        """Generate audio embeddings for all samples in a given dataset."""
+        # Create dataloader for the entire dataset
+        dataloader = DataLoader(dataset, batch_size=len(dataset), shuffle=False)
+
+        with torch.no_grad():
+            for batch_idx, samples in enumerate(dataloader):
+                # Move data to device
+                if 'audio' in samples and isinstance(samples['audio'], torch.Tensor):
+                    audio_data = samples['audio'].to(self.device)
+                else:
+                    raise ValueError("Audio data not found in the batch samples")
+
+                # Forward pass through feature extractor and AST model
+                if isinstance(audio_data, torch.Tensor) and isinstance(self.audio2image_model.feature_extractor, ASTFeatureExtractor):
+                    audio_data = audio_data.to('cpu').numpy()
+
+                audio_inputs = self.audio2image_model.feature_extractor(
+                    audio_data,
+                    sampling_rate=16000,
+                    return_tensors="pt",
+                    padding=True
+                ).input_values.to(self.device, self.audio2image_model.torch_dtype)
+
+                ast_model = self.audio2image_model.ast_model
+                ast_model.to(self.device)
+                ast_model.eval()
+
+                audio_embeddings = ast_model(audio_inputs).last_hidden_state  # (batch, seq_len, feature_dim)
+                embeddings = {}
+                for module_name in self.adapters.keys():
+                    adapter = self.adapters[module_name].to(self.device)
+                    adapter.eval()
+                    output = adapter(audio_embeddings)
+                    embeddings[module_name] = output
+
+                embeddings['class_name'] = samples.get('class_name', None)
+
+        print(f"Node {self.id} - Retrieved {audio_embeddings.shape[0]} audio embeddings from dataset")
 
         return embeddings
 
