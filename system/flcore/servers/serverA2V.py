@@ -96,6 +96,8 @@ class FedA2V(FedRewind):
         self.generate_global_images_average_text_embeddings = getattr(self.config.feda2v, 'generate_global_images_average_text_embeddings', False)
         self.images_output_dir = getattr(self.config.feda2v, 'images_output_dir', 'output_images')
         self.generate_images_frequency = self.generate_nodes_images_frequency
+        self.generate_from_clip_text_embeddings = getattr(self.config.feda2v, 'generate_from_clip_text_embeddings', False)
+        self.generate_from_t5_text_embeddings = getattr(self.config.feda2v, 'generate_from_t5_text_embeddings', False)
 
         self.adapter_aggregation_mode = self.config.feda2v.adapter_aggregation_mode
         self.global_model_train_from_nodes_adapters = self.config.feda2v.global_model_train_from_nodes_adapters
@@ -111,6 +113,19 @@ class FedA2V(FedRewind):
         self.discriminator_t5 = None
         self.generator_optimizer = None
         self.generator_loss_fn = None
+
+        # Generator checkpoint configuration
+        self.generator_save_checkpoint = getattr(self.config.feda2v, 'generator_save_checkpoint', False)
+        self.generator_load_checkpoint = getattr(self.config.feda2v, 'generator_load_checkpoint', False)
+        self.generator_checkpoint_path = getattr(self.config.feda2v, 'generator_checkpoint_path', 'generator_checkpoint.pt')
+        self.generator_checkpoint_frequency = getattr(self.config.feda2v, 'generator_checkpoint_frequency', 10)
+
+        # Generator training configuration
+        self.generator_training_epochs = getattr(self.config.feda2v, 'generator_training_epochs', 5)
+        self.generator_augmentation = getattr(self.config.feda2v, 'generator_augmentation', True)
+        self.generator_augmentation_noise = getattr(self.config.feda2v, 'generator_augmentation_noise', 0.1)
+        self.synthetic_samples_per_class = getattr(self.config.feda2v, 'synthetic_samples_per_class', 5)
+        self.generator_validation_frequency = getattr(self.config.feda2v, 'generator_validation_frequency', 5)
 
         # Create Encoders models Audio2Visual model
         self.create_global_model(args)
@@ -256,7 +271,7 @@ class FedA2V(FedRewind):
         elif self.diffusion_type == 'sd':
             img_pipe_name = 'runwayml/stable-diffusion-v1-5'
 
-        if self.generate_global_images_frequency > 0 or self.generate_nodes_images_frequency:
+        if self.generate_global_images_frequency  or self.generate_nodes_images_frequency:
             self.global_model.enable_diffusion = True
             self.global_model.image_generation_frequency = self.generate_global_images_frequency
             self.global_model.generate_low_memomy_footprint = self.generate_low_memomy_footprint
@@ -271,6 +286,15 @@ class FedA2V(FedRewind):
         # Initialize generators if enabled
         if self.use_generator:
             self.initialize_generators()
+
+            # Load generator checkpoint if configured
+            if self.generator_load_checkpoint:
+                logger.info("Loading generator checkpoint from configuration")
+                success = self.load_generator_checkpoint()
+                if success:
+                    logger.info("Successfully loaded generator checkpoint")
+                else:
+                    logger.warning("Could not load generator checkpoint, starting from scratch")
 
         return self.global_model, self.generator_model
     
@@ -418,7 +442,7 @@ class FedA2V(FedRewind):
             s_t = time.time()
             self.selected_clients = self.clients
 
-            if i % self.eval_gap == 0 or True:
+            if i % self.eval_gap == 0:
                 print(f"\n-------------Round number: {i}-------------")
                 print("\nEvaluate Audio2Visual models")
                 self.evaluate()
@@ -440,7 +464,7 @@ class FedA2V(FedRewind):
             if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], top_cnt=self.top_cnt):
                 break
 
-            if self.model_aggregation != "none":
+            if self.model_aggregation != "none" or self.adapter_aggregation_mode != 'none':
                 self.receive_models()
                 self.aggregate_parameters()
 
@@ -462,13 +486,15 @@ class FedA2V(FedRewind):
             
             for client in self.clients:
                 generated_images[client.id] = self.generate_images(client)
-                node_metrics = self.test_node_metrics_from_images(client, generated_images=generated_images[client.id])
-                if not self.no_wandb:
-                    wandb_metrics = client.log_metrics(node_metrics, round=self.round)
-                    wandb.log(wandb_metrics)
 
             if self.optimize_memory_usage:
                 self.global_model.diffusion_model.to(torch.device('cpu'))
+            
+            # for client in self.clients:
+            #     node_metrics = self.test_node_metrics_from_images(client, generated_images=generated_images[client.id])
+            #     if not self.no_wandb:
+            #         wandb_metrics = client.log_metrics(node_metrics, round=self.round)
+            #         wandb.log(wandb_metrics)
 
         if self.global_model_train and (self.config.feda2v.global_model_train_from_nodes_audio_embeddings or self.config.feda2v.global_model_train_from_nodes_adapters):
             self._move_to_gpu(self.device)
@@ -481,7 +507,7 @@ class FedA2V(FedRewind):
             if self.global_model_train_from_generator:
                 self.train_generator_from_class_prompts()
 
-            if self.feda2v.global_model_train_from_nodes_adapters:
+            if self.global_model_train_from_nodes_adapters:
                 logger.info(f"\n=== Round {self.round}: Training Generator and Global Adapters ===")
                 result = self.global_model_train_from_nodes_adapters_output()
 
@@ -490,13 +516,35 @@ class FedA2V(FedRewind):
                     generator_loss, adapter_loss = result
                     print(f"\nGenerator Loss: {generator_loss:.4f}, Adapter Fine-tuning Loss: {adapter_loss:.4f}")
 
+                    # Validate generator if configured
+                    validation_metrics = {}
+                    if self.use_generator and self.round % self.generator_validation_frequency == 0:
+                        logger.info(f"Validating generator at round {self.round}")
+                        validation_metrics = self.validate_generator(self.nodes_per_class_adapters_outputs_means)
+
                     # Log to wandb
                     if not self.no_wandb:
-                        self.data_log({
+                        log_dict = {
                             "server/generator_loss": generator_loss,
                             "server/adapter_finetuning_loss": adapter_loss,
                             "round": self.round
-                        })
+                        }
+
+                        # Add validation metrics if available
+                        if validation_metrics:
+                            log_dict.update({
+                                "server/generator_validation_similarity": validation_metrics.get('avg_cosine_similarity', 0),
+                                "server/generator_validation_mse": validation_metrics.get('avg_mse_loss', 0),
+                                "server/generator_validation_l1": validation_metrics.get('avg_l1_loss', 0),
+                            })
+
+                        self.data_log(log_dict)
+
+                    # Save generator checkpoint if configured
+                    if self.generator_save_checkpoint and self.round % self.generator_checkpoint_frequency == 0:
+                        logger.info(f"Saving generator checkpoint at round {self.round}")
+                        self.save_generator_checkpoint(round_num=self.round)
+
                 else:
                     # Fallback for single value return
                     print(f"\nGlobal model trained with loss {result:.4f}")
@@ -506,25 +554,42 @@ class FedA2V(FedRewind):
         self.baloon.inflate_if_not_inflated()
 
         if self.generate_global_images_frequency > 0 and self.round % self.generate_global_images_frequency == 0:
-            all_audio_embeddings = {}
+            generated_images['server'] = {}
+            generated_images['server']['on_test']= self.generate_global_images_with_aggregated_adapters()
 
-            for client in self.clients:
-                if hasattr(client, 'audio_embedding_store') and client.audio_embedding_store is not None:
-                    all_audio_embeddings.update(client.audio_embedding_store)
-
+        if self.optimize_memory_usage:
+                self.global_model.diffusion_model.to(torch.device('cpu'))
         self.federation_test_metric(generated_images)
 
     def federation_test_metric ( self, generated_images):
 
+        if len(generated_images) == 0:
+            return
+        
+        self.global_model.zero_shot_model.model.to(self.device)
         for node in self.clients:
             node_id = node.id
+            node = self.clients[node_id]
             if node_id not in generated_images:
                 logger.warn(f"Node {node_id} not found in generated images")
                 continue
 
             node_metrics = self.test_node_metrics_from_images(node, generated_images[node_id])
+            print ( f"Node {node_id}\n{node_metrics}" )
 
-            
+            if not self.no_wandb:
+                wandb_metrics = node.log_metrics(node_metrics, round=self.round)
+                wandb.log(wandb_metrics)
+
+        if 'server' in generated_images:
+            server_metrics = self.test_node_metrics_from_images(None, generated_images['server'])    
+            print ( f"Server\n{server_metrics}" )
+
+            if not self.no_wandb:
+                wandb_metrics = self.log_metrics(server_metrics, round=self.round)
+                wandb.log(wandb_metrics)
+
+        self.global_model.zero_shot_model.model.to("cpu")
 
     def generate_global_images_average_text_embeddings_from_nodes(self):
         nodes_classes_text_embeddings = {}
@@ -622,7 +687,7 @@ class FedA2V(FedRewind):
 
     def train_generator_from_class_prompts(self, all_class_prompts):
         """
-        Train the VAE/GAN generator to replicate adapter prompts from clients.
+        Train the VAE/GAN generator to replicate adapter prompts from clients with data augmentation.
 
         Args:
             all_class_prompts: dict {class_name: [{adapter_outputs}, ...]}
@@ -637,9 +702,13 @@ class FedA2V(FedRewind):
         self.prompt_generator.train()
         total_loss = 0.0
         num_batches = 0
+        num_epochs = self.generator_training_epochs if hasattr(self, 'generator_training_epochs') else self.global_model_train_epochs
 
-        for epoch in range(self.global_model_train_epochs):
+        logger.info(f"Training generator for {num_epochs} epochs with augmentation={self.generator_augmentation}")
+
+        for epoch in range(num_epochs):
             epoch_loss = 0.0
+            epoch_batches = 0
 
             for class_name, prompts_list in all_class_prompts.items():
                 # Filter and stack valid prompts
@@ -652,6 +721,17 @@ class FedA2V(FedRewind):
                 # Stack tensors
                 clip_prompts = torch.stack(clip_prompts).to(self.device)
                 audio_embs = torch.stack(audio_embs).to(self.device)
+
+                # Apply data augmentation (add Gaussian noise) after first epoch
+                if epoch > 0 and self.generator_augmentation:
+                    noise_scale = self.generator_augmentation_noise
+                    audio_noise = torch.randn_like(audio_embs) * noise_scale
+                    audio_embs = audio_embs + audio_noise
+
+                    # Optional: also add small noise to CLIP embeddings
+                    if self.generator_type == 'vae':
+                        clip_noise = torch.randn_like(clip_prompts) * (noise_scale * 0.5)
+                        clip_prompts = clip_prompts + clip_noise
 
                 if self.generator_type == 'vae':
                     # VAE Training
@@ -674,27 +754,33 @@ class FedA2V(FedRewind):
 
                     # Backward and optimize
                     total_vae_loss.backward()
+
+                    # Gradient clipping for stability
+                    torch.nn.utils.clip_grad_norm_(self.prompt_generator.parameters(), max_norm=1.0)
+
                     self.generator_optimizer.step()
 
                     epoch_loss += total_vae_loss.item()
+                    epoch_batches += 1
 
                     if num_batches % 5 == 0:
-                        logger.info(f"  Class '{class_name}': VAE Loss={total_vae_loss.item():.4f} "
+                        logger.info(f"  Epoch {epoch+1} Class '{class_name}': VAE Loss={total_vae_loss.item():.4f} "
                                   f"(Recon={recon_loss.item():.4f}, KL={kl_loss.item():.4f}, Sim={sim_loss.item():.4f})")
 
                 elif self.generator_type == 'gan':
                     # GAN Training
                     gan_loss = self.train_gan_step(clip_prompts, audio_embs, class_name)
                     epoch_loss += gan_loss
+                    epoch_batches += 1
 
                 num_batches += 1
 
-            if len(all_class_prompts) > 0:
-                avg_epoch_loss = epoch_loss / len(all_class_prompts)
-                logger.info(f"Generator Epoch {epoch+1}/{self.global_model_train_epochs}: Loss = {avg_epoch_loss:.4f}")
+            if epoch_batches > 0:
+                avg_epoch_loss = epoch_loss / epoch_batches
+                logger.info(f"Generator Epoch {epoch+1}/{num_epochs}: Loss = {avg_epoch_loss:.4f} (batches={epoch_batches})")
                 total_loss += avg_epoch_loss
 
-        avg_loss = total_loss / self.global_model_train_epochs if self.global_model_train_epochs > 0 else 0.0
+        avg_loss = total_loss / num_epochs if num_epochs > 0 else 0.0
         logger.info(f"Generator training completed. Average loss: {avg_loss:.4f}")
 
         return avg_loss
@@ -780,14 +866,28 @@ class FedA2V(FedRewind):
             if self.use_generator and self.prompt_generator is not None:
                 self.prompt_generator.eval()
                 with torch.no_grad():
-                    num_synthetic = 5  # Generate 5 synthetic samples per class
-                    synthetic_audio_embs = self.prompt_generator.sample(
-                        num_samples=num_synthetic,
-                        visual_condition=mean_target_clip,
-                        device=self.device
-                    )
-                # Combine real and synthetic
-                combined_audio = torch.cat([mean_target_audio, synthetic_audio_embs], dim=0)
+                    num_synthetic = self.synthetic_samples_per_class if hasattr(self, 'synthetic_samples_per_class') else 5
+
+                    if self.generator_type == 'vae':
+                        # Use VAE to generate synthetic samples conditioned on visual features
+                        synthetic_audio_embs = self.prompt_generator.sample(
+                            num_samples=num_synthetic,
+                            visual_condition=mean_target_clip,
+                            device=self.device
+                        )
+                    elif self.generator_type == 'gan':
+                        # For GAN, generate from random latent vectors
+                        z = torch.randn(num_synthetic, 256).to(self.device)
+                        if self.prompt_generator_clip is not None:
+                            synthetic_audio_embs = self.prompt_generator_clip(z)
+                        else:
+                            logger.warning("GAN generator not properly initialized")
+                            synthetic_audio_embs = mean_target_audio.repeat(num_synthetic, 1, 1)
+
+                    # Combine real and synthetic embeddings
+                    combined_audio = torch.cat([mean_target_audio, synthetic_audio_embs], dim=0)
+
+                    logger.debug(f"  Class '{class_name}': Combined {mean_target_audio.shape[0]} real + {num_synthetic} synthetic samples")
             else:
                 combined_audio = mean_target_audio
 
@@ -874,19 +974,274 @@ class FedA2V(FedRewind):
         else:
             print(f"Checkpoint {filename} not found")
 
+    def save_generator_checkpoint(self, round_num=None):
+        """
+        Save generator model checkpoint.
+
+        Args:
+            round_num: Optional round number to include in checkpoint filename
+        """
+        if not self.use_generator or self.prompt_generator is None:
+            logger.warning("Generator not initialized, cannot save checkpoint")
+            return
+
+        if not self.generator_save_checkpoint:
+            return
+
+        # Create checkpoint directory if needed
+        checkpoint_dir = os.path.dirname(self.generator_checkpoint_path) or '.'
+        if not os.path.exists(checkpoint_dir):
+            os.makedirs(checkpoint_dir, exist_ok=True)
+
+        # Build checkpoint path with optional round number
+        if round_num is not None:
+            base_path = os.path.splitext(self.generator_checkpoint_path)[0]
+            ext = os.path.splitext(self.generator_checkpoint_path)[1]
+            checkpoint_path = f"{base_path}_round_{round_num}{ext}"
+        else:
+            checkpoint_path = self.generator_checkpoint_path
+
+        # Create checkpoint dictionary
+        checkpoint = {
+            'generator_type': self.generator_type,
+            'round': round_num if round_num is not None else self.round,
+        }
+
+        if self.generator_type == 'vae':
+            checkpoint.update({
+                'generator_state_dict': self.prompt_generator.state_dict(),
+                'optimizer_state_dict': self.generator_optimizer.state_dict() if self.generator_optimizer else None,
+            })
+        elif self.generator_type == 'gan':
+            checkpoint.update({
+                'generator_clip_state_dict': self.prompt_generator_clip.state_dict() if self.prompt_generator_clip else None,
+                'generator_t5_state_dict': self.prompt_generator_t5.state_dict() if self.prompt_generator_t5 else None,
+                'discriminator_clip_state_dict': self.discriminator_clip.state_dict() if self.discriminator_clip else None,
+                'discriminator_t5_state_dict': self.discriminator_t5.state_dict() if self.discriminator_t5 else None,
+                'generator_optimizer_state_dict': self.generator_optimizer.state_dict() if self.generator_optimizer else None,
+                'discriminator_optimizer_state_dict': self.discriminator_optimizer.state_dict() if hasattr(self, 'discriminator_optimizer') and self.discriminator_optimizer else None,
+            })
+
+        # Save checkpoint
+        torch.save(checkpoint, checkpoint_path)
+        logger.info(f"Saved generator checkpoint to {checkpoint_path}")
+
+    def load_generator_checkpoint(self, checkpoint_path=None):
+        """
+        Load generator model checkpoint.
+
+        Args:
+            checkpoint_path: Optional path to checkpoint. If None, uses self.generator_checkpoint_path
+
+        Returns:
+            bool: True if checkpoint loaded successfully, False otherwise
+        """
+        if not self.use_generator:
+            logger.warning("Generator not enabled, skipping checkpoint load")
+            return False
+
+        if not self.generator_load_checkpoint:
+            return False
+
+        # Use provided path or default
+        if checkpoint_path is None:
+            checkpoint_path = self.generator_checkpoint_path
+
+        if not os.path.exists(checkpoint_path):
+            logger.warning(f"Generator checkpoint not found at {checkpoint_path}")
+            return False
+
+        try:
+            # Load checkpoint
+            checkpoint = torch.load(checkpoint_path, map_location=self.device)
+            logger.info(f"Loading generator checkpoint from {checkpoint_path}")
+
+            # Verify generator type matches
+            if checkpoint.get('generator_type') != self.generator_type:
+                logger.error(f"Generator type mismatch: checkpoint has {checkpoint.get('generator_type')}, but config specifies {self.generator_type}")
+                return False
+
+            # Initialize generators if not already done
+            if self.prompt_generator is None:
+                logger.info("Initializing generator from checkpoint")
+                self.initialize_generators()
+
+            # Load state dictionaries
+            if self.generator_type == 'vae':
+                if 'generator_state_dict' in checkpoint:
+                    self.prompt_generator.load_state_dict(checkpoint['generator_state_dict'])
+                    logger.info("Loaded VAE generator state")
+
+                if 'optimizer_state_dict' in checkpoint and checkpoint['optimizer_state_dict'] is not None:
+                    if self.generator_optimizer is None:
+                        # Re-create optimizer if needed
+                        self.generator_optimizer = torch.optim.AdamW(
+                            self.prompt_generator.parameters(),
+                            lr=self.config.training.learning_rate * 0.1
+                        )
+                    self.generator_optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                    logger.info("Loaded VAE optimizer state")
+
+            elif self.generator_type == 'gan':
+                if 'generator_clip_state_dict' in checkpoint and self.prompt_generator_clip is not None:
+                    self.prompt_generator_clip.load_state_dict(checkpoint['generator_clip_state_dict'])
+                    logger.info("Loaded GAN CLIP generator state")
+
+                if 'generator_t5_state_dict' in checkpoint and self.prompt_generator_t5 is not None:
+                    self.prompt_generator_t5.load_state_dict(checkpoint['generator_t5_state_dict'])
+                    logger.info("Loaded GAN T5 generator state")
+
+                if 'discriminator_clip_state_dict' in checkpoint and self.discriminator_clip is not None:
+                    self.discriminator_clip.load_state_dict(checkpoint['discriminator_clip_state_dict'])
+                    logger.info("Loaded GAN CLIP discriminator state")
+
+                if 'discriminator_t5_state_dict' in checkpoint and self.discriminator_t5 is not None:
+                    self.discriminator_t5.load_state_dict(checkpoint['discriminator_t5_state_dict'])
+                    logger.info("Loaded GAN T5 discriminator state")
+
+                if 'generator_optimizer_state_dict' in checkpoint and checkpoint['generator_optimizer_state_dict'] is not None:
+                    if self.generator_optimizer is not None:
+                        self.generator_optimizer.load_state_dict(checkpoint['generator_optimizer_state_dict'])
+                        logger.info("Loaded GAN generator optimizer state")
+
+                if 'discriminator_optimizer_state_dict' in checkpoint and checkpoint['discriminator_optimizer_state_dict'] is not None:
+                    if hasattr(self, 'discriminator_optimizer') and self.discriminator_optimizer is not None:
+                        self.discriminator_optimizer.load_state_dict(checkpoint['discriminator_optimizer_state_dict'])
+                        logger.info("Loaded GAN discriminator optimizer state")
+
+            logger.info(f"Successfully loaded generator checkpoint from round {checkpoint.get('round', 'unknown')}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error loading generator checkpoint: {e}")
+            return False
+
+    def validate_generator(self, test_class_prompts):
+        """
+        Validate generator quality by comparing generated vs real prompts.
+
+        Args:
+            test_class_prompts: dict {class_name: [{'clip': tensor, 't5': tensor, 'audio_embeddings': tensor}, ...]}
+
+        Returns:
+            dict: Validation metrics including cosine similarity and reconstruction error
+        """
+        if not self.use_generator or self.prompt_generator is None:
+            logger.warning("Generator not initialized, cannot validate")
+            return {}
+
+        self.prompt_generator.eval()
+
+        metrics = {
+            'cosine_similarity': [],
+            'mse_loss': [],
+            'l1_loss': [],
+            'per_class_similarity': {}
+        }
+
+        with torch.no_grad():
+            for class_name, prompts_list in test_class_prompts.items():
+                if not prompts_list:
+                    continue
+
+                class_similarities = []
+                class_mse = []
+                class_l1 = []
+
+                for prompt_dict in prompts_list:
+                    # Extract embeddings
+                    audio_emb = prompt_dict.get('audio_embeddings')
+                    if audio_emb is None:
+                        continue
+
+                    # Move to device and ensure correct shape
+                    audio_emb = audio_emb.to(self.device)
+                    if audio_emb.dim() == 2:
+                        audio_emb = audio_emb.unsqueeze(0)  # Add batch dimension
+
+                    if self.generator_type == 'vae':
+                        # Get visual condition
+                        clip_emb = prompt_dict.get('clip')
+                        if clip_emb is not None:
+                            clip_emb = clip_emb.to(self.device)
+                            if clip_emb.dim() == 2:
+                                clip_emb = clip_emb.unsqueeze(0)
+
+                            # Generate prompt
+                            generated, mu, logvar = self.prompt_generator(audio_emb, visual_condition=clip_emb)
+                        else:
+                            # Generate without visual condition
+                            generated, mu, logvar = self.prompt_generator(audio_emb)
+
+                        # Compute metrics
+                        cos_sim = F.cosine_similarity(generated, audio_emb, dim=-1).mean().item()
+                        mse = F.mse_loss(generated, audio_emb).item()
+                        l1 = F.l1_loss(generated, audio_emb).item()
+
+                        class_similarities.append(cos_sim)
+                        class_mse.append(mse)
+                        class_l1.append(l1)
+
+                    elif self.generator_type == 'gan':
+                        # For GAN, generate from random noise and compare distribution
+                        batch_size = audio_emb.size(0)
+                        z = torch.randn(batch_size, 256).to(self.device)
+
+                        if self.prompt_generator_clip is not None:
+                            generated_clip = self.prompt_generator_clip(z)
+                            clip_emb = prompt_dict.get('clip')
+                            if clip_emb is not None:
+                                clip_emb = clip_emb.to(self.device)
+                                if clip_emb.dim() == 2:
+                                    clip_emb = clip_emb.unsqueeze(0)
+
+                                cos_sim = F.cosine_similarity(generated_clip, clip_emb, dim=-1).mean().item()
+                                class_similarities.append(cos_sim)
+
+                # Store per-class metrics
+                if class_similarities:
+                    metrics['per_class_similarity'][class_name] = np.mean(class_similarities)
+                    metrics['cosine_similarity'].extend(class_similarities)
+                    metrics['mse_loss'].extend(class_mse)
+                    metrics['l1_loss'].extend(class_l1)
+
+        # Compute overall metrics
+        if metrics['cosine_similarity']:
+            avg_similarity = np.mean(metrics['cosine_similarity'])
+            avg_mse = np.mean(metrics['mse_loss'])
+            avg_l1 = np.mean(metrics['l1_loss'])
+
+            logger.info(f"\n=== Generator Validation Metrics ===")
+            logger.info(f"Average Cosine Similarity: {avg_similarity:.4f}")
+            logger.info(f"Average MSE Loss: {avg_mse:.6f}")
+            logger.info(f"Average L1 Loss: {avg_l1:.6f}")
+            logger.info(f"Classes validated: {len(metrics['per_class_similarity'])}")
+
+            # Log per-class similarities
+            for class_name, sim in sorted(metrics['per_class_similarity'].items()):
+                logger.info(f"  - {class_name}: {sim:.4f}")
+
+            return {
+                'avg_cosine_similarity': avg_similarity,
+                'avg_mse_loss': avg_mse,
+                'avg_l1_loss': avg_l1,
+                'per_class_similarity': metrics['per_class_similarity'],
+                'num_classes': len(metrics['per_class_similarity'])
+            }
+        else:
+            logger.warning("No valid prompts for generator validation")
+            return {}
+
     def receive_models(self):
         assert (len(self.selected_clients) > 0)
 
         self.gathered_nodes = 0
 
         if self.adapter_aggregation_mode != 'none':
-            self.receive_nodes_adapters()
+            received_model = self.receive_nodes_adapters()
 
         if self.aggregation_method == 'per_class_average':
             received_model = self.receive_models_per_class_average()
-        else:
-            print(f"Model aggregation method {self.aggregation_method} not recognized.")
-            return
         
         self.gathered_nodes = received_model
         return received_model
@@ -943,7 +1298,6 @@ class FedA2V(FedRewind):
 
         for node in self.clients:
             start_time = time.time()
-            node.update_local_adapters(self.global_adapters)
 
             node.send_time_cost['num_rounds'] += 1
             node.send_time_cost['total_cost'] += 2 * (time.time() - start_time)
@@ -957,6 +1311,7 @@ class FedA2V(FedRewind):
         return
     
     def send_adapters(self, node):
+        logger.info(f"Sending global adapters to node {node.id}")
         self.global_model.to(self.device)
         node.update_local_adapters(self.global_adapters)
 
@@ -1117,7 +1472,11 @@ class FedA2V(FedRewind):
                     server_param.data += client_param.data.clone() * w
 
     def client_round_starting_hook(self, client):
+        if self.eval_gap % self.round != self.eval_gap:
+            return
+        
         print(f"\nStarting training round for Node {client.id}.")
+
         node_metrics = self.node_metrics(client)
         round_train_metrics = node_metrics['train_metrics']
         round_test_metrics = node_metrics['test_metrics']
@@ -1132,9 +1491,10 @@ class FedA2V(FedRewind):
 
         print (f"Node {client.id} pre round metric train {round_train_metrics['text_loss']['mean']:.4}. test {round_test_metrics['text_loss']['mean']:.4f}")
 
-
     def client_round_ending_hook(self, client):
-        """Hook called at the end of each client's training round."""
+        if self.eval_gap % self.round != self.eval_gap:
+            return
+        
         node_metrics = self.node_metrics(client)
         round_train_metrics = node_metrics['train_metrics']
         round_test_metrics = node_metrics['test_metrics']
@@ -1159,13 +1519,46 @@ class FedA2V(FedRewind):
             "test_metrics": test_metrics
         }   
 
-    def generate_images_from_diffusion(self, text_embeddings):
+    def generate_images_from_diffusion(self, text_embeddings, base_embeddings = None):
         if 't5' not in text_embeddings or 'clip' not in text_embeddings:
             print ('Text embeddings is missing something')
             return[]
-        
-        prompt_embeds = text_embeddings['t5'].to(self.global_model.diffusion_dtype).to(self.diffusion_device)
-        pooled_prompt_embeds = text_embeddings['clip'].to(self.global_model.diffusion_dtype).to(self.diffusion_device)
+
+
+        if base_embeddings is not None:
+            orginal_prompt_embeds = []
+            orginal_pooled_prompt_embeds = []
+            for class_name in text_embeddings['class_name']:
+                if class_name in base_embeddings:
+                    orginal_prompt_embeds.append( base_embeddings[class_name]['flux']['prompt_embeds'] )
+                    orginal_pooled_prompt_embeds.append( base_embeddings[class_name]['flux']['pooled_prompt_embeds'] )
+                else:
+                    print ( f"Class name {class_name} not found in base embeddings")
+                    continue
+
+        if self.generate_from_t5_text_embeddings and base_embeddings:
+            prompt_embeds = []
+            for class_name in text_embeddings['class_name']:
+                if class_name in base_embeddings:
+                    prompt_embeds.append( base_embeddings[class_name]['flux']['prompt_embeds'] )
+                else:
+                    print ( f"Class name {class_name} not found in base embeddings")
+                    continue
+            prompt_embeds = torch.stack(prompt_embeds).squeeze(dim=1).to(self.global_model.diffusion_dtype).to(self.diffusion_device)
+        else:
+            prompt_embeds = text_embeddings['t5'].to(self.global_model.diffusion_dtype).to(self.diffusion_device)
+
+        if self.generate_from_clip_text_embeddings and base_embeddings:
+            pooled_prompt_embeds = []
+            for class_name in text_embeddings['class_name']:
+                if class_name in base_embeddings:
+                    pooled_prompt_embeds.append( base_embeddings[class_name]['flux']['pooled_prompt_embeds'] )
+                else:
+                    print ( f"Class name {class_name} not found in base embeddings")
+                    continue
+            pooled_prompt_embeds = torch.stack(pooled_prompt_embeds).squeeze(dim=1).to(self.global_model.diffusion_dtype).to(self.diffusion_device)
+        else:
+            pooled_prompt_embeds = text_embeddings['clip'].to(self.global_model.diffusion_dtype).to(self.diffusion_device)
 
 
         if not self.generate_low_memomy_footprint:
@@ -1195,7 +1588,7 @@ class FedA2V(FedRewind):
         imgs = torch.cat(imgs,dim=0)
         return imgs
     
-    def save_generated_images(self, imgs, client, embeddings, suffix=""):
+    def save_generated_images(self, imgs, client_id, embeddings, suffix=""):
         saved_images = {}  
         for idx, img in enumerate(imgs):
             if type(embeddings['class_name']) == list:
@@ -1203,7 +1596,7 @@ class FedA2V(FedRewind):
             else:
                 class_name = embeddings['class_name']
 
-            img_save_path = os.path.join(self.images_output_dir, f"round_{self.round}_node_{client.id}_img_{class_name}_{idx}{suffix}.png")
+            img_save_path = os.path.join(self.images_output_dir, f"round_{self.round}_node_{client_id}_img_{class_name}_{idx}{suffix}.png")
             saved_images[img_save_path] = class_name
             img = img.squeeze(0)
             converted_img = transforms.ToPILImage()(img.to(torch.float32).cpu())
@@ -1235,9 +1628,10 @@ class FedA2V(FedRewind):
             suffix = '_test'
 
         if test_dataset is not None:
+            text_embs = test_dataset.text_embs
             embeddings = client.get_audio_embeddings_from_dataset(test_dataset)
-            on_test_imgs = self.generate_images_from_diffusion(embeddings)
-            on_test_imgs_files = self.save_generated_images(on_test_imgs, client, embeddings, suffix=suffix)
+            on_test_imgs = self.generate_images_from_diffusion(embeddings, base_embeddings=text_embs)
+            on_test_imgs_files = self.save_generated_images(on_test_imgs, client.id, embeddings, suffix=suffix)
         else:
             print ( f"Unable to get test or validation split from node {client.id}" )
             on_test_imgs = self.generate_images_from_diffusion(embeddings)
@@ -1275,7 +1669,99 @@ class FedA2V(FedRewind):
         #     converted_img.save(img_save_path)
         #     print(f"Saved generated image from text embeddings to {img_save_path}")
         return { 'on_train': on_train_images_files, 'on_test': on_test_imgs_files, 'from_embeddings': from_text_images_files }
-            
+
+    def generate_global_images_with_aggregated_adapters(self):
+        """Generate images using aggregated adapters and federation validation dataset."""
+        if self.federation_val_data is None:
+            print("Warning: No federation validation dataset available for global image generation")
+            return None
+
+        print(f"\nGenerating global images using aggregated adapters at round {self.round}")
+
+        # Get the federation validation dataset
+        fed_val_dataset = self.federation_val_data.get_val_dataset()
+
+        if fed_val_dataset is None or len(fed_val_dataset) == 0:
+            print("Warning: Federation validation dataset is empty")
+            return None
+
+        # Ensure output directory exists
+        if not os.path.exists(self.images_output_dir):
+            try:
+                os.makedirs(self.images_output_dir)
+            except FileExistsError:
+                pass
+
+        # Ensure global model and adapters are on the correct device
+        self.global_model.to(self.device)
+
+        # Create dataloader for the federation validation dataset
+        from torch.utils.data import DataLoader
+        dataloader = DataLoader(fed_val_dataset, batch_size=len(fed_val_dataset), shuffle=False)
+
+        generated_images = []
+        embeddings = {}
+        embeddings['class_name'] = []
+        for module_name in self.global_adapters.keys():
+            embeddings[module_name] = []
+
+        text_embs = []
+
+
+        with torch.no_grad():
+            for batch_idx, samples in enumerate(dataloader):
+                # Move audio data to device
+                if 'audio' in samples and isinstance(samples['audio'], torch.Tensor):
+                    audio_data = samples['audio'].to(self.device)
+                else:
+                    print("Warning: Audio data not found in federation validation batch")
+                    continue
+
+                # Extract audio embeddings using the global model
+                if isinstance(audio_data, torch.Tensor):
+                    audio_data_np = audio_data.to('cpu').numpy()
+
+                audio_inputs = self.global_model.ast_feature_extractor(
+                    audio_data_np,
+                    sampling_rate=16000,
+                    return_tensors="pt",
+                    padding=True
+                ).input_values.to(self.device, self.global_model.torch_dtype)
+
+                self.global_model.ast_transformer.eval()
+                audio_embeddings = self.global_model.ast_transformer(audio_inputs).last_hidden_state
+
+                for module_name, adapter_module in self.global_adapters.items():
+                    adapter_module.eval()
+                    adapter_module.to(self.device)
+                    adapted_embeddings = adapter_module(audio_embeddings)
+                    embeddings[module_name].extend(adapted_embeddings)
+
+                embeddings['class_name'].extend(samples['class_name'])
+                if hasattr(fed_val_dataset, 'text_embs'):
+                    text_embs.extend(fed_val_dataset.text_embs)
+
+            # Generate images from adapted embeddings
+            for module_name in self.global_adapters.keys():
+                embeddings[module_name] = torch.stack(embeddings[module_name], dim=0)
+
+            if self.optimize_memory_usage:
+                self.global_model.diffusion_model.to(self.diffusion_device)
+
+            if len(text_embs):
+                generated_images = self.generate_images_from_diffusion(embeddings, base_embeddings=text_embs)
+            else:
+                generated_images = self.generate_images_from_diffusion(embeddings)
+
+            saved_images = self.save_generated_images(generated_images, "server", embeddings)
+
+            if self.optimize_memory_usage:
+                self.global_model.diffusion_model.to('cpu')
+
+            print(f"Generated and saved {len(generated_images)} global images using aggregated adapters")
+
+        return saved_images
+
     def create_clients(self, clientObj):
         config = self.args.json_config if hasattr(self.args, 'json_config') else None 
         if config is None:
@@ -1415,16 +1901,37 @@ class FedA2V(FedRewind):
     def define_metrics(self):
         wandb.define_metric(f"round")
 
+        self.metrics_path = "server/"
+        if self.global_model is not None:
+            self.global_model.define_metrics(metrics_path=self.metrics_path)
+
         for client in self.clients:
             client.define_metrics()
-            wandb.define_metric(f"test/node_{client.id}/a2v_loss", step_metric="round")
-            wandb.define_metric(f"train/node_{client.id}/a2v_loss", step_metric="round")
-            wandb.define_metric(f"test/node_{client.id}/generation_quality", step_metric="round")
-            wandb.define_metric(f"test/node_{client.id}/audio_image_alignment", step_metric="round")
+
+    def log_metrics(self, metrics, round=None, prefix="", suffix=""):
+        if metrics == None:
+            return
+        
+        metrics_values = {}
+
+        for metric_name in metrics._defined_metrics:
+            if metrics.phase == NodeMetric.Phase.TRAIN:
+                metric_path = f"train/{self.metrics_path}{prefix}{metric_name}{suffix}"
+                # metric_path = f"train/{self.metrics_path}a2v_{prefix}{metric_name}{suffix}"
+            elif metrics.phase == NodeMetric.Phase.TEST:
+                metric_path = f"test/{self.metrics_path}{prefix}{metric_name}{suffix}"
+                # metric_path = f"test/{self.metrics_path}a2v_{prefix}{metric_name}{suffix}"
+            metric_value = metrics[metric_name]['mean']
+            if round == None:
+                round = self.round
+            
+            metrics_values[metric_path] = metric_value
+
+        return metrics_values
 
     def evaluate(self):
         """Evaluate Audio2Visual models."""
-        stats_test = self.test_metrics()
+        stats_test = self.test_metrics(standalone=True)
         stats_train = self.train_metrics()
 
         if stats_test == None or stats_train == None:
@@ -1487,7 +1994,11 @@ class FedA2V(FedRewind):
                     print(f"Client {c.id} test data is None")
                     continue
 
+                c._move_to_gpu(c.device)
+
                 node_test_metrics = c.test_metrics(t)
+
+                c._move_to_cpu()
                 test_clients_stats[t.id] = node_test_metrics
 
             # Unload test data to save memory

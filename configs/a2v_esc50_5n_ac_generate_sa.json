@@ -1,6 +1,6 @@
 {
   "experiment": {
-    "goal": "test",
+    "goal": "esc50-5n-ac-sa",
     "device": "cuda",
     "device_id": "0",
     "runs": 1,
@@ -10,10 +10,10 @@
   },
   "federation": {
     "algorithm": "FedA2V",
-    "num_clients": 2,
+    "num_clients": 5,
     "global_rounds": 50,
     "local_epochs": 10,
-    "eval_gap": 10,
+    "eval_gap": 1,
     "diffusion_type": "flux",
     "model_aggregation": "none",
     "use_saved_audio_embeddings": false
@@ -40,26 +40,38 @@
     "t5_adapter_learning_rate_schedule": false,
     "generate_from_clip_text_embeddings": false,
     "generate_from_t5_text_embeddings": false,
-    "images_output_dir": "esc50-3n-sa"
+    "images_output_dir": "esc50-5n-ac-sa"
   },
   "nodes": {
     "0": {
       "dataset": "ESC50",
-      "selected_classes": ["airplane"],
-      "_comment": "Node 0 uses text airplane",
+      "selected_classes": ["dog", "rooster", "pig", "cow", "frog", "cat", "hen", "insects", "sheep", "crow"],
+      "_comment": "Node 0 - Animals",
       "diffusion_type": "flux"
     },
     "1": {
       "dataset": "ESC50",
-      "selected_classes": ["breathing"],
+      "selected_classes": ["rain", "sea_waves", "crackling_fire", "crickets", "chirping_birds", "water_drops", "wind", "pouring_water", "toilet_flush", "thunderstorm"],
       "diffusion_type": "flux",
-      "_comment": "Node 1 uses text breathing"
+      "_comment": "Node 1 - Natural soundscapes & water"
     },
     "2": {
       "dataset": "ESC50",
-      "selected_classes": ["brushing_teeth"],
+      "selected_classes": ["crying_baby", "sneezing", "clapping", "breathing", "coughing", "footsteps", "laughing", "brushing_teeth", "snoring", "drinking_sipping"],
       "diffusion_type": "flux",
-      "_comment": "Node 1 uses text brushing_teeth"
+      "_comment": "Node 2 - Human sounds"
+    },
+    "3": {
+      "dataset": "ESC50",
+      "selected_classes": ["door_wood_knock", "mouse_click", "keyboard_typing", "door_wood_creaks", "can_opening", "washing_machine", "vacuum_cleaner", "clock_alarm", "clock_tick", "glass_breaking"],
+      "diffusion_type": "flux",
+      "_comment": "Node 3 - Interior/domestic sounds"
+    },
+    "4": {
+      "dataset": "ESC50",
+      "selected_classes": ["helicopter", "chainsaw", "siren", "car_horn", "engine", "train", "church_bells", "airplane", "fireworks", "hand_saw"],
+      "diffusion_type": "flux",
+      "_comment": "Node 4 - Exterior/urban sounds"
     }
   },
   "model": {
@@ -80,6 +92,6 @@
     
   },
   "wandb": {
-    "disabled": true
+    "disabled": false
   }
 }

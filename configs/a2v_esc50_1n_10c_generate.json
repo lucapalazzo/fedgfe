@@ -12,8 +12,8 @@
     "algorithm": "FedA2V",
     "num_clients": 2,
     "global_rounds": 100,
-    "local_epochs": 5,
-    "eval_gap": 10,
+    "local_epochs": 10,
+    "eval_gap": 1,
     "diffusion_type": "flux",
     "model_aggregation": "none",
     "use_saved_audio_embeddings": false
@@ -32,6 +32,14 @@
     "generator_type": "vae",
     "store_audio_embeddings": false,
     "audio_embedding_file_name": null,
+    "clip_adapter_learning_rate": 1e-5,
+    "clip_adapter_weight_decay": 0.01,
+    "clip_adapter_learning_rate_schedule": false,
+    "t5_adapter_learning_rate": 1e-2,
+    "t5_adapter_weight_decay": 0.01,
+    "t5_adapter_learning_rate_schedule": false,
+    "generate_from_clip_text_embeddings": false,
+    "generate_from_t5_text_embeddings": false,
     "images_output_dir": "esc50-1n-10c-test"
   },
   "nodes": {
@@ -50,7 +58,7 @@
   "training": {
     "optimizer": "AdamW",
     "learning_rate": 0.001,
-    "batch_size": 8,
+    "batch_size": 16,
     "weight_decay": 0.0001,
     "momentum": 0.9
   },

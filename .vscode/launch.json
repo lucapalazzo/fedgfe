@@ -2404,7 +2404,7 @@
 
         },
         {
-            "name": "feda2v ESC50 6N GT IC",
+            "name": "feda2v ESC50 5N AC AVG GG",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/fedgfe",
@@ -2412,7 +2412,7 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "subProcess": true,
-            "args": ["--config", "configs/a2v_6n_esc50_global_train.json",
+            "args": ["--config", "configs/a2v_esc50_5n_ac_generate_avg_test.json",
                 ],
             "env":{
                 "CUDA_VISIBLE_DEVICES": "1"
@@ -2437,7 +2437,7 @@
         },
         
         {
-            "name": "feda2v ESC50 3N 3C SA",
+            "name": "feda2v ESC50 3N 3C AVG",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/fedgfe",
@@ -2445,7 +2445,7 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "subProcess": true,
-            "args": ["--config", "configs/a2v_esc50_3n_1c_generate_sa.json",
+            "args": ["--config", "configs/a2v_esc50_3n_1c_generate_avg_test.json",
                 ],
             "env":{
                 "CUDA_VISIBLE_DEVICES": "0"
@@ -2514,6 +2514,22 @@
 
         },
         {
+            "name": "feda2v ESC50 1N 10C",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_esc50_1n_10c.json",
+                ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "0"
+            }
+
+        },
+        {
             "name": "feda2v ESC50 1N Generate 10C",
             "type": "debugpy",
             "request": "launch",
@@ -2522,7 +2538,7 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "subProcess": true,
-            "args": ["--config", "configs/a2v_esc50_1n_generate_10c.json",
+            "args": ["--config", "configs/a2v_esc50_1n_10c_generate.json",
                 ],
             "env":{
                 "CUDA_VISIBLE_DEVICES": "0"

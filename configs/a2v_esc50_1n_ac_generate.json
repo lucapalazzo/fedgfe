@@ -32,6 +32,14 @@
     "generator_type": "vae",
     "store_audio_embeddings": false,
     "audio_embedding_file_name": null,
+    "clip_adapter_learning_rate": 1e-4,
+    "clip_adapter_weight_decay": 0.0001,
+    "clip_adapter_learning_rate_schedule": false,
+    "t5_adapter_learning_rate": 1e-2,
+    "t5_adapter_weight_decay": 0.001,
+    "t5_adapter_learning_rate_schedule": false,
+    "generate_from_clip_text_embeddings": false,
+    "generate_from_t5_text_embeddings": false,
     "images_output_dir": "esc50-1n-ac"
   },
   "nodes": {

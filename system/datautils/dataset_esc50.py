@@ -243,6 +243,17 @@ class ESC50Dataset(Dataset):
         self.active_classes = self._filter_classes()
         self.samples = self._load_samples()
 
+    def to(self, device: torch.device):
+        self.device = device
+        for sample in self.samples:
+            if 'text_emb' in sample and sample['text_emb'] is not None:
+                sample['text_emb'] = sample['text_emb'].to(device)
+            if 'audio_emb' in sample and sample['audio_emb'] is not None:
+                sample['audio_emb'] = sample['audio_emb'].to(device)
+            if 'audio' in sample and sample['audio'] is not None:
+                sample['audio'] = sample['audio'].to(device)
+        return self
+
     def get_text_embeddings ( self, class_name ):
         if self.text_embs is not None and class_name in self.text_embs:
             return self.text_embs[class_name]
@@ -665,9 +676,12 @@ class ESC50Dataset(Dataset):
         output = {}
 
         # Load audio
-        if self.load_audio:
-            audio = self._load_audio(sample['audio_path'])
-            output['audio'] = audio
+        if 'audio' not in sample:
+            sample['audio'] = None
+            if self.load_audio:
+                audio = self._load_audio(sample['audio_path'])
+                sample['audio'] = audio
+        output['audio'] = sample['audio']
 
         # Load image
         if self.load_image:

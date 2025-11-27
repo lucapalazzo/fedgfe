@@ -1,0 +1,82 @@
+{
+  "experiment": {
+    "name": "federated_a2v_vae_generator",
+    "description": "Federated Audio2Visual with VAE Generator for synthetic prompt generation",
+    "use_balooning": true,
+    "optimize_memory_usage": true
+  },
+  "federation": {
+    "diffusion_type": "flux",
+    "global_rounds": 50,
+    "eval_gap": 5
+  },
+  "training": {
+    "learning_rate": 0.001,
+    "optimizer": "AdamW",
+    "local_epochs": 3
+  },
+  "feda2v": {
+    "adapter_aggregation_mode": "avg",
+    "global_model_train": true,
+    "global_model_train_epochs": 10,
+    "global_model_train_from_nodes_adapters": true,
+    "global_model_train_from_nodes_audio_embeddings": false,
+    "global_model_train_from_generator": false,
+
+    "use_generator": true,
+    "generator_type": "vae",
+
+    "generator_save_checkpoint": true,
+    "generator_load_checkpoint": false,
+    "generator_checkpoint_path": "checkpoints/vae_generator.pt",
+    "generator_checkpoint_frequency": 10,
+
+    "generator_training_epochs": 5,
+    "generator_augmentation": true,
+    "generator_augmentation_noise": 0.1,
+    "synthetic_samples_per_class": 5,
+    "generator_validation_frequency": 5,
+
+    "t5_adapter_learning_rate": 0.001,
+    "clip_adapter_learning_rate": 0.001,
+    "t5_adapter_weight_decay": 0.0001,
+    "clip_adapter_weight_decay": 0.0001,
+    "adapters_learning_rate": 0.001,
+    "adapters_weight_decay": 0.0001,
+
+    "adapters_learning_rate_schedule": false,
+    "t5_adapter_learning_rate_schedule": false,
+    "clip_adapter_learning_rate_schedule": true,
+
+    "generate_nodes_images_frequency": 10,
+    "generate_global_images_frequency": 10,
+    "generate_low_memomy_footprint": true,
+    "generate_global_images_average_text_embeddings": true,
+    "images_output_dir": "output_images",
+    "generate_from_clip_text_embeddings": false,
+    "generate_from_t5_text_embeddings": false,
+
+    "store_audio_embeddings": false,
+    "audio_embedding_file_name": null
+  },
+  "nodes": {
+    "0": {
+      "dataset": "ESC50",
+      "selected_classes": ["dog", "rooster", "pig", "cow", "frog"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4]
+    },
+    "1": {
+      "dataset": "ESC50",
+      "selected_classes": ["rain", "sea_waves", "crackling_fire", "crickets", "chirping_birds"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4]
+    },
+    "2": {
+      "dataset": "ESC50",
+      "selected_classes": ["helicopter", "chainsaw", "siren", "car_horn", "engine"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4]
+    }
+  }
+}

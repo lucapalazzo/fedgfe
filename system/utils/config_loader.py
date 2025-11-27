@@ -194,9 +194,14 @@ class ConfigLoader:
             'img_pipe_name': 'runwayml/stable-diffusion-v1-5',
             'img_lcm_lora_id': 'latent-consistency/lcm-lora-sdv1-5',
             'audio_pipe_name': 'cvssp/audioldm-l-full',
-            'lr1': 0.001,
-            'lr2': 0.0001,
-            'lr3': 0.0001,
+            'adapters_learning_rate': 0.0001,
+            'adapters_weight_decay': 0.0001,
+            'clip_adapter_learning_rate': 0.0001,
+            'clip_adapter_weight_decay': 0.0001,
+            'clip_adapter_learning_rate_schedule': False,
+            't5_adapter_learning_rate': 0.001,
+            't5_adapter_weight_decay': 0.001,
+            't5_adapter_learning_rate_schedule': False,
             'steps': 1000,
             'mode': 'train_nodata',
             'ablation_type': 'only_t5',
@@ -221,7 +226,10 @@ class ConfigLoader:
             'global_model_train_from_generator': False,
             'global_model_train_from_nodes_audio_embeddings': False,
             'global_model_train_inputs': 'none',
-            'adapter_aggregation_method': 'none'
+            'generate_from_clip_text_embeddings': False,
+            'generate_from_t5_text_embeddings': False,
+            'adapter_aggregation_method': 'none',
+            'text_losses_summed': False
         },
         'wandb': {
             'disabled': False

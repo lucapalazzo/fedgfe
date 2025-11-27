@@ -11,11 +11,10 @@ from torch.utils.data import DataLoader, Subset
 
 import wandb
 
+sys.path.append('/home/lpala/fedgfe/system/flcore/trainmodel/Audio2Visual_NoData')
+
 from flcore.clients.clientbase import Client
 from datautils.node_dataset import NodeData
-from modelutils.optimizer_manager import OptimizerManager
-from modelutils.pretext_trainer import PretextTrainer
-from modelutils.downstream_trainer import DownstreamTrainer
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import balanced_accuracy_score
 from sklearn import metrics
@@ -26,7 +25,8 @@ from utils.check_parameters import check_optimizer_params, print_model_gradients
 from utils.node_metric import NodeMetric
 from utils.check_loss_optimizer import check_params_graph_vs_optimizer
 
-from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR, ConstantLR
+
+from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR, ConstantLR, CosineAnnealingWarmRestarts
 
 from modelutils.model_stats import count_changed_weights
 
@@ -39,8 +39,8 @@ from torchviz import make_dot
 from collections import Counter
 from transformers import ASTModel, ASTFeatureExtractor
 
-sys.path.append('/home/lpala/fedgfe/system/flcore/trainmodel/Audio2Visual_NoData')
 from flcore.trainmodel.Audio2Visual_NoData.src.models.audio2image import Audio2Image, SDImageModel, ImageDiffusion
+from flcore.trainmodel.downstreamsinestesiaadapters import DownstreamSinestesiaAdapters
 
 import logging
 
@@ -61,10 +61,30 @@ class clientA2V(Client):
         self.global_model = global_model
         self.global_rounds = args.global_rounds
 
+
+        self.feda2v_config = getattr(self.args.json_config, 'feda2v', None)
+        self.t5_adapter_learning_rate = 0.001
+        self.clip_adapter_learning_rate = 0.001
+        self.t5_adapter_weight_decay = 0.0001
+        self.clip_adapter_weight_decay = 0.0001
+        self.adapters_learning_rate = 0.001
+        self.adapters_weight_decay = 0.0001
+
+        if self.feda2v_config is not None:
+            self.t5_adapter_learning_rate = self.feda2v_config.get('t5_adapter_learning_rate', self.t5_adapter_learning_rate)
+            self.clip_adapter_learning_rate = self.feda2v_config.get('clip_adapter_learning_rate', self.clip_adapter_learning_rate)
+            self.t5_adapter_weight_decay = self.feda2v_config.get('t5_adapter_weight_decay', self.t5_adapter_weight_decay)
+            self.clip_adapter_weight_decay = self.feda2v_config.get('clip_adapter_weight_decay', self.clip_adapter_weight_decay)
+            self.adapters_learning_rate = self.feda2v_config.get('adapters_learning_rate', self.adapters_learning_rate)
+            self.adapters_weight_decay = self.feda2v_config.get('adapters_weight_decay', self.adapters_weight_decay)
+            self.adapters_learning_rate_schedule = self.feda2v_config.get('adapters_learning_rate_schedule', False)
+            self.t5_adapter_learning_rate_schedule = self.feda2v_config.get('t5_adapter_learning_rate_schedule', False)
+            self.clip_adapter_learning_rate_schedule = self.feda2v_config.get('clip_adapter_learning_rate_schedule', False)
+
+
         self.store_audio_embedding = self.args.json_config.feda2v.store_audio_embeddings
 
         # Create local instance using DownstreamSinestesiaAdapters without diffusion
-        from flcore.trainmodel.downstreamsinestesiaadapters import DownstreamSinestesiaAdapters
 
         self.model = DownstreamSinestesiaAdapters(
             args=args,
@@ -80,6 +100,9 @@ class clientA2V(Client):
         self.model.audio2image_model.feature_extractor = self.global_model.audio2image_model.feature_extractor
         self.audio2image_model = self.model.get_audio2image_model()
 
+
+        self.epoch_audio_embedding_cache = {}
+
         if 'data_log' in kwargs:
             self.data_log = kwargs['data_log']
         else:
@@ -92,7 +115,7 @@ class clientA2V(Client):
 
         self.dataset = self.dataset_name
 
-        self.node_data = NodeData(args, node_id,dataset=dataset)
+        self.node_data = NodeData(args, node_id, dataset=dataset)
         self.node_data.dataset_name = self.dataset_name
 
         self.experiment_config = getattr(args.json_config, 'experiment', None)
@@ -103,6 +126,7 @@ class clientA2V(Client):
         self.finetuning_optimizer = None
         self.train_optimizers = {}
         self.finetuning_optimizers = {}
+        self.adapters_learning_rate_scheduler = {}
 
         self.model_optimizer = args.model_optimizer
 
@@ -110,7 +134,7 @@ class clientA2V(Client):
         self.defined_test_metrics = {}
         self.use_saved_audio_embeddings = getattr(args, 'use_saved_audio_embeddings', False)
 
-        self.text_losses_summed = True
+        self.text_losses_summed = False
 
         # Audio2Visual specific initialization
         self.diffusion_type = getattr(node_config, 'diffusion_type', 'sd')  # 'sd', 'flux', or 'cogx'
@@ -204,15 +228,14 @@ class clientA2V(Client):
             print(f"Creating learning rate scheduler for node {self.id}")
             self.scheduler = ConstantLR(self.optimizer, factor=1.0, total_iters=self.global_rounds)
 
-            if self.learning_rate_schedule:
-                self.setup_learning_rate_scheduler(self.global_rounds)
+            self.setup_learning_rate_scheduler(self.global_rounds)
 
             if self.no_wandb == False:
                 wandb.watch(self.audio2image_model, log='all', log_freq=100, criterion=None, log_graph=False, idx=self.id)
 
             self.print_optimizer_info(self.id)
 
-        self.model.train()
+        # self.model.train()
 
         # Train the Audio2Visual model
         print(f"Node {self.id} training Audio2Visual model for {local_epochs} epochs")
@@ -236,19 +259,61 @@ class clientA2V(Client):
                 local_adapter = self.adapters[module_name]
                 global_adapter_state_dict = adapters[module_name].state_dict()
                 local_adapter.load_state_dict(global_adapter_state_dict)
+
+    def audio_emebedding_cache_store(self, samples, outputs):
+        audio_embeddings_batch = outputs['audio_embeddings']
+        file_ids = samples.get('file_id', None)
+
+        if file_ids is not None:
+            # Ottieni riferimento al dataset sottostante
+            train_dataset = self.node_data.train_dataset
+            # Unwrap Subset se necessario
+            if hasattr(train_dataset, 'dataset'):
+                base_dataset = train_dataset.dataset
+            else:
+                base_dataset = train_dataset
+
+            #  audio_embs se non esiste
+            if not hasattr(base_dataset, 'audio_embs') or base_dataset.audio_embs is None:
+                base_dataset.audio_embs = {}
+
+            for idx, file_id in enumerate(file_ids):
+                base_dataset.audio_embs[file_id] = audio_embeddings_batch[idx].detach().cpu()
+                self.epoch_audio_embedding_cache[file_id] = audio_embeddings_batch[idx].detach().cpu()
+        logger.debug(f"Node {self.id}: stored {len(file_ids)} audio embeddings int dataset  {len(base_dataset.audio_embs)})")
+
+    def audio_embedding_cache_load(self, samples ):
+        audio_embedding = None
+        file_ids = samples.get('file_id', None)
+        if file_ids is not None:
+            train_dataset = self.node_data.train_dataset
+            if hasattr(train_dataset, 'dataset'):
+                base_dataset = train_dataset.dataset
+            else:
+                base_dataset = train_dataset
+
+            if hasattr(base_dataset, 'audio_embs') and base_dataset.audio_embs is not None:
+                cached_embeddings = []
+                all_cached = True
+
+                for file_id in file_ids:
+                    if file_id in base_dataset.audio_embs:
+                        cached_embeddings.append(base_dataset.audio_embs[file_id])
+                    else:
+                        all_cached = False
+                        break
+
+                if all_cached:
+                    # Usa gli embeddings dalla cache
+                    audio_embedding = torch.stack(cached_embeddings)
+                    # print(f"Node {self.id} Epoch {epoch+1} 
+        return audio_embedding
         
     def train_a2v(self, epochs, dataloader, client_device=None):
-        # self.train_time_cost['num_sslrounds'] += 1
-
         device = client_device if client_device is not None else self.device
 
-        a2i = self.global_model
-        self.model.to(device)
+        self.model.train
 
-        # Initialize storage for adapter outputs per class during training
-        # Structure: {class_name: {adapter_name: [list of outputs]}}
-
-        # Cache per audio embeddings: {audio_filename: embedding_tensor}
         epoch_audio_embedding_cache = {}
 
         for epoch in range(epochs):
@@ -256,8 +321,13 @@ class clientA2V(Client):
             num_batches = 0
             training_adapter_outputs = defaultdict(lambda: defaultdict(list))
 
+            # Create progress bar for batches
+            pbar = tqdm(enumerate(dataloader), total=len(dataloader),
+                       desc=f"Node {self.id} Epoch {epoch+1}/{epochs}",
+                       unit="batch")
+
             # for batch_idx, (audio_data, text_embeddings) in enumerate(dataloader):
-            for batch_idx, samples in enumerate(dataloader):
+            for batch_idx, samples in pbar:
                 # Move data to device
                 if 'audio' in samples and isinstance(samples['audio'], torch.Tensor):
                     audio_data = samples['audio'].to(device)
@@ -285,43 +355,23 @@ class clientA2V(Client):
                         if target_pooled_prompt_embeds is not None:
                             target_pooled_prompt_embeds = target_pooled_prompt_embeds.to(device)
 
-                # Gestione cache audio embedding - recupera PRIMA della forward pass
                 audio_filename = samples.get('audio_filename', None)
                 audio_embedding = None
 
-                # Recupera dalla cache nelle epoche successive (epoch > 0)
-                if epoch > 0 or self.round > 1:
-                    file_ids = samples.get('file_id', None)
-                    if file_ids is not None:
-                        train_dataset = self.node_data.train_dataset
-                        if hasattr(train_dataset, 'dataset'):
-                            base_dataset = train_dataset.dataset
-                        else:
-                            base_dataset = train_dataset
-
-                        if hasattr(base_dataset, 'audio_embs') and base_dataset.audio_embs is not None:
-                            cached_embeddings = []
-                            all_cached = True
-
-                            for file_id in file_ids:
-                                if file_id in base_dataset.audio_embs:
-                                    cached_embeddings.append(base_dataset.audio_embs[file_id])
-                                else:
-                                    all_cached = False
-                                    break
-
-                            if all_cached:
-                                # Usa gli embeddings dalla cache
-                                audio_embedding = torch.stack(cached_embeddings).to(device)
-                                print(f"Node {self.id} Epoch {epoch+1} Batch {batch_idx}: Recuperati {len(cached_embeddings)} audio embeddings dal dataset")
-
-                # Se non in cache, usa quello fornito dal dataloader
                 if audio_embedding is None:
                     audio_embedding = samples.get('audio_emb', None)
 
-                for optimizer_name, optimizer in self.train_optimizers.items():
-                    optimizer.zero_grad()
-                self.optimizer.zero_grad()
+                if epoch > 0 or self.round > 1 and audio_embedding is None:
+                    audio_embedding = self.audio_embedding_cache_load( samples )
+                    if audio_embedding is not None:
+                        audio_embedding = audio_embedding.to(device)
+               
+
+                if len(self.train_optimizers) > 0:
+                    for optimizer_name, optimizer in self.train_optimizers.items():
+                        optimizer.zero_grad()
+                else:
+                    self.optimizer.zero_grad()
 
                 if audio_embedding is None and isinstance(audio_data, torch.Tensor) and isinstance(self.audio2image_model.feature_extractor, ASTFeatureExtractor):
                     audio_data = audio_data.to('cpu').numpy()
@@ -338,82 +388,83 @@ class clientA2V(Client):
 
                 # Salva gli audio embeddings nel dataset per riutilizzo nelle epoche successive (epoch 0)
                 if epoch == 0 and self.round == 1 and 'audio_embeddings' in outputs:
-                    audio_embeddings_batch = outputs['audio_embeddings']
-                    file_ids = samples.get('file_id', None)
-
-                    if file_ids is not None:
-                        # Ottieni riferimento al dataset sottostante
-                        train_dataset = self.node_data.train_dataset
-                        # Unwrap Subset se necessario
-                        if hasattr(train_dataset, 'dataset'):
-                            base_dataset = train_dataset.dataset
-                        else:
-                            base_dataset = train_dataset
-
-                        #  audio_embs se non esiste
-                        if not hasattr(base_dataset, 'audio_embs') or base_dataset.audio_embs is None:
-                            base_dataset.audio_embs = {}
-
-                        for idx, file_id in enumerate(file_ids):
-                            base_dataset.audio_embs[file_id] = audio_embeddings_batch[idx].detach().cpu()
-                            epoch_audio_embedding_cache[file_id] = audio_embeddings_batch[idx].detach().cpu()
-
-                        print(f"Node {self.id} Epoch 1 Batch {batch_idx}: Salvati {len(file_ids)} audio embeddings nel dataset (totale: {len(base_dataset.audio_embs)})")
+                    self.audio_emebedding_cache_store( samples, outputs )
 
                 if self.store_audio_embedding:
                     outputs['audio_filename'] = samples.get('audio_filename', None)
                     self.store_audio_embeddings(audio_data, outputs)
 
-                # Store adapter outputs per class for later mean computation
-                # Adapter outputs are directly in the outputs dict with keys 'clip', 't5', etc.
-                batch_class_names = outputs['class_name']
-
-                # Group outputs by class first, then by adapter
-
                 if epoch == epochs - 1:
                     training_adapter_outputs = self.store_adapters_output_per_class ( outputs, training_adapter_outputs )
 
                 losses = outputs['text_loss']
-                losses_output = ""
+                losses_dict = {}  # Dictionary to hold individual losses for display
+
                 if self.text_losses_summed:
                     loss = torch.tensor(0.0)
                     if outputs['text_loss'] is not None:
                         if isinstance(outputs['text_loss'], tuple):
-                            for l in outputs['text_loss']:
+                            # Assume order: [clip_loss, t5_loss] or similar
+                            loss_names = ['clip', 't5']  # Adapter names
+                            for idx, l in enumerate(outputs['text_loss']):
                                 loss = loss.to(l.device)
                                 loss += l
-                                losses_output = f"{losses_output} {l.item():.3f} "
-                            losses_output = f"{losses_output} {loss.item():.3f} "
-
-                        else:
-                            loss = outputs['text_loss']
+                                # Store individual loss values
+                                if idx < len(loss_names):
+                                    losses_dict[loss_names[idx]] = f"{l.item():.3f}"
+                            losses_dict['total'] = f"{loss.item():.3f}"
+                        elif isinstance(outputs['text_loss'], dict):
+                            for name, l in outputs['text_loss'].items():
+                                loss = loss.to(l.device)
+                                loss += l
+                                # Store individual loss values
+                                losses_dict[name] = f"{l.item():.3f}"
+                            losses_dict['total'] = f"{loss.item():.3f}"
                     loss.backward()
                     epoch_loss += loss.item()
                 else:
+                    adapters_loss = outputs['text_loss']
                     losses_count = len(losses)
-                    for loss_index,loss in enumerate(outputs['text_loss']):
-                        retain_graph = True
-                        if loss_index >= losses_count-1:
-                            retain_graph = False
-                        loss.backward(retain_graph=retain_graph)
+                    loss_names = ['clip', 't5']  # Adapter names
+                    for loss_names, loss in adapters_loss.items():
+                        loss.backward()
                         epoch_loss += loss.item()
-                        losses_output = f"{losses_output} {loss.item():.03f} "
+                        losses_dict[loss_names] = f"{loss.item():.3f}"
 
 
+                # Gradient clipping to stabilize training
                 if len(self.train_optimizers) > 0:
+                    grad_norms = {}
                     for optimizer_name, optimizer in self.train_optimizers.items():
+                        # Clip gradients for this optimizer's parameters
+                        params = [p for group in optimizer.param_groups for p in group['params'] if p.grad is not None]
+                        if len(params) > 0:
+                            grad_norm = torch.nn.utils.clip_grad_norm_(params, max_norm=1.0)
+                            grad_norms[optimizer_name] = grad_norm.item()
                         optimizer.step()
 
+                    # Log gradient norms occasionally for debugging
+                    if num_batches % 50 == 0 and epoch == 0:
+                        grad_info = " ".join([f"{k}_grad:{v:.4f}" for k, v in grad_norms.items()])
+                        logger.debug(f"Node {self.id} Batch {num_batches}: {grad_info}")
                 else:
+                    # Clip gradients for all model parameters
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                     self.optimizer.step()
+
                 num_batches += 1
 
-                if batch_idx % 10 == 0:
-                    print(f"Node {self.id} Epoch {epoch+1}/{epochs}, Batch {batch_idx}/{len(dataloader)}, Loss: {losses_output}")
+                # Update progress bar with loss information (clip, t5, and total)
+                pbar.set_postfix(losses_dict)
+            for learning_rate_scheduler_name, learning_rate_scheduler in self.adapters_learning_rate_scheduler.items():
+                learning_rate_scheduler.step(self.round*self.local_epochs+epoch)
 
-            if num_batches > 0:
-                avg_loss = epoch_loss / num_batches
-                print(f"Node {self.id} Epoch {epoch+1}/{epochs} completed. Average Loss: {avg_loss:.3f}")
+            # Close progress bar and print summary
+            pbar.close()
+
+            # if num_batches > 0:
+            #     avg_loss = epoch_loss / num_batches
+            #     tqdm.write(f"Node {self.id} Epoch {epoch+1}/{epochs} completed. Average Loss: {avg_loss:.3f}")
             
             for class_name, output in training_adapter_outputs.items():
                 for k in output:
@@ -608,10 +659,13 @@ class clientA2V(Client):
             print(f"Node {client_id}: No optimizer initialized")
             return
         
-        for param_group_index, param_group in enumerate(self.train_optimizer.param_groups):
-            num_params = sum(p.numel() for p in param_group["params"] if p.requires_grad)
-            size = sum(p.numel()*p.element_size() for p in param_group["params"] if p.requires_grad)
-            print(f"Node {client_id} optimizer param group {param_group_index} "
+        for optimizer_name, optimizer in self.train_optimizers.items():
+            print(f"Node {client_id} optimizer '{optimizer_name}': {optimizer}")
+
+            for param_group_index, param_group in enumerate(optimizer.param_groups):
+                num_params = sum(p.numel() for p in param_group["params"] if p.requires_grad)
+                size = sum(p.numel()*p.element_size() for p in param_group["params"] if p.requires_grad)
+                print(f"Node {client_id} optimizer param group {param_group_index} "
                   f"tensors {len(param_group['params'])} parameters {num_params} "
                   f"size {size} lr {param_group['lr']}")
 
@@ -637,13 +691,21 @@ class clientA2V(Client):
             self.train_optimizer = torch.optim.AdamW(
                 trainable_params,
                 lr=self.learning_rate,
-                # weight_decay=self.optimizer_weight_decay
+                weight_decay=self.adapters_weight_decay
             )
             for module_name, params in trainable_params_dict.items():
+                learning_rate = self.adapters_learning_rate
+                weight_decay = self.adapters_weight_decay
+                if module_name == 't5':
+                    learning_rate = self.t5_adapter_learning_rate
+                    weight_decay = self.t5_adapter_weight_decay
+                elif module_name == 'clip':
+                    learning_rate = self.clip_adapter_learning_rate
+                    weight_decay = self.clip_adapter_weight_decay
                 self.train_optimizers[module_name] = torch.optim.AdamW(
                     params,
-                    lr=self.learning_rate,
-                # weight_decay=self.optimizer_weight_decay
+                    lr=learning_rate,
+                    weight_decay=weight_decay
                 )
         elif self.model_optimizer.lower() == "sgd":
             self.train_optimizer = torch.optim.SGD(
@@ -664,12 +726,32 @@ class clientA2V(Client):
         self.optimizers = self.train_optimizers
 
     def setup_learning_rate_scheduler(self, rounds):
-        """Setup learning rate scheduler for Audio2Visual model."""
-        self.scheduler = self.optimizer_manager.setup_learning_rate_scheduler(
-            optimizer=self.optimizer,
-            rounds=rounds,
-            use_scheduler=self.learning_rate_schedule
-        )
+        for module_name, optimizer in self.train_optimizers.items():
+            if module_name == 't5' and self.t5_adapter_learning_rate_schedule:
+                optimizer = self.train_optimizers[module_name]
+                self.adapters_learning_rate_scheduler[module_name] = CosineAnnealingLR( optimizer=optimizer,
+                                                                                        T_max=rounds,
+                                                                                        eta_min=1e-6,
+                                                                                        verbose=True)
+            elif module_name == 'clip' and self.clip_adapter_learning_rate_schedule:
+                optimizer = self.train_optimizers[module_name]
+                for param_group in optimizer.param_groups:
+                    param_group['initial_lr'] = self.clip_adapter_learning_rate
+                self.adapters_learning_rate_scheduler[module_name] = CosineAnnealingWarmRestarts(
+                                                                    optimizer=optimizer,
+                                                                    T_0=self.local_epochs * self.global_rounds // 10,
+                                                                    T_mult=1,
+                                                                    last_epoch=self.global_rounds * self.local_epochs // 2,
+                                                                    eta_min=1e-8,
+                                                                    verbose=True
+                                                                )
+               
+            
+        # self.scheduler = self.optimizermanager.setup_learning_rate_scheduler(
+        #     optimizer=self.optimizer,
+        #     rounds=rounds,
+        #     use_scheduler=self.learning_rate_schedule
+        # )
 
     def set_parameters(self, global_model):
         """
@@ -751,6 +833,7 @@ class clientA2V(Client):
         else:
             dataloader = self.load_test_data()
 
+        self.model.eval()
         if dataloader is not None:
             node_metrics = self.model.train_metrics(dataloader, audio2image_only=True)
 
@@ -791,7 +874,9 @@ class clientA2V(Client):
         node_metrics = NodeMetric(phase=NodeMetric.Phase.TRAIN)
         node_metrics.define_metrics(self.model.defined_train_metrics, task_count=1)
         
+        self.model.eval()
         if trainloader is not None:
+            
             node_metrics = self.model.train_metrics(trainloader, audio2image_only=True)
 
         return node_metrics
@@ -853,7 +938,7 @@ class clientA2V(Client):
             if isinstance(self.optimizer, torch.optim.AdamW):
                 move_optimizer_state(self.optimizer, device)
         if hasattr(self, 'optimizers') and self.optimizers is not None:
-            for optimizer in self.optimizers:
+            for optimizer_name, optimizer in self.optimizers.items():
                 if isinstance(optimizer, torch.optim.AdamW):
                     move_optimizer_state(optimizer, device)
 
@@ -981,14 +1066,13 @@ class clientA2V(Client):
                 ).input_values.to(self.device, self.audio2image_model.torch_dtype)
 
                 ast_model = self.audio2image_model.ast_model
-                ast_model.to(self.device)
                 ast_model.eval()
+                ast_model.to(self.device)
 
                 audio_embeddings = ast_model(audio_inputs).last_hidden_state  # (batch, seq_len, feature_dim)
                 embeddings = {}
                 for module_name in self.adapters.keys():
                     adapter = self.adapters[module_name].to(self.device)
-                    adapter.eval()
                     output = adapter(audio_embeddings)
                     embeddings[module_name] = output
 

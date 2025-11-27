@@ -6,13 +6,13 @@
     "runs": 1,
     "seed": 42,
     "use_balooning": false,
-    "optimize_memory_usage": false
+    "optimize_memory_usage": true
   },
   "federation": {
     "algorithm": "FedA2V",
     "num_clients": 2,
     "global_rounds": 50,
-    "local_epochs": 10,
+    "local_epochs": 1,
     "eval_gap": 10,
     "diffusion_type": "flux",
     "model_aggregation": "none",
@@ -20,9 +20,9 @@
   },
   "feda2v": {
     "generate_nodes_images_frequency": 1,
-    "generate_global_images_frequency": 0,
+    "generate_global_images_frequency": 1,
     "generate_low_memomy_footprint": true,
-    "adapter_aggregation_mode": "none",
+    "adapter_aggregation_mode": "avg",
     "global_model_train": false,
     "global_model_train_from_nodes_adapters": false,
     "global_model_train_from_generator": false,
@@ -40,7 +40,7 @@
     "t5_adapter_learning_rate_schedule": false,
     "generate_from_clip_text_embeddings": false,
     "generate_from_t5_text_embeddings": false,
-    "images_output_dir": "esc50-3n-sa"
+    "images_output_dir": "esc50-3n-1n-avg-test"
   },
   "nodes": {
     "0": {
@@ -80,6 +80,6 @@
     
   },
   "wandb": {
-    "disabled": true
+    "disabled": false
   }
 }
