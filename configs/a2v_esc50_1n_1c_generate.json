@@ -5,7 +5,7 @@
     "device_id": "0",
     "runs": 1,
     "seed": 42,
-    "use_balooning": true,
+    "use_balooning": false,
     "optimize_memory_usage": false
   },
   "federation": {
@@ -32,7 +32,9 @@
     "generator_type": "vae",
     "store_audio_embeddings": false,
     "audio_embedding_file_name": null,
-    "images_output_dir": "esc50-1n-1c"
+    "images_output_dir": "esc50-1n-1c",
+    "save_generated_images_splits": ["val", "test", "train"],
+    "generation_split_for_metrics": "train"
   },
   "nodes": {
     "0": {

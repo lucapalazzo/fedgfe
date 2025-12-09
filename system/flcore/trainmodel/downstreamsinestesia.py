@@ -69,9 +69,6 @@ class DownstreamSinestesia(Downstream):
         self.generate_low_memomy_footprint = False
         self.diffusion_dtype = torch.float32
 
-
-
-
         if self.diffusion_type not in ['sd', 'flux']:
             raise ValueError(f"Unsupported diffusion type: {self.diffusion_type}. Supported types are 'sd' and 'flux'.")
         
@@ -272,9 +269,6 @@ class DownstreamSinestesia(Downstream):
                 self.diffusion_model.set_progress_bar_config(disable=True)
 
             print( f"Started diffusion model {self.diffusion_type}")
-            # self.diffusion_model.to(torch.device('cpu'))
-            
-
 
     def generate_image(self, prompt_embeds, pooled_prompt_embeds=None):
         self.img_pipe.set_progress_bar_config(disable=True)
@@ -325,180 +319,10 @@ class DownstreamSinestesia(Downstream):
             
         return images
 
-    # def downstream_loss(self, outputs, labels=None, samples=None):
-    #     """
-    #     Compute combined loss from Sinestesia outputs.
-
-    #     Args:
-    #         outputs: Dictionary with model outputs from forward()
-    #         labels: Ground truth labels (for classifier)
-    #         samples: Additional sample information
-
-    #     Returns:
-    #         Combined loss tensor
-    #     """
-    #     total_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
-    #     loss_components = {}
-
-    #     # Image text loss (from audio2image)
-    #     if outputs.get('img_text_loss') is not None:
-    #         img_text_loss = outputs['img_text_loss']
-    #         total_loss = total_loss + self.loss_weights['img_text'] * img_text_loss
-    #         loss_components['img_text_loss'] = img_text_loss.item()
-
-    #     # Image reconstruction loss
-    #     if outputs.get('image_loss') is not None:
-    #         image_loss = outputs['image_loss']
-    #         total_loss = total_loss + self.loss_weights['image'] * image_loss
-    #         loss_components['image_loss'] = image_loss.item()
-
-    #     # Audio text loss (from image2audio)
-    #     if outputs.get('audio_text_loss') is not None:
-    #         audio_text_loss = outputs['audio_text_loss']
-    #         total_loss = total_loss + self.loss_weights['audio_text'] * audio_text_loss
-    #         loss_components['audio_text_loss'] = audio_text_loss.item()
-
-    #     # Classification loss (if using classifier)
-    #     if self.use_classifier_loss and outputs.get('logits') is not None and labels is not None:
-    #         logits = outputs['logits']
-
-    #         # Handle different label formats
-    #         if isinstance(labels, dict) and 'labels' in labels:
-    #             labels = labels['labels']
-
-    #         # Ensure labels are on correct device and long type
-    #         if isinstance(labels, torch.Tensor):
-    #             labels = labels.to(self.device).long()
-
-    #             # Handle multi-dimensional labels
-    #             if len(labels.shape) > 1:
-    #                 labels = labels[:, 0]  # Take first label if multi-task
-
-    #             classifier_loss = self.classification_loss(logits, labels)
-    #             total_loss = total_loss + self.loss_weights['classifier'] * classifier_loss
-    #             loss_components['classifier_loss'] = classifier_loss.item()
-
-    #     return total_loss, loss_components
-
-    # def loss(self, outputs, labels=None, samples=None):
-    #     """
-    #     Compute loss (wrapper for downstream_loss).
-
-    #     Args:
-    #         outputs: Model outputs
-    #         labels: Ground truth labels
-    #         samples: Additional sample information
-
-    #     Returns:
-    #         Loss tensor
-    #     """
-    #     total_loss, _ = self.downstream_loss(outputs, labels, samples)
-    #     return total_loss
-
-    # def train_metrics(self, dataloader, metrics=None):
-    #     """
-    #     Compute training metrics on a dataloader.
-
-    #     Args:
-    #         dataloader: DataLoader with training data
-    #         metrics: Optional existing metrics object
-
-    #     Returns:
-    #         NodeMetric object with computed metrics
-    #     """
-    #     train_num = 0
-    #     total_loss = 0.0
-    #     total_components = {
-    #         'img_text_loss': 0.0,
-    #         'image_loss': 0.0,
-    #         'audio_text_loss': 0.0,
-    #         'classifier_loss': 0.0
-    #     }
-    #     total_correct = 0
-
-    #     self.eval()
-
-    #     with torch.no_grad():
-    #         for batch_data in dataloader:
-    #             # Handle different data formats
-    #             if isinstance(batch_data, (tuple, list)) and len(batch_data) >= 2:
-    #                 samples, labels = batch_data[0], batch_data[1]
-    #             elif isinstance(batch_data, dict):
-    #                 samples = batch_data.get('audio', batch_data.get('samples'))
-    #                 labels = batch_data.get('label', batch_data.get('labels'))
-    #             else:
-    #                 continue
-
-    #             # Move to device
-    #             if isinstance(samples, torch.Tensor):
-    #                 samples = samples.to(self.device)
-    #             if isinstance(labels, torch.Tensor):
-    #                 labels = labels.to(self.device)
-
-    #             # Forward pass
-    #             outputs = self(samples)
-
-    #             if outputs is None:
-    #                 continue
-
-    #             # Compute loss
-    #             loss, components = self.downstream_loss(outputs, labels)
-
-    #             total_loss += loss.item()
-    #             for key, value in components.items():
-    #                 if key in total_components:
-    #                     total_components[key] += value
-
-    #             # Compute accuracy if using classifier
-    #             if self.use_classifier_loss and outputs.get('logits') is not None:
-    #                 logits = outputs['logits']
-    #                 if isinstance(labels, dict) and 'labels' in labels:
-    #                     labels_for_acc = labels['labels']
-    #                 else:
-    #                     labels_for_acc = labels
-
-    #                 if isinstance(labels_for_acc, torch.Tensor):
-    #                     labels_for_acc = labels_for_acc.to(self.device).long()
-    #                     if len(labels_for_acc.shape) > 1:
-    #                         labels_for_acc = labels_for_acc[:, 0]
-
-    #                     predictions = torch.argmax(logits, dim=1)
-    #                     total_correct += (predictions == labels_for_acc).sum().item()
-
-    #             train_num += 1
-
-    #     # Average metrics
-    #     if train_num > 0:
-    #         avg_loss = total_loss / train_num
-    #         avg_components = {k: v / train_num for k, v in total_components.items()}
-    #         avg_accuracy = total_correct / (train_num * dataloader.batch_size) if self.use_classifier_loss else 0.0
-
-    #         # Log to wandb
-    #         if self.wandb_log:
-    #             log_dict = {
-    #                 self.defined_train_metrics['loss']: avg_loss,
-    #                 "round": self.round
-    #             }
-
-    #             for key in ['img_text_loss', 'image_loss', 'audio_text_loss', 'classifier_loss']:
-    #                 if key in self.defined_train_metrics and key in avg_components:
-    #                     log_dict[self.defined_train_metrics[key]] = avg_components[key]
-
-    #             if self.use_classifier_loss and 'accuracy' in self.defined_train_metrics:
-    #                 log_dict[self.defined_train_metrics['accuracy']] = avg_accuracy
-
-    #             wandb.log(log_dict)
-
-    #     return avg_loss if train_num > 0 else 0.0
-    
     def compute_zero_shot(self, imgs_out_path, classes):
         prediction = self.zero_shot_model(imgs_out_path, candidate_labels=classes.keys()) #classes is a list of all the textual labels [train, airplane, ...]
         preds = []
 
-        # result = [
-        #     {"score": score, "label": candidate_label}
-        #     for score, candidate_label in sorted(zip(prediction, classes.keys()), key=lambda x: -x[0])
-        # ]
         for i, pred in enumerate(prediction):
             predicted_label = classes[pred[0]['label']] #classes_dict è un dizionario che puoi creare che mappa l'id testuale in id numerico
             preds.append(predicted_label)

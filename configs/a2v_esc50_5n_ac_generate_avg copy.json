@@ -11,7 +11,7 @@
   "federation": {
     "algorithm": "FedA2V",
     "num_clients": 5,
-    "global_rounds": 40,
+    "global_rounds": 100,
     "local_epochs": 5,
     "eval_gap": 10,
     "diffusion_type": "flux",

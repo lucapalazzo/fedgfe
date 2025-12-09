@@ -49,7 +49,7 @@ import logging, sys
 from flcore.trainmodel.Audio2Visual_NoData.src.models.audio2image import Audio2Image, SDImageModel, ImageDiffusion
 
 # Import generators
-from flcore.trainmodel.generators import ConditionedVAEGenerator, VAELoss, GANGenerator, GANDiscriminator
+from flcore.trainmodel.generators import ConditionedVAEGenerator, VAEGenerator, VAELoss, GANGenerator, GANDiscriminator
 import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
@@ -99,13 +99,25 @@ class FedA2V(FedRewind):
         self.generate_from_clip_text_embeddings = getattr(self.config.feda2v, 'generate_from_clip_text_embeddings', False)
         self.generate_from_t5_text_embeddings = getattr(self.config.feda2v, 'generate_from_t5_text_embeddings', False)
 
+        # Image generation splits configuration
+        self.save_generated_images_splits = getattr(self.config.feda2v, 'save_generated_images_splits', ['val', 'test'])
+        self.generation_split_for_metrics = getattr(self.config.feda2v, 'generation_split_for_metrics', 'train')
+
+        self.test_metrics_splits = getattr(self.config.feda2v, 'test_metrics_splits', ['val', 'test'])
+        self.train_metrics_splits = getattr(self.config.feda2v, 'train_metrics_splits', ['train'])
+
         self.adapter_aggregation_mode = self.config.feda2v.adapter_aggregation_mode
         self.global_model_train_from_nodes_adapters = self.config.feda2v.global_model_train_from_nodes_adapters
         self.global_model_train_from_generator = self.config.feda2v.global_model_train_from_generator
 
+        # Global mean computation configuration
+        self.compute_global_mean_from_class_means = getattr(self.config.feda2v, 'compute_global_mean_from_class_means', True)
+
         # Generator configuration
         self.generator_type = getattr(self.config.feda2v, 'generator_type', 'vae')
         self.use_generator = getattr(self.config.feda2v, 'use_generator', False)
+        self.use_conditioned_vae = getattr(self.config.feda2v, 'use_conditioned_vae', True)
+        self.generator_training_mode = getattr(self.config.feda2v, 'generator_training_mode', False)
         self.prompt_generator = None
         self.prompt_generator_clip = None
         self.prompt_generator_t5 = None
@@ -114,11 +126,22 @@ class FedA2V(FedRewind):
         self.generator_optimizer = None
         self.generator_loss_fn = None
 
-        # Generator checkpoint configuration
+        # Generator checkpoint configuration with flexible naming
         self.generator_save_checkpoint = getattr(self.config.feda2v, 'generator_save_checkpoint', False)
         self.generator_load_checkpoint = getattr(self.config.feda2v, 'generator_load_checkpoint', False)
-        self.generator_checkpoint_path = getattr(self.config.feda2v, 'generator_checkpoint_path', 'generator_checkpoint.pt')
         self.generator_checkpoint_frequency = getattr(self.config.feda2v, 'generator_checkpoint_frequency', 10)
+
+        # Support both legacy single path and new flexible directory + base name system
+        self.generator_checkpoint_path = getattr(self.config.feda2v, 'generator_checkpoint_path', None)
+        self.generator_checkpoint_dir = getattr(self.config.feda2v, 'generator_checkpoint_dir', 'checkpoints/generators')
+        self.generator_checkpoint_base_name = getattr(self.config.feda2v, 'generator_checkpoint_base_name', 'server_generator')
+
+        # If legacy path is provided, extract dir and base name from it
+        if self.generator_checkpoint_path:
+            import os
+            self.generator_checkpoint_dir = os.path.dirname(self.generator_checkpoint_path) or 'checkpoints/generators'
+            base_with_ext = os.path.basename(self.generator_checkpoint_path)
+            self.generator_checkpoint_base_name = os.path.splitext(base_with_ext)[0]
 
         # Generator training configuration
         self.generator_training_epochs = getattr(self.config.feda2v, 'generator_training_epochs', 5)
@@ -178,6 +201,10 @@ class FedA2V(FedRewind):
 
         for client in self.clients:
             client.federation_clients = self.clients
+
+        # Set server reference in clients for accessing diffusion_model
+        for client in self.clients:
+            client.set_server(self)
 
         self.nodes_adapters = {}
         self.nodes_adapters_modules = {}
@@ -258,7 +285,14 @@ class FedA2V(FedRewind):
                                                  
     def create_global_model(self, args):
 
-        self.global_model = DownstreamSinestesiaAdapters( args, diffusion_type=self.diffusion_type )
+        # Get use_cls_token_only configuration from feda2v config
+        use_cls_token_only = getattr(self.config.feda2v, 'use_cls_token_only', False) if hasattr(self, 'config') and self.config else False
+
+        self.global_model = DownstreamSinestesiaAdapters(
+            args,
+            diffusion_type=self.diffusion_type,
+            use_cls_token_only=use_cls_token_only
+        )
         for param in self.global_model.audio2image_model.ast_model.parameters():
             param.requires_grad = False
 
@@ -308,27 +342,41 @@ class FedA2V(FedRewind):
 
     def initialize_generators(self):
         """Initialize prompt generators (VAE or GAN) for server-side training."""
-        logger.info(f"Initializing {self.generator_type} generator on server")
+        logger.info(f"Initializing {self.generator_type} generator on server (conditioned={self.use_conditioned_vae})")
 
         if self.generator_type == 'vae':
-            # VAE for conditioned prompt generation
-            self.prompt_generator = ConditionedVAEGenerator(
-                input_dim=512,      # Audio embeddings dimension from AST
-                visual_dim=768,     # CLIP embeddings dimension
-                hidden_dim=512,
-                latent_dim=256,
-                sequence_length=4
-            ).to(self.device)
+            # Choose between conditioned and unconditioned VAE
+            if self.use_conditioned_vae:
+                # VAE for conditioned prompt generation
+                self.prompt_generator = ConditionedVAEGenerator(
+                    input_dim=512,      # Audio embeddings dimension from AST
+                    visual_dim=768,     # CLIP embeddings dimension
+                    hidden_dim=512,
+                    latent_dim=256,
+                    sequence_length=4
+                ).to(self.device)
+                logger.info("Conditioned VAE generator initialized")
+            else:
+                # VAE for unconditioned prompt generation
+                self.prompt_generator = VAEGenerator(
+                    input_dim=512,      # Audio embeddings dimension from AST
+                    hidden_dim=512,
+                    latent_dim=256,
+                    sequence_length=4
+                ).to(self.device)
+                logger.info("Unconditioned VAE generator initialized")
 
-            self.generator_loss_fn = VAELoss()
+            # Initialize loss with adaptive beta scheduling based on configured training epochs
+            self.generator_loss_fn = VAELoss(
+                total_epochs=self.generator_training_epochs,
+                beta_warmup_ratio=0.5  # Beta reaches 1.0 at 50% of total epochs
+            )
 
             # Optimizer for VAE
             self.generator_optimizer = torch.optim.AdamW(
                 self.prompt_generator.parameters(),
                 lr=self.config.training.learning_rate * 0.1  # Lower LR for generator
             )
-
-            logger.info("VAE generator initialized")
 
         elif self.generator_type == 'gan':
             # GAN generators for CLIP and T5
@@ -430,6 +478,13 @@ class FedA2V(FedRewind):
         """Main training loop for Audio2Visual federated learning."""
         training_task = "both"
 
+        if self.generator_training_mode:
+            print("\n" + "="*80)
+            print("GENERATOR TRAINING MODE ENABLED")
+            print("Adapter distribution and aggregation will be DISABLED")
+            print("Model evaluation (train/test metrics) will be DISABLED")
+            print("="*80 + "\n")
+
         if self.global_model != None:
             self.global_model.to(self.device)
 
@@ -447,8 +502,12 @@ class FedA2V(FedRewind):
                 print("\nEvaluate Audio2Visual models")
                 self.evaluate()
 
-            if self.aggregation_method != 'none' or self.adapter_aggregation_mode != 'none':
-                self.send_models()
+            # Skip sending models/adapters in generator-only training mode
+            if not self.generator_training_mode:
+                if self.aggregation_method != 'none' or self.adapter_aggregation_mode != 'none':
+                    self.send_models()
+            else:
+                print("[Generator Training Mode] Skipping adapter distribution")
 
             self.train_nodes(i, training_task=training_task)
 
@@ -464,9 +523,13 @@ class FedA2V(FedRewind):
             if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], top_cnt=self.top_cnt):
                 break
 
-            if self.model_aggregation != "none" or self.adapter_aggregation_mode != 'none':
-                self.receive_models()
-                self.aggregate_parameters()
+            # Skip receiving/aggregating models/adapters in generator-only training mode
+            if not self.generator_training_mode:
+                if self.model_aggregation != "none" or self.adapter_aggregation_mode != 'none':
+                    self.receive_models()
+                    self.aggregate_parameters()
+            else:
+                print("[Generator Training Mode] Skipping adapter aggregation")
 
             if self.model_backbone_save_checkpoint:
                 self.save_checkpoint()
@@ -478,23 +541,23 @@ class FedA2V(FedRewind):
         wandb.finish()
 
     def round_ending_hook(self):
+
         self.baloon.deflate_if_inflated()
         generated_images = {}
         if self.generate_nodes_images_frequency > 0 and self.round % self.generate_nodes_images_frequency == 0:
             if self.optimize_memory_usage or self.round == 1:
                 self.global_model.diffusion_model.to(self.diffusion_device)
             
-            for client in self.clients:
-                generated_images[client.id] = self.generate_images(client)
+            for node in self.clients:
+                node._move_to_cpu()
+                generated_images[node.id] = self.generate_images(node)
 
             if self.optimize_memory_usage:
                 self.global_model.diffusion_model.to(torch.device('cpu'))
             
-            # for client in self.clients:
-            #     node_metrics = self.test_node_metrics_from_images(client, generated_images=generated_images[client.id])
-            #     if not self.no_wandb:
-            #         wandb_metrics = client.log_metrics(node_metrics, round=self.round)
-            #         wandb.log(wandb_metrics)
+        use_pretrained_generators = getattr(self.config.feda2v, 'use_pretrained_generators', False)
+        if use_pretrained_generators and hasattr(self, 'client_synthetic_samples') and len(self.client_synthetic_samples) > 0:
+            self.aggregate_synthetic_samples()
 
         if self.global_model_train and (self.config.feda2v.global_model_train_from_nodes_audio_embeddings or self.config.feda2v.global_model_train_from_nodes_adapters):
             self._move_to_gpu(self.device)
@@ -557,7 +620,7 @@ class FedA2V(FedRewind):
             generated_images['server'] = {}
             generated_images['server']['on_test']= self.generate_global_images_with_aggregated_adapters()
 
-        if self.optimize_memory_usage:
+        if self.optimize_memory_usage and self.global_model != None and self.global_model.diffusion_model != None:
                 self.global_model.diffusion_model.to(torch.device('cpu'))
         self.federation_test_metric(generated_images)
 
@@ -566,7 +629,6 @@ class FedA2V(FedRewind):
         if len(generated_images) == 0:
             return
         
-        self.global_model.zero_shot_model.model.to(self.device)
         for node in self.clients:
             node_id = node.id
             node = self.clients[node_id]
@@ -588,8 +650,6 @@ class FedA2V(FedRewind):
             if not self.no_wandb:
                 wandb_metrics = self.log_metrics(server_metrics, round=self.round)
                 wandb.log(wandb_metrics)
-
-        self.global_model.zero_shot_model.model.to("cpu")
 
     def generate_global_images_average_text_embeddings_from_nodes(self):
         nodes_classes_text_embeddings = {}
@@ -706,8 +766,15 @@ class FedA2V(FedRewind):
 
         logger.info(f"Training generator for {num_epochs} epochs with augmentation={self.generator_augmentation}")
 
-        for epoch in range(num_epochs):
+        from tqdm import tqdm
+        epoch_pbar = tqdm(range(num_epochs), desc="Server Generator",
+                         bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+
+        for epoch in epoch_pbar:
             epoch_loss = 0.0
+            epoch_recon_loss = 0.0
+            epoch_kl_loss = 0.0
+            epoch_sim_loss = 0.0
             epoch_batches = 0
 
             for class_name, prompts_list in all_class_prompts.items():
@@ -737,11 +804,15 @@ class FedA2V(FedRewind):
                     # VAE Training
                     self.generator_optimizer.zero_grad()
 
-                    # Forward pass through VAE
-                    recon_prompts, mu, logvar = self.prompt_generator(
-                        audio_embs,
-                        visual_condition=clip_prompts
-                    )
+                    # Forward pass through VAE (conditioned or unconditioned)
+                    if self.use_conditioned_vae:
+                        recon_prompts, mu, logvar = self.prompt_generator(
+                            audio_embs,
+                            visual_condition=clip_prompts
+                        )
+                    else:
+                        # Unconditioned VAE - no visual condition
+                        recon_prompts, mu, logvar = self.prompt_generator(audio_embs)
 
                     # Compute VAE loss
                     total_vae_loss, recon_loss, kl_loss, sim_loss = self.generator_loss_fn(
@@ -761,10 +832,28 @@ class FedA2V(FedRewind):
                     self.generator_optimizer.step()
 
                     epoch_loss += total_vae_loss.item()
+                    epoch_recon_loss += recon_loss.item()
+                    epoch_kl_loss += kl_loss.item()
+                    epoch_sim_loss += sim_loss.item()
                     epoch_batches += 1
 
+                    # Update progress bar in real-time during training
+                    if epoch_batches > 0:
+                        avg_loss = epoch_loss / epoch_batches
+                        avg_recon = epoch_recon_loss / epoch_batches
+                        avg_kl = epoch_kl_loss / epoch_batches
+                        avg_sim = epoch_sim_loss / epoch_batches
+                        epoch_pbar.set_postfix({
+                            'loss': f'{avg_loss:.4f}',
+                            'recon': f'{avg_recon:.4f}',
+                            'kl': f'{avg_kl:.4f}',
+                            'sim': f'{avg_sim:.4f}',
+                            'class': class_name,
+                            'batches': epoch_batches
+                        })
+
                     if num_batches % 5 == 0:
-                        logger.info(f"  Epoch {epoch+1} Class '{class_name}': VAE Loss={total_vae_loss.item():.4f} "
+                        logger.debug(f"  Epoch {epoch+1} Class '{class_name}': VAE Loss={total_vae_loss.item():.4f} "
                                   f"(Recon={recon_loss.item():.4f}, KL={kl_loss.item():.4f}, Sim={sim_loss.item():.4f})")
 
                 elif self.generator_type == 'gan':
@@ -777,8 +866,22 @@ class FedA2V(FedRewind):
 
             if epoch_batches > 0:
                 avg_epoch_loss = epoch_loss / epoch_batches
-                logger.info(f"Generator Epoch {epoch+1}/{num_epochs}: Loss = {avg_epoch_loss:.4f} (batches={epoch_batches})")
+                avg_recon_loss = epoch_recon_loss / epoch_batches
+                avg_kl_loss = epoch_kl_loss / epoch_batches
+                avg_sim_loss = epoch_sim_loss / epoch_batches
+
+                # Update progress bar with all loss components
+                epoch_pbar.set_postfix({
+                    'loss': f'{avg_epoch_loss:.4f}',
+                    'recon': f'{avg_recon_loss:.4f}',
+                    'kl': f'{avg_kl_loss:.4f}',
+                    'sim': f'{avg_sim_loss:.4f}',
+                    'batches': epoch_batches
+                })
+
                 total_loss += avg_epoch_loss
+
+        epoch_pbar.close()
 
         avg_loss = total_loss / num_epochs if num_epochs > 0 else 0.0
         logger.info(f"Generator training completed. Average loss: {avg_loss:.4f}")
@@ -924,9 +1027,6 @@ class FedA2V(FedRewind):
         return avg_loss
 
     def global_model_create_images(self, audio_embeddings, num_images=1):
-        """Generate images using the global Audio2Visual model."""
-        self.global_model.diffusion_model.to(self.global_model.diffusion_model_device)
-
         prompt_embeds = audio_embeddings['t5'].to(self.global_model.diffusion_model_device).to(torch.bfloat16)
         pooled_prompt_embeds = audio_embeddings['clip'].to(self.global_model.diffusion_model_device).to(torch.bfloat16)
 
@@ -937,8 +1037,6 @@ class FedA2V(FedRewind):
                                         output_type="pt",
                                         ).images
         
-        self.global_model.diffusion_model.to("cpu")
-
         return imgs
 
     def save_audio_embeddings(self, file_name="audio_embeddings.pt"):
@@ -976,11 +1074,13 @@ class FedA2V(FedRewind):
 
     def save_generator_checkpoint(self, round_num=None):
         """
-        Save generator model checkpoint.
+        Save generator model checkpoint with comprehensive metadata.
 
         Args:
             round_num: Optional round number to include in checkpoint filename
         """
+        import datetime
+
         if not self.use_generator or self.prompt_generator is None:
             logger.warning("Generator not initialized, cannot save checkpoint")
             return
@@ -989,22 +1089,79 @@ class FedA2V(FedRewind):
             return
 
         # Create checkpoint directory if needed
-        checkpoint_dir = os.path.dirname(self.generator_checkpoint_path) or '.'
-        if not os.path.exists(checkpoint_dir):
-            os.makedirs(checkpoint_dir, exist_ok=True)
+        if not os.path.exists(self.generator_checkpoint_dir):
+            os.makedirs(self.generator_checkpoint_dir, exist_ok=True)
 
-        # Build checkpoint path with optional round number
+        # Build checkpoint path with flexible naming: base_name_server[_round_Y].pt
         if round_num is not None:
-            base_path = os.path.splitext(self.generator_checkpoint_path)[0]
-            ext = os.path.splitext(self.generator_checkpoint_path)[1]
-            checkpoint_path = f"{base_path}_round_{round_num}{ext}"
+            checkpoint_path = os.path.join(
+                self.generator_checkpoint_dir,
+                f'{self.generator_checkpoint_base_name}_round_{round_num}.pt'
+            )
         else:
-            checkpoint_path = self.generator_checkpoint_path
+            checkpoint_path = os.path.join(
+                self.generator_checkpoint_dir,
+                f'{self.generator_checkpoint_base_name}.pt'
+            )
 
-        # Create checkpoint dictionary
+        # Collect aggregated metadata from all clients
+        num_clients = len(self.clients)
+        all_datasets = set()
+        all_classes = set()
+        client_metadata = []
+
+        for client in self.clients:
+            client_info = {
+                'client_id': client.id,
+                'dataset': getattr(client, 'dataset_name', None),
+            }
+
+            # Try to get selected classes from client
+            if hasattr(client, 'node_data') and hasattr(client.node_data, 'train_dataset'):
+                train_dataset = client.node_data.train_dataset
+                if hasattr(train_dataset, 'selected_classes'):
+                    client_info['selected_classes'] = train_dataset.selected_classes
+                    if train_dataset.selected_classes:
+                        all_classes.update(train_dataset.selected_classes)
+                elif hasattr(train_dataset, 'dataset') and hasattr(train_dataset.dataset, 'selected_classes'):
+                    client_info['selected_classes'] = train_dataset.dataset.selected_classes
+                    if train_dataset.dataset.selected_classes:
+                        all_classes.update(train_dataset.dataset.selected_classes)
+
+            if client_info['dataset']:
+                all_datasets.add(client_info['dataset'])
+
+            client_metadata.append(client_info)
+
+        # Create comprehensive checkpoint metadata
         checkpoint = {
-            'generator_type': self.generator_type,
+            # Server identification
+            'checkpoint_type': 'server',
+            'is_global': True,
+
+            # Training state
             'round': round_num if round_num is not None else self.round,
+            'timestamp': datetime.datetime.now().isoformat(),
+
+            # Generator configuration
+            'generator_type': self.generator_type,
+            'diffusion_type': self.diffusion_type,
+            'generator_training_epochs': self.generator_training_epochs,
+            'synthetic_samples_per_class': self.synthetic_samples_per_class,
+
+            # Federation metadata
+            'num_clients': num_clients,
+            'client_metadata': client_metadata,
+            'federated_datasets': sorted(list(all_datasets)),
+            'federated_classes': sorted(list(all_classes)) if all_classes else None,
+
+            # Model architecture info
+            'audio_model_name': self.audio_model_name,
+            'img_pipe_name': self.img_pipe_name,
+
+            # Training configuration
+            'global_model_train': self.global_model_train,
+            'global_model_train_from_nodes_adapters': getattr(self.config.feda2v, 'global_model_train_from_nodes_adapters', None),
         }
 
         if self.generator_type == 'vae':
@@ -1026,12 +1183,14 @@ class FedA2V(FedRewind):
         torch.save(checkpoint, checkpoint_path)
         logger.info(f"Saved generator checkpoint to {checkpoint_path}")
 
-    def load_generator_checkpoint(self, checkpoint_path=None):
+    def load_generator_checkpoint(self, checkpoint_path=None, strict_validation=True, warn_only=False):
         """
-        Load generator model checkpoint.
+        Load generator model checkpoint with metadata validation.
 
         Args:
-            checkpoint_path: Optional path to checkpoint. If None, uses self.generator_checkpoint_path
+            checkpoint_path: Optional path to checkpoint. If None, uses flexible naming system
+            strict_validation: If True, reject checkpoint on critical metadata mismatch
+            warn_only: If True, only print warnings without rejecting checkpoint
 
         Returns:
             bool: True if checkpoint loaded successfully, False otherwise
@@ -1043,9 +1202,12 @@ class FedA2V(FedRewind):
         if not self.generator_load_checkpoint:
             return False
 
-        # Use provided path or default
+        # Use provided path or build from flexible naming system
         if checkpoint_path is None:
-            checkpoint_path = self.generator_checkpoint_path
+            checkpoint_path = os.path.join(
+                self.generator_checkpoint_dir,
+                f'{self.generator_checkpoint_base_name}.pt'
+            )
 
         if not os.path.exists(checkpoint_path):
             logger.warning(f"Generator checkpoint not found at {checkpoint_path}")
@@ -1054,12 +1216,67 @@ class FedA2V(FedRewind):
         try:
             # Load checkpoint
             checkpoint = torch.load(checkpoint_path, map_location=self.device)
-            logger.info(f"Loading generator checkpoint from {checkpoint_path}")
 
-            # Verify generator type matches
-            if checkpoint.get('generator_type') != self.generator_type:
-                logger.error(f"Generator type mismatch: checkpoint has {checkpoint.get('generator_type')}, but config specifies {self.generator_type}")
+            # Display checkpoint metadata
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Loading checkpoint from: {checkpoint_path}")
+            logger.info(f"{'='*60}")
+            logger.info(f"Checkpoint metadata:")
+            logger.info(f"  - Type: {checkpoint.get('checkpoint_type', 'client/legacy')}")
+            logger.info(f"  - Round: {checkpoint.get('round', 'N/A')}")
+            logger.info(f"  - Timestamp: {checkpoint.get('timestamp', 'N/A')}")
+            logger.info(f"  - Generator type: {checkpoint.get('generator_type', 'N/A')}")
+
+            if checkpoint.get('checkpoint_type') == 'server':
+                logger.info(f"  - Num clients: {checkpoint.get('num_clients', 'N/A')}")
+                logger.info(f"  - Federated datasets: {checkpoint.get('federated_datasets', 'N/A')}")
+                logger.info(f"  - Federated classes: {checkpoint.get('federated_classes', 'N/A')}")
+            else:
+                logger.info(f"  - Node ID: {checkpoint.get('node_id', checkpoint.get('client_id', 'N/A'))}")
+                logger.info(f"  - Dataset: {checkpoint.get('dataset_name', 'N/A')}")
+                logger.info(f"  - Selected classes: {checkpoint.get('selected_classes', 'N/A')}")
+
+            # Validation
+            validation_errors = []
+            validation_warnings = []
+
+            # Validate generator type (critical)
+            if 'generator_type' in checkpoint:
+                if checkpoint['generator_type'] != self.generator_type:
+                    msg = f"Generator type mismatch: checkpoint={checkpoint['generator_type']}, current={self.generator_type}"
+                    validation_errors.append(msg)
+
+            # Validate diffusion type
+            if 'diffusion_type' in checkpoint:
+                if checkpoint['diffusion_type'] != self.diffusion_type:
+                    msg = f"Diffusion type mismatch: checkpoint={checkpoint['diffusion_type']}, current={self.diffusion_type}"
+                    validation_warnings.append(msg)
+
+            # Validate it's a server checkpoint or compatible
+            if checkpoint.get('checkpoint_type') == 'client':
+                msg = "Loading a client checkpoint into server - may not be fully compatible"
+                validation_warnings.append(msg)
+
+            # Print validation results
+            if validation_errors:
+                logger.error(f"\nValidation ERRORS:")
+                for error in validation_errors:
+                    logger.error(f"  ✗ {error}")
+
+            if validation_warnings:
+                logger.warning(f"\nValidation WARNINGS:")
+                for warning in validation_warnings:
+                    logger.warning(f"  ⚠ {warning}")
+
+            # Decide whether to reject
+            if validation_errors and strict_validation and not warn_only:
+                logger.error(f"\nCheckpoint validation failed. Set strict_validation=False to load anyway.")
                 return False
+
+            if not validation_errors and not validation_warnings:
+                logger.info("✓ Checkpoint validation passed")
+
+            logger.info(f"{'='*60}\n")
 
             # Initialize generators if not already done
             if self.prompt_generator is None:
@@ -1232,6 +1449,57 @@ class FedA2V(FedRewind):
             logger.warning("No valid prompts for generator validation")
             return {}
 
+    def aggregate_synthetic_samples(self):
+        """
+        Aggregate synthetic samples from all clients.
+        Store aggregated samples for use in global training or adapter fine-tuning.
+        """
+        if not hasattr(self, 'client_synthetic_samples') or len(self.client_synthetic_samples) == 0:
+            print("[Server] No synthetic samples to aggregate")
+            return
+
+        print(f"\n[Server] Aggregating synthetic samples from {len(self.client_synthetic_samples)} clients")
+
+        # Structure: {class_name: {client_id: tensor}}
+        aggregated_by_class = defaultdict(dict)
+
+        for client_id, synthetic_samples in self.client_synthetic_samples.items():
+            for class_name, samples in synthetic_samples.items():
+                aggregated_by_class[class_name][client_id] = samples
+
+        # Store aggregated samples
+        self.aggregated_synthetic_samples = {}
+
+        total_samples = 0
+        for class_name, client_samples in aggregated_by_class.items():
+            # Collect all samples for this class
+            all_samples = []
+            for client_id, samples in client_samples.items():
+                all_samples.append(samples)
+                total_samples += samples.size(0) if hasattr(samples, 'size') else len(samples)
+
+            # Stack or concatenate samples
+            if len(all_samples) > 0:
+                self.aggregated_synthetic_samples[class_name] = torch.cat(all_samples, dim=0)
+
+        print(f"[Server] Aggregated {total_samples} synthetic samples across {len(self.aggregated_synthetic_samples)} classes")
+
+        # Log summary
+        for class_name, samples in self.aggregated_synthetic_samples.items():
+            num_samples = samples.size(0) if hasattr(samples, 'size') else len(samples)
+            print(f"  - {class_name}: {num_samples} samples")
+
+        # Clear client synthetic samples to free memory
+        self.client_synthetic_samples = {}
+
+        # Log to wandb if enabled
+        if not self.no_wandb:
+            self.data_log({
+                "server/synthetic_samples_total": total_samples,
+                "server/synthetic_samples_classes": len(self.aggregated_synthetic_samples),
+                "round": self.round
+            })
+
     def receive_models(self):
         assert (len(self.selected_clients) > 0)
 
@@ -1394,14 +1662,44 @@ class FedA2V(FedRewind):
         # Save aggregated result on the server (CPU tensors)
         self.global_per_class_output_means = global_per_class_output_means
 
+        # Compute global mean from per-class means if configured
+        if self.compute_global_mean_from_class_means:
+            self._compute_global_mean_from_class_means(global_per_class_output_means)
+
+    def _compute_global_mean_from_class_means(self, global_per_class_output_means):
+        """
+        Compute a unified global mean by averaging all per-class means.
+
+        This method takes the per-class output means and computes a single global mean
+        by stacking all class means and averaging them across the class dimension.
+
+        Args:
+            global_per_class_output_means (dict): Dictionary mapping class names to their mean tensors
+
+        Sets:
+            self.global_output_means: The computed global mean tensor
+        """
+        if not global_per_class_output_means:
+            print("[Server] Warning: No per-class means available to compute global mean")
+            self.global_output_means = None
+            return
+
         global_means = []
         for class_name, per_class_output_mean in global_per_class_output_means.items():
             global_means.append(per_class_output_mean)
 
+        if not global_means:
+            print("[Server] Warning: No valid means to stack for global mean computation")
+            self.global_output_means = None
+            return
+
         global_means = torch.stack(global_means)
-        global_mean = torch.mean(global_means,dim=0)
+        global_mean = torch.mean(global_means, dim=0)
 
         self.global_output_means = global_mean
+
+        print(f"[Server] Computed global mean from {len(global_per_class_output_means)} class means")
+        print(f"[Server] Global mean shape: {global_mean.shape}")
 
     def aggregate_adapters_parameters_fedavg(self):
         nodes_adapters_states = {}
@@ -1472,52 +1770,157 @@ class FedA2V(FedRewind):
                     server_param.data += client_param.data.clone() * w
 
     def client_round_starting_hook(self, client):
-        if self.eval_gap % self.round != self.eval_gap:
+        # Skip metrics in generator-only training mode
+        if self.generator_training_mode:
             return
-        
+
+        if self.eval_gap % self.round:
+            return
+
         print(f"\nStarting training round for Node {client.id}.")
 
-        node_metrics = self.node_metrics(client)
-        round_train_metrics = node_metrics['train_metrics']
-        round_test_metrics = node_metrics['test_metrics']
+        node_metrics = self.node_metrics(client, train_splits=self.train_metrics_splits, test_splits=self.test_metrics_splits)
+        round_train_metrics = node_metrics['train_metrics']['train'] if 'train' in node_metrics['train_metrics'] else []
+        round_test_metrics_on_val = node_metrics['test_metrics']['val'] if 'val' in node_metrics['test_metrics'] else []
+        round_test_metrics_on_test = node_metrics['test_metrics']['test'] if 'test' in node_metrics['test_metrics'] else []
+        round_test_metrics_on_train = node_metrics['test_metrics_on_train'] if 'test_metrics_on_train' in node_metrics else None
 
         if not self.no_wandb:
             wandb_metrics = client.log_metrics(round_train_metrics, round=self.round, suffix="_start")
-            wandb_metrics.update(client.log_metrics(round_test_metrics, round=self.round, suffix="_start"))
-
+            wandb_metrics.update(client.log_metrics(round_test_metrics_on_val, round=self.round, suffix="_start"))
+            if round_test_metrics_on_train is not None:
+                wandb_metrics.update(client.log_metrics(round_test_metrics_on_train, round=self.round, suffix="_start"))
+            
+            
             for wandb_metric in wandb_metrics:
                 metrics = {wandb_metric: wandb_metrics[wandb_metric], "round": self.round}
                 self.data_log(metrics)
 
-        print (f"Node {client.id} pre round metric train {round_train_metrics['text_loss']['mean']:.4}. test {round_test_metrics['text_loss']['mean']:.4f}")
+        # Display only text_loss or accuracy if present
+        display_metrics = []
+        for metric_name in ['text_loss', 'accuracy']:
+            if metric_name in round_train_metrics:
+                display_metrics.append(f"train {metric_name} {round_train_metrics[metric_name]['mean']:.4f}")
+            if metric_name in round_test_metrics_on_val:
+                display_metrics.append(f"test {metric_name} {round_test_metrics_on_val[metric_name]['mean']:.4f}")
+            if round_test_metrics_on_train is not None and metric_name in round_test_metrics_on_train:
+                display_metrics.append(f"test_on_train {metric_name} {round_test_metrics_on_train[metric_name]['mean']:.4f}")
+
+        if display_metrics:
+            print(F"Node {client.id} pre-round metrics: " + ", ".join(display_metrics))
 
     def client_round_ending_hook(self, client):
-        if self.eval_gap % self.round != self.eval_gap:
+        # Skip metrics in generator-only training mode (but still allow synthetic sample generation)
+        if self.generator_training_mode:
+            # Generate synthetic samples if using pretrained generators
+            use_pretrained_generators = getattr(self.config.feda2v, 'use_pretrained_generators', False)
+            if use_pretrained_generators and hasattr(client, 'prompt_generator') and client.prompt_generator is not None:
+                # Only run synthetic sample generation, skip metrics
+                if self.round % 10 == 0:  # Generate samples every 10 rounds
+                    from system.flcore.trainmodel.generators import SyntheticSample
+
+                    print(f"\n[Server] Generating synthetic samples from Client {client.id}...")
+
+                    # Generate prompts using the trained generator
+                    num_samples = 10  # Generate 10 samples
+                    synthetic_samples = []
+
+                    for i in range(num_samples):
+                        # Sample from the generator
+                        audio_embedding = client.prompt_generator.sample(1, client.device)
+
+                        # Generate the actual image using diffusion
+                        # This would require the diffusion model and proper text embeddings
+                        # For now, just store the audio embedding
+                        synthetic_samples.append(SyntheticSample(
+                            audio_embedding=audio_embedding.cpu(),
+                            generated_image=None,  # Would contain the actual generated image
+                            metadata={'client_id': client.id, 'round': self.round}
+                        ))
+
+                    # Store synthetic samples
+                    if not hasattr(self, 'client_synthetic_samples'):
+                        self.client_synthetic_samples = {}
+
+                    self.client_synthetic_samples[client.id] = synthetic_samples
+
+                    print(f"[Server] Collected {len(synthetic_samples)} synthetic sample sets from Client {client.id}")
             return
-        
-        node_metrics = self.node_metrics(client)
-        round_train_metrics = node_metrics['train_metrics']
-        round_test_metrics = node_metrics['test_metrics']
+
+        if self.eval_gap % self.round:
+            return
+
+        node_metrics = self.node_metrics(client, train_splits=self.train_metrics_splits, test_splits=self.test_metrics_splits)
+        round_train_metrics = node_metrics['train_metrics']['train'] if 'train' in node_metrics['train_metrics'] else None
+        round_test_metrics = node_metrics['test_metrics']['val'] if 'val' in node_metrics['test_metrics'] else None
+        round_test_metrics_on_train = node_metrics['test_metrics']['train'] if 'train' in node_metrics['test_metrics'] else None
 
         if not self.no_wandb:
-            wandb_metrics = client.log_metrics(round_train_metrics, round=self.round, suffix="_end")
-            wandb_metrics.update(client.log_metrics(round_test_metrics, round=self.round, suffix="_end"))
+            wandb_metrics = {}
+
+            if isinstance(round_train_metrics, NodeMetric):
+                wandb_metrics.update(client.log_metrics(round_train_metrics, round=self.round, suffix="_end"))
+            if isinstance(round_test_metrics, NodeMetric):
+                wandb_metrics.update(client.log_metrics(round_test_metrics, round=self.round, suffix="_end"))
+            if isinstance(round_test_metrics_on_train, NodeMetric):
+                wandb_metrics.update(client.log_metrics(round_test_metrics_on_train, round=self.round, suffix="_end"))
 
             for wandb_metric in wandb_metrics:
                 metrics = {wandb_metric: wandb_metrics[wandb_metric], "round": self.round}
                 self.data_log(metrics)
 
-        print (f"Node {client.id} post metric train {round_train_metrics['text_loss']['mean']:.4f}. test {round_test_metrics['text_loss']['mean']:.4f}")
+         # Display only text_loss or accuracy if present
+        display_metrics = []
+        for metric_name in ['text_loss', 'accuracy']:
+            if metric_name in round_train_metrics:
+                display_metrics.append(f"train {metric_name} {round_train_metrics[metric_name]['mean']:.4f}")
+            if metric_name in round_test_metrics:
+                display_metrics.append(f"test {metric_name} {round_test_metrics[metric_name]['mean']:.4f}")
+            if round_test_metrics_on_train is not None and metric_name in round_test_metrics_on_train:
+                display_metrics.append(f"test_on_train {metric_name} {round_test_metrics_on_train[metric_name]['mean']:.4f}")
 
-    def node_metrics(self, client):
+        if display_metrics:
+            print(F"Node {client.id} post-round metrics: " + ", ".join(display_metrics))
+
+        # print (f"Node {client.id} post metric train {round_train_metrics['text_loss']['mean']:.4f}. test {round_test_metrics['text_loss']['mean']:.4f}")
+
+        # Generate synthetic samples if using pretrained generators
+        use_pretrained_generators = getattr(self.config.feda2v, 'use_pretrained_generators', False)
+        if use_pretrained_generators and hasattr(client, 'prompt_generator') and client.prompt_generator is not None:
+            # Get class outputs from training
+            class_outputs = client.get_training_adapter_outputs_mean()
+
+            if class_outputs is not None and len(class_outputs) > 0:
+                # Generate synthetic samples
+                synthetic_samples = client.generate_synthetic_samples(class_outputs)
+
+                # Store synthetic samples for aggregation
+                if not hasattr(self, 'client_synthetic_samples'):
+                    self.client_synthetic_samples = {}
+
+                self.client_synthetic_samples[client.id] = synthetic_samples
+
+                print(f"[Server] Collected {len(synthetic_samples)} synthetic sample sets from Client {client.id}")
+
+    def node_metrics(self, client, train_splits=['train'], test_splits=['val'] ):
         """Compute metrics for a client node."""
-        train_metrics = self.round_train_metrics(client)
-        test_metrics = self.round_test_metrics(client)
+        node_metrics = {'train_metrics': {}, 'test_metrics': {}}
 
-        return {
-            "train_metrics": train_metrics,
-            "test_metrics": test_metrics
-        }   
+        for split in train_splits:
+            metrics = self.round_train_metrics(client, split=split)
+            node_metrics['train_metrics'][f'{split}'] = metrics
+
+        if len(test_splits):
+            self.global_model.diffusion_model.to(self.device)
+
+        for split in test_splits:
+            metrics = self.round_test_metrics(client, split=split)
+            node_metrics['test_metrics'][f'{split}'] = metrics
+        
+        if len(train_splits):
+            self.global_model.diffusion_model.to('cpu')
+
+        return node_metrics
 
     def generate_images_from_diffusion(self, text_embeddings, base_embeddings = None):
         if 't5' not in text_embeddings or 'clip' not in text_embeddings:
@@ -1614,29 +2017,42 @@ class FedA2V(FedRewind):
             except FileExistsError:
                 pass
 
-        # Generate images from all validation samples for this node
+        # Get all available datasets
         node_val_dataset = client.node_data.get_val_dataset()
         node_test_dataset = client.node_data.get_test_dataset()
         node_train_dataset = client.node_data.get_train_dataset()
-        test_dataset = None
-        suffix = ''
-        if node_val_dataset is not None and len(node_val_dataset) > 0:
-            test_dataset = node_val_dataset
-            suffix = '_val'
-        elif node_test_dataset is not None and len (node_test_dataset) > 0:
-            test_dataset = node_test_dataset
-            suffix = '_test'
 
-        if test_dataset is not None:
-            text_embs = test_dataset.text_embs
-            embeddings = client.get_audio_embeddings_from_dataset(test_dataset)
-            on_test_imgs = self.generate_images_from_diffusion(embeddings, base_embeddings=text_embs)
-            on_test_imgs_files = self.save_generated_images(on_test_imgs, client.id, embeddings, suffix=suffix)
-        else:
-            print ( f"Unable to get test or validation split from node {client.id}" )
-            on_test_imgs = self.generate_images_from_diffusion(embeddings)
+        # Map split names to datasets
+        split_datasets = {
+            'val': node_val_dataset,
+            'test': node_test_dataset,
+            'train': node_train_dataset
+        }
 
-        on_train_images_files = None
+        # Initialize result dictionary
+        generated_images_files = {'on_train': None, 'on_test': None, 'from_embeddings': None}
+
+        # Generate images for configured splits
+        for split_name in self.save_generated_images_splits:
+            dataset = split_datasets.get(split_name)
+
+            if dataset is not None and len(dataset) > 0:
+                print(f"Generating images for split: {split_name}")
+                text_embs = dataset.text_embs
+                embeddings = client.get_audio_embeddings_from_dataset(dataset)
+                generated_imgs = self.generate_images_from_diffusion(embeddings, base_embeddings=text_embs)
+                saved_files = self.save_generated_images(generated_imgs, client.id, embeddings, suffix=f'_{split_name}')
+
+                # Map to output dictionary
+                if split_name == 'train':
+                    generated_images_files['on_train'] = saved_files
+                elif split_name in ['val', 'test']:
+                    generated_images_files['on_test'] = saved_files
+            else:
+                print(f"Unable to get {split_name} split from node {client.id}")
+
+        on_train_images_files = generated_images_files['on_train']
+        on_test_imgs_files = generated_images_files['on_test']
         from_text_images_files = None
 
         
@@ -1931,6 +2347,11 @@ class FedA2V(FedRewind):
 
     def evaluate(self):
         """Evaluate Audio2Visual models."""
+        # Skip evaluation in generator-only training mode
+        if self.generator_training_mode:
+            print("[Generator Training Mode] Skipping model evaluation")
+            return
+
         stats_test = self.test_metrics(standalone=True)
         stats_train = self.train_metrics()
 
@@ -1959,6 +2380,10 @@ class FedA2V(FedRewind):
 
     def train_metrics(self):
         """Calculate training metrics for Audio2Visual clients."""
+        # Skip in generator-only training mode
+        if self.generator_training_mode:
+            return {}
+
         nodes_train_metrics = {}
 
         for client_index, c in enumerate(self.clients):
@@ -1966,6 +2391,7 @@ class FedA2V(FedRewind):
                 print(f"Client {c.id} train data is None")
                 continue
             c._move_to_gpu(self.device, force=True)
+            print ( f"Node {c.id}" ) 
             node_train_metrics = c.train_metrics()
             nodes_train_metrics[c.id] = node_train_metrics
             c._move_to_cpu()
@@ -1974,6 +2400,10 @@ class FedA2V(FedRewind):
 
     def test_metrics(self, standalone=False):
         """Calculate test metrics for Audio2Visual clients."""
+        # Skip in generator-only training mode
+        if self.generator_training_mode:
+            return {}
+
         test_clients_stats = {}
 
         for client_index, c in enumerate(self.clients):
@@ -1997,9 +2427,11 @@ class FedA2V(FedRewind):
                 c._move_to_gpu(c.device)
 
                 node_test_metrics = c.test_metrics(t)
+                # node_test_metrics_on_train = c.test_metrics(t, on_train=True)
 
                 c._move_to_cpu()
                 test_clients_stats[t.id] = node_test_metrics
+                # test_clients_stats[f"{t.id}_on_train"] = node_test_metrics_on_train
 
             # Unload test data to save memory
             if client_index > 0 and self.reduce_memory_footprint == True:
@@ -2007,12 +2439,11 @@ class FedA2V(FedRewind):
 
         return test_clients_stats
 
-    def round_train_metrics(self, client):
+    def round_train_metrics(self, client, split='train'):
         """Calculate round training metrics for a client."""
 
-        train_metric = NodeMetric(phase=NodeMetric.Phase.TRAIN)
         client._move_to_gpu(self.device)
-        train_metric = client.train_metrics()
+        train_metric = client.train_metrics(split=split)
         client._move_to_cpu()
 
         node_loss_aggregated = train_metric['text_loss']['mean'] if 'text_loss' in train_metric else 0.0
@@ -2022,20 +2453,15 @@ class FedA2V(FedRewind):
         
         return train_metric
 
-    def round_test_metrics(self, client):
-        """Calculate round test metrics for a client."""
-
-        client._move_to_gpu(self.device)
-        node_test_metrics = client.test_metrics()
-        client._move_to_cpu()
-
-        round_loss = node_test_metrics['text_loss']['mean'] if 'text_loss' in node_test_metrics else 0.0
-        logger.debug(f"Node {client.id} round test loss: {round_loss}")
-
-        return node_test_metrics
+    def round_test_metrics(self, node, split='test'):
+        node._move_to_gpu(self.device)
+        metrics = node.test_metrics(use_generated_images=True, generation_split=split)
+        node._move_to_cpu()
+        return metrics
     
     def _move_to_device(self, device):
         self.global_model.to(device)
+        self.global_model.zero_shot_model.model.to(device)
 
         # Move optimizer state if needed
         if hasattr(self, 'global_optimizers') and self.global_optimizers is not None:
@@ -2044,12 +2470,12 @@ class FedA2V(FedRewind):
                     move_optimizer_state(optimizer, device)
 
     def _move_to_gpu(self, device):
-        if self.optimize_memory_usage:
+        if self.optimize_memory_usage or self.round <= 1:
             logger.debug(f"Server moving to GPU: {device}")
             self._move_to_device(device)
 
     def _move_to_cpu(self):
-        if self.optimize_memory_usage:
+        if self.optimize_memory_usage or self.round <= 1:
             logger.debug(f"Server moving to CPU for memory optimization")
             self._move_to_device('cpu')
 

@@ -156,6 +156,12 @@ class Client(object):
         else:
             self.test_samples = len(self.node_data.test_data)
         return loader
+    
+    def load_val_data(self, batch_size=None,dataset_limit=0):
+        if batch_size == None:
+            batch_size = self.batch_size
+        loader = self.node_data.load_val_data(batch_size, dataset_limit)
+        return loader
         
     def set_parameters(self, model):
         for new_param, old_param in zip(model.parameters(), self.model.parameters()):

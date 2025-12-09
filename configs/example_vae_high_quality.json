@@ -1,0 +1,37 @@
+{
+  "dataset": "ESC50",
+  "algorithm": "A2V",
+  "model": "ast",
+  "batch_size": 4,
+  "learning_rate": 0.0001,
+  "num_rounds": 50,
+  "num_clients": 5,
+  "feda2v_config": {
+    "generator_training_mode": true,
+    "generator_granularity": "unified",
+    "generator_type": "vae",
+    "use_conditioned_vae": false,
+
+    "generator_training_sequence_length": 64,
+    "generator_output_sequence_length": 1214,
+    "use_learned_upsampling": true,
+
+    "generator_training_epochs": 100,
+    "generator_augmentation": true,
+    "generator_augmentation_noise": 0.05,
+
+    "diffusion_type": "sd",
+    "classifier_pretrained_rounds": 5,
+    "use_server_side_generation": false,
+    "synthetic_samples_per_class": 10
+  },
+  "notes": [
+    "HIGH QUALITY configuration for GPUs with 12-16+ GB VRAM",
+    "Uses 64-token sequences (preserves ~85-90% information)",
+    "Compression ratio: 19:1 (much more conservative)",
+    "Requires ~10-14 GB GPU VRAM",
+    "Learned upsampling for better quality reconstruction",
+    "Generates full 1214-token sequences with high fidelity",
+    "Best for final experiments and paper results"
+  ]
+}

@@ -6,13 +6,13 @@
     "runs": 1,
     "seed": 42,
     "use_balooning": false,
-    "optimize_memory_usage": false
+    "optimize_memory_usage": true
   },
   "federation": {
     "algorithm": "FedA2V",
     "num_clients": 5,
-    "global_rounds": 50,
-    "local_epochs": 10,
+    "global_rounds": 20,
+    "local_epochs": 5,
     "eval_gap": 1,
     "diffusion_type": "flux",
     "model_aggregation": "none",
@@ -40,7 +40,11 @@
     "t5_adapter_learning_rate_schedule": false,
     "generate_from_clip_text_embeddings": false,
     "generate_from_t5_text_embeddings": false,
-    "images_output_dir": "esc50-5n-ac-sa"
+    "images_output_dir": "esc50-5n-ac-sa",
+    "save_generated_images_splits": ["val", "test", "train"],
+    "generation_split_for_metrics": "train",
+    "test_metrics_splits": ["val", "test"],
+    "train_metrics_splits": ["train", "val", "test"]
   },
   "nodes": {
     "0": {

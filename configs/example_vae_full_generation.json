@@ -1,0 +1,30 @@
+{
+  "dataset": "ESC50",
+  "algorithm": "A2V",
+  "model": "ast",
+  "batch_size": 4,
+  "learning_rate": 0.0001,
+  "num_rounds": 50,
+  "num_clients": 5,
+  "feda2v_config": {
+    "generator_only_mode": true,
+    "generator_granularity": "unified",
+    "generator_type": "vae",
+    "use_conditioned_vae": false,
+
+    "generator_training_sequence_length": 4,
+    "generator_output_sequence_length": 1214,
+
+    "pretrained_generator_path": "checkpoints/client_0_generator_round_10.pt",
+    "synthetic_samples_per_class": 10,
+
+    "diffusion_type": "sd",
+    "use_server_side_generation": false
+  },
+  "notes": [
+    "Full-sequence generation configuration using pre-trained generators",
+    "Trains on compact 4-token sequences but generates full 1214-token sequences",
+    "The upsampling happens automatically via interpolation",
+    "Requires a pre-trained generator checkpoint"
+  ]
+}

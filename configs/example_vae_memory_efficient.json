@@ -1,0 +1,35 @@
+{
+  "dataset": "ESC50",
+  "algorithm": "A2V",
+  "model": "ast",
+  "batch_size": 4,
+  "learning_rate": 0.0001,
+  "num_rounds": 50,
+  "num_clients": 5,
+  "feda2v_config": {
+    "generator_training_mode": true,
+    "generator_granularity": "unified",
+    "generator_type": "vae",
+    "use_conditioned_vae": false,
+
+    "generator_training_sequence_length": 32,
+    "generator_output_sequence_length": null,
+
+    "generator_training_epochs": 50,
+    "generator_augmentation": true,
+    "generator_augmentation_noise": 0.1,
+
+    "diffusion_type": "sd",
+    "classifier_pretrained_rounds": 5,
+    "use_server_side_generation": false,
+    "synthetic_samples_per_class": 5
+  },
+  "notes": [
+    "RECOMMENDED: Balanced quality-memory configuration",
+    "Uses 32-token sequences (preserves ~70-80% information vs 4-token ~20%)",
+    "Compression ratio: 38:1 instead of 303:1",
+    "Requires ~6-8 GB GPU VRAM (reasonable for most GPUs)",
+    "For minimal memory (<4GB), reduce to sequence_length=8 or 16",
+    "To generate full-length sequences, set generator_output_sequence_length: 1214"
+  ]
+}

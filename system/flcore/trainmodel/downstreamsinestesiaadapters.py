@@ -33,8 +33,10 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
                  diffusion_type=None,
                  loss_weights=None,
                  torch_dtype=torch.float32,
-                 enable_diffusion=False):
-    
+                 enable_diffusion=False,
+                 use_cls_token_only=False,
+                 adapter_dropout=0):
+
         # Initialize without backbone (we'll use sinestesia_model directly)
         super(DownstreamSinestesiaAdapters, self).__init__(
             args,
@@ -52,7 +54,17 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
         self.adapters = {}
         self.adapters_modules = None
         self.adapters_losses = {}
-        
+
+        if adapter_dropout is None:
+            adapter_dropout = 0.0
+
+        # Dropout rate for adapters to prevent overfitting
+        self.adapter_dropout = adapter_dropout
+        self.adapter_dropout_layer = nn.Dropout(p=adapter_dropout)
+
+        # Configuration for using only CLS token from AST output
+        self.use_cls_token_only = use_cls_token_only
+
         if self.diffusion_type == 'flux':
             self.t5_n_latents = 17
             self.clip_n_latents = 1
@@ -78,7 +90,7 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
 
         if self.diffusion_type == 'sd' or self.diffusion_type == 'flux':
             self.adapters['clip'] = torch.nn.Sequential()
-            self.adapters['clip'].add_module ( "adapter_clip", Adapter(input_dim=768, hidden_dims=[1024], output_dim=768))
+            self.adapters['clip'].add_module ( "adapter_clip", Adapter(dropout=0, input_dim=768, hidden_dims=[1024,2048], output_dim=768))
             self.adapters['clip'].add_module ( "projection_clip", MAPBlock(n_latents=self.clip_n_latents, embed_dim=768, n_heads=8))
             self.adapters_modules.add_module ( "clip", self.adapters['clip'])
 
@@ -143,10 +155,12 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
     def train(self, mode: bool = True) -> None:
         for adapter in self.adapters.values():
             adapter.train(mode)
+        self.adapter_dropout_layer.train()
 
     def eval(self):
         for adapter in self.adapters.values():
             adapter.eval()
+        self.adapter_dropout_layer.eval()
 
 
 
@@ -187,35 +201,49 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
 
 
         if audio_embedding is None:
-            x = self.ast_feature_extractor(audio,sampling_rate=16000, 
-                                           return_tensors="pt", 
-                                           padding = True).input_values.to(self.ast_transformer.device, self.torch_dtype) 
+            x = self.ast_feature_extractor(audio,sampling_rate=16000,
+                                           return_tensors="pt",
+                                           padding = True).input_values.to(self.ast_transformer.device, self.torch_dtype)
             x = self.ast_transformer(x).last_hidden_state
         else:
             x = audio_embedding.to(self.ast_transformer.device, self.torch_dtype)
-            
+
+        # Extract CLS token if configured to use only CLS token
+        # The CLS token is typically the first token (index 0) in the sequence
+        if self.use_cls_token_only:
+            x_cls = x[:, 0:1, :]  # Shape: (batch_size, 1, hidden_dim) - keep dimension for compatibility
+            logger.debug(f"Using CLS token only. Original shape: {x.shape}, CLS shape: {x_cls.shape}")
+            x = x_cls
+
         output = {}
         losses = {}
         x = x.detach()
         output['audio_embeddings'] = x
         for adapter_name, adapter in self.adapters.items():
-            if adapter_name == 'clip':
-                out = adapter.adapter_clip(x)
-                out = adapter.projection_clip(out)
-            if adapter_name == 't5':
-                out = adapter.adapter_t5(x)
-                out = adapter.projection_t5(out)
-            # output[adapter_name] = adapter(x)
-            output[adapter_name] = out
+            # Process full sequence through adapter
+            adapter_output = adapter(x)  # Shape: [batch, n_latents, hidden_dim]
 
+           
             if adapter_name == 'clip':
-                losses[adapter_name] = self.adapters_losses[adapter_name]( output[adapter_name], img_target_pooled_prompt_embeds)
+                # output[f'{adapter_name}_full'] = adapter_output
+
+                # adapter_output_pooled = adapter_output.mean(dim=1)  # Shape: [batch, hidden_dim]
+                # output[adapter_name] = adapter_output_pooled
+
+                # Now both are [batch, 768]
+                losses[adapter_name] = self.adapters_losses[adapter_name](
+                    adapter_output,
+                    img_target_pooled_prompt_embeds
+                )
             elif adapter_name == 't5':
-                losses[adapter_name] = self.adapters_losses[adapter_name]( output[adapter_name], img_target_prompt_embeds)
+                losses[adapter_name] = self.adapters_losses[adapter_name](
+                    adapter_output,
+                    img_target_prompt_embeds
+                )
 
         # text_loss = self.text_mse( output, target_prompt_embeds= img_target_prompt_embeds, target_pooled_prompt_embeds=img_target_pooled_prompt_embeds)
 
-        output['text_loss'] = losses 
+        output['text_loss'] = losses
 
         return output
     

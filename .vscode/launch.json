@@ -2529,8 +2529,8 @@
             }
 
         },
-        {
-            "name": "feda2v ESC50 1N Generate 10C",
+                {
+            "name": "feda2v ESC50 1N 10C Dropout",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/fedgfe",
@@ -2538,7 +2538,55 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "subProcess": true,
-            "args": ["--config", "configs/a2v_esc50_1n_10c_generate.json",
+            "args": ["--config", "configs/a2v_esc50_1n_10_generate_sa_dropout.json",
+                ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "0"
+            }
+
+        },
+        {
+            "name": "feda2v ESC50 5N AC Train Generator",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_esc50_5n_ac_train_generators_perclass.json",
+                ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "0"
+            }
+
+        },
+        {
+            "name": "feda2v ESC50 5N AC AVG",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_esc50_5n_ac_generate_avg.json",
+                ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "0"
+            }
+
+        },
+        {
+            "name": "feda2v ESC50 Train Generator",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/vae_unconditioned_example.json",
                 ],
             "env":{
                 "CUDA_VISIBLE_DEVICES": "0"

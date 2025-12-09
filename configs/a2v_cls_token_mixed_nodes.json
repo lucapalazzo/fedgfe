@@ -1,0 +1,131 @@
+{
+  "experiment": {
+    "name": "esc50_5n_cls_token_mixed",
+    "description": "Training with mixed CLS token configuration - some nodes use CLS only, others use full sequence",
+    "goal": "esc50-5n-cls-token-comparison",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42,
+    "use_balooning": true,
+    "optimize_memory_usage": true
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 5,
+    "global_rounds": 50,
+    "local_epochs": 10,
+    "eval_gap": 5,
+    "diffusion_type": "flux",
+    "model_aggregation": "weighted_average",
+    "use_saved_audio_embeddings": false
+  },
+  "feda2v": {
+    "_comment_cls_token": "=== CLS TOKEN CONFIGURATION (MIXED) ===",
+    "_comment_cls_token_note": "Global default is false, but individual nodes can override",
+    "use_cls_token_only": false,
+
+    "_comment_mode": "=== ADAPTER TRAINING MODE ===",
+    "use_generator": false,
+    "generator_type": "vae",
+    "generator_training_mode": false,
+    "generator_only_mode": false,
+    "use_pretrained_generators": false,
+
+    "_comment_adapter": "=== ADAPTER SETTINGS ===",
+    "adapter_aggregation_mode": "weighted_average",
+    "global_model_train": false,
+    "global_model_train_epochs": 0,
+    "global_model_train_from_nodes_adapters": false,
+    "global_model_train_from_generator": false,
+    "global_model_train_from_nodes_audio_embeddings": false,
+
+    "clip_adapter_learning_rate": 1e-4,
+    "clip_adapter_weight_decay": 0.0001,
+    "clip_adapter_learning_rate_schedule": false,
+    "t5_adapter_learning_rate": 1e-2,
+    "t5_adapter_weight_decay": 0.01,
+    "t5_adapter_learning_rate_schedule": false,
+
+    "_comment_generation": "=== IMAGE GENERATION ===",
+    "generate_nodes_images_frequency": 0,
+    "generate_global_images_frequency": 0,
+    "generate_low_memomy_footprint": true,
+    "generate_from_clip_text_embeddings": false,
+    "generate_from_t5_text_embeddings": false,
+    "images_output_dir": "esc50-5n-cls-token-mixed",
+
+    "store_audio_embeddings": false,
+    "audio_embedding_file_name": null
+  },
+  "nodes": {
+    "0": {
+      "dataset": "ESC50",
+      "selected_classes": ["dog", "rooster", "pig", "cow", "frog", "cat", "hen", "insects", "sheep", "crow"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4],
+      "diffusion_type": "flux",
+      "use_cls_token_only": true,
+      "_comment": "Node 0 - Animals (10 classes) - USES CLS TOKEN ONLY",
+      "_comment_reason": "Animal sounds may benefit from global semantic representation"
+    },
+    "1": {
+      "dataset": "ESC50",
+      "selected_classes": ["rain", "sea_waves", "crackling_fire", "crickets", "chirping_birds", "water_drops", "wind", "pouring_water", "toilet_flush", "thunderstorm"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4],
+      "diffusion_type": "flux",
+      "use_cls_token_only": false,
+      "_comment": "Node 1 - Natural soundscapes (10 classes) - USES FULL SEQUENCE",
+      "_comment_reason": "Natural sounds may need detailed temporal information"
+    },
+    "2": {
+      "dataset": "ESC50",
+      "selected_classes": ["crying_baby", "sneezing", "clapping", "breathing", "coughing", "footsteps", "laughing", "brushing_teeth", "snoring", "drinking_sipping"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4],
+      "diffusion_type": "flux",
+      "use_cls_token_only": true,
+      "_comment": "Node 2 - Human sounds (10 classes) - USES CLS TOKEN ONLY",
+      "_comment_reason": "Human sounds are semantically distinct, CLS may be sufficient"
+    },
+    "3": {
+      "dataset": "ESC50",
+      "selected_classes": ["door_wood_knock", "mouse_click", "keyboard_typing", "door_wood_creaks", "can_opening", "washing_machine", "vacuum_cleaner", "clock_alarm", "clock_tick", "glass_breaking"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4],
+      "diffusion_type": "flux",
+      "use_cls_token_only": false,
+      "_comment": "Node 3 - Interior sounds (10 classes) - USES FULL SEQUENCE",
+      "_comment_reason": "Interior sounds may have subtle differences requiring detailed features"
+    },
+    "4": {
+      "dataset": "ESC50",
+      "selected_classes": ["helicopter", "chainsaw", "siren", "car_horn", "engine", "train", "church_bells", "airplane", "fireworks", "hand_saw"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4],
+      "diffusion_type": "flux",
+      "_comment": "Node 4 - Exterior sounds (10 classes) - USES GLOBAL DEFAULT (false)",
+      "_comment_reason": "No override specified, will use global use_cls_token_only=false"
+    }
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "batch_size": 8,
+    "weight_decay": 0.0001,
+    "momentum": 0.9
+  },
+  "dataset": {
+    "name": "ESC50",
+    "path": "./data"
+  },
+  "wandb": {
+    "disabled": false
+  }
+}

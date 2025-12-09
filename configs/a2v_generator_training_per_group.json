@@ -1,0 +1,123 @@
+{
+  "experiment": {
+    "name": "federated_a2v_generator_training_per_group",
+    "description": "RUN 1 (Per-Group): Training one VAE generator per semantic group on each client node",
+    "use_balooning": true,
+    "optimize_memory_usage": true
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "diffusion_type": "flux",
+    "num_clients": 3,
+    "global_rounds": 30,
+    "local_epochs": 3,
+    "eval_gap": 5,
+    "model_aggregation": "per_class_average",
+    "use_saved_audio_embeddings": false
+  },
+  "training": {
+    "learning_rate": 0.001,
+    "optimizer": "AdamW",
+    "batch_size": 8,
+    "weight_decay": 0.0001
+  },
+  "feda2v": {
+    "_comment_mode": "=== GENERATOR-ONLY TRAINING MODE (PER-GROUP) ===",
+    "use_generator": true,
+    "generator_type": "vae",
+    "generator_training_mode": true,
+    "generator_only_mode": true,
+    "use_pretrained_generators": false,
+
+    "_comment_granularity": "=== PER-GROUP GRANULARITY ===",
+    "_comment_granularity_note": "Dict with group names - names are saved in checkpoint metadata",
+    "generator_granularity": "per_group",
+    "generator_class_groups": {
+      "animals": ["dog", "rooster", "pig", "cow", "frog"],
+      "nature": ["rain", "sea_waves", "crackling_fire", "crickets", "chirping_birds"],
+      "mechanical": ["helicopter", "chainsaw", "siren", "car_horn", "engine"]
+    },
+
+    "_comment_checkpoint": "=== CHECKPOINT SETTINGS ===",
+    "generator_checkpoint_dir": "checkpoints/generators_per_group",
+    "generator_checkpoint_base_name": "vae_group",
+    "generator_save_checkpoint": true,
+    "generator_load_checkpoint": false,
+    "generator_checkpoint_frequency": 5,
+
+    "_comment_training": "=== GENERATOR TRAINING SETTINGS ===",
+    "generator_training_epochs": 10,
+    "generator_augmentation": true,
+    "generator_augmentation_noise": 0.1,
+    "generator_validation_frequency": 5,
+
+    "_comment_adapter": "=== ADAPTER SETTINGS (Skipped in generator-only mode) ===",
+    "adapter_aggregation_mode": "avg",
+    "global_model_train": false,
+    "global_model_train_epochs": 0,
+    "global_model_train_from_nodes_adapters": false,
+
+    "_comment_aggregation": "=== AGGREGATION SETTINGS ===",
+    "compute_global_mean_from_class_means": true,
+
+    "t5_adapter_learning_rate": 0.001,
+    "clip_adapter_learning_rate": 0.001,
+    "t5_adapter_weight_decay": 0.0001,
+    "clip_adapter_weight_decay": 0.0001,
+    "adapters_learning_rate": 0.001,
+    "adapters_weight_decay": 0.0001,
+
+    "adapters_learning_rate_schedule": false,
+    "t5_adapter_learning_rate_schedule": false,
+    "clip_adapter_learning_rate_schedule": true,
+
+    "_comment_generation": "=== IMAGE GENERATION (disabled in training mode) ===",
+    "generate_nodes_images_frequency": 0,
+    "generate_global_images_frequency": 0,
+    "generate_low_memomy_footprint": true,
+    "images_output_dir": "output_images",
+    "generate_from_clip_text_embeddings": false,
+    "generate_from_t5_text_embeddings": false,
+
+    "store_audio_embeddings": false,
+    "audio_embedding_file_name": null
+  },
+  "nodes": {
+    "0": {
+      "dataset": "ESC50",
+      "selected_classes": ["dog", "rooster", "pig", "cow", "frog"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4],
+      "diffusion_type": "flux",
+      "generator_class_group": "animals"
+    },
+    "1": {
+      "dataset": "ESC50",
+      "selected_classes": ["rain", "sea_waves", "crackling_fire", "crickets", "chirping_birds"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4],
+      "diffusion_type": "flux",
+      "generator_class_group": "nature"
+    },
+    "2": {
+      "dataset": "ESC50",
+      "selected_classes": ["helicopter", "chainsaw", "siren", "car_horn", "engine"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4],
+      "diffusion_type": "flux",
+      "generator_class_group": "mechanical"
+    }
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+  "dataset": {
+    "name": "ESC50",
+    "path": "./data"
+  },
+  "wandb": {
+    "disabled": false
+  }
+}

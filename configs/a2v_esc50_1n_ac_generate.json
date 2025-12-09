@@ -28,7 +28,7 @@
     "global_model_train_from_generator": false,
     "global_model_train_from_nodes_audio_embeddings": false,
     "global_model_train_epochs": 5,
-    "use_generator": true,
+    "use_generator": false,
     "generator_type": "vae",
     "store_audio_embeddings": false,
     "audio_embedding_file_name": null,
@@ -40,7 +40,9 @@
     "t5_adapter_learning_rate_schedule": false,
     "generate_from_clip_text_embeddings": false,
     "generate_from_t5_text_embeddings": false,
-    "images_output_dir": "esc50-1n-ac"
+    "images_output_dir": "esc50-1n-ac",
+    "save_generated_images_splits": ["val", "test"],
+    "generation_split_for_metrics": "train"
   },
   "nodes": {
     "0": {
@@ -66,6 +68,6 @@
     
   },
   "wandb": {
-    "disabled": false
+    "disabled": true
   }
 }

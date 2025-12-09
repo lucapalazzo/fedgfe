@@ -1,14 +1,19 @@
 {
   "experiment": {
-    "name": "federated_a2v_vae_generator",
-    "description": "Federated Audio2Visual with VAE Generator for synthetic prompt generation",
+    "name": "federated_a2v_unconditioned_vae",
+    "description": "Federated Audio2Visual with unconditioned VAE Generator",
     "use_balooning": true,
     "optimize_memory_usage": true
   },
   "federation": {
+    "algorithm": "FedA2V",
     "diffusion_type": "flux",
-    "global_rounds": 5,
-    "eval_gap": 2
+    "num_clients": 1,
+    "global_rounds": 30,
+    "local_epochs": 10,
+    "eval_gap": 5,
+    "model_aggregation": "non",
+    "use_saved_audio_embeddings": false
   },
   "training": {
     "learning_rate": 0.001,
@@ -19,24 +24,30 @@
     "adapter_aggregation_mode": "avg",
     "global_model_train": true,
     "global_model_train_epochs": 2,
-    "global_model_train_from_nodes_adapters": true,
+    "global_model_train_from_nodes_adapters": false,
     "global_model_train_from_nodes_audio_embeddings": false,
     "global_model_train_from_generator": false,
 
     "use_generator": true,
     "generator_type": "vae",
+    "use_conditioned_vae": false,
+    "generator_training_mode": true,
+    "generator_only_mode": true,
+    "use_pretrained_generators": false,
 
     "generator_save_checkpoint": true,
     "generator_load_checkpoint": false,
     "generator_checkpoint_dir": "checkpoints/generators",
-    "generator_checkpoint_base_name": "vae_generator",
+    "generator_checkpoint_base_name": "unconditioned_vae_generator",
     "generator_checkpoint_frequency": 10,
 
-    "generator_training_epochs": 2,
+    "generator_training_epochs": 10,
     "generator_augmentation": true,
     "generator_augmentation_noise": 0.1,
     "synthetic_samples_per_class": 5,
     "generator_validation_frequency": 5,
+    "generator_granularity": "per_class",
+    "generator_target_sequence_length": 1214,
 
     "t5_adapter_learning_rate": 0.001,
     "clip_adapter_learning_rate": 0.001,
@@ -49,10 +60,10 @@
     "t5_adapter_learning_rate_schedule": false,
     "clip_adapter_learning_rate_schedule": true,
 
-    "generate_nodes_images_frequency": 10,
-    "generate_global_images_frequency": 10,
-    "generate_low_memomy_footprint": true,
-    "generate_global_images_average_text_embeddings": true,
+    "generate_nodes_images_frequency": 0,
+    "generate_global_images_frequency": 0,
+    "generate_low_memomy_footprint": false,
+    "generate_global_images_average_text_embeddings": false,
     "images_output_dir": "output_images",
     "generate_from_clip_text_embeddings": false,
     "generate_from_t5_text_embeddings": false,
@@ -67,5 +78,8 @@
       "train_folds": [0, 1, 2, 3],
       "test_folds": [4]
     }
+  },
+  "wandb": {
+    "disabled": true
   }
 }

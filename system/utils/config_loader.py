@@ -229,7 +229,12 @@ class ConfigLoader:
             'generate_from_clip_text_embeddings': False,
             'generate_from_t5_text_embeddings': False,
             'adapter_aggregation_method': 'none',
-            'text_losses_summed': False
+            'text_losses_summed': False,
+            'compute_global_mean_from_class_means': False,
+            'save_generated_images_splits': [],
+            'generation_split_for_metrics': "train",
+            "test_metrics_splits": ["val", "test"],
+            "train_metrics_splits": ["train"]
         },
         'wandb': {
             'disabled': False

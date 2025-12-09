@@ -1,0 +1,154 @@
+{
+  "experiment": {
+    "name": "generator_training_modes_examples",
+    "description": "Configuration examples for different generator training modes",
+    "use_balooning": true,
+    "optimize_memory_usage": true
+  },
+  "federation": {
+    "diffusion_type": "flux",
+    "global_rounds": 50,
+    "eval_gap": 5
+  },
+  "training": {
+    "learning_rate": 0.001,
+    "optimizer": "AdamW",
+    "local_epochs": 3
+  },
+  "feda2v": {
+    "adapter_aggregation_mode": "avg",
+
+    "// GLOBAL MODEL TRAINING OPTIONS": "==================================================",
+    "global_model_train": false,
+    "global_model_train_epochs": 10,
+    "global_model_train_from_nodes_adapters": false,
+    "global_model_train_from_nodes_audio_embeddings": false,
+    "global_model_train_from_generator": false,
+
+    "// GENERATOR MODES": "==================================================",
+    "// MODE 1: Normal training with generator inference": "Train adapters + use generators",
+    "use_generator": true,
+    "use_pretrained_generators": false,
+
+    "// MODE 2: Generator training mode": "Train adapters AND generators simultaneously",
+    "generator_training_mode": false,
+
+    "// MODE 3: Generator-only mode": "ONLY train generators, skip adapter training",
+    "generator_only_mode": false,
+
+    "// GENERATOR GRANULARITY": "==================================================",
+    "// OPTIONS: 'unified', 'per_class', 'per_group'": "",
+    "// 'unified': Single generator for all classes (default)": "",
+    "// 'per_class': One generator per class": "",
+    "// 'per_group': One generator per group of classes": "",
+    "generator_granularity": "unified",
+
+    "// For 'per_group' mode, define class groups as dict with names": "",
+    "// Example: {'animals': ['dog', 'cat'], 'nature': ['rain', 'wind']}": "",
+    "// Group names are saved in checkpoint metadata": "",
+    "generator_class_groups": null,
+
+    "// GENERATOR CONFIGURATION": "==================================================",
+    "generator_type": "vae",
+    "generator_training_epochs": 5,
+    "generator_augmentation": true,
+    "generator_augmentation_noise": 0.1,
+    "synthetic_samples_per_class": 5,
+    "generator_validation_frequency": 5,
+
+    "// CHECKPOINT CONFIGURATION": "==================================================",
+    "generator_save_checkpoint": true,
+    "generator_load_checkpoint": false,
+    "generator_checkpoint_dir": "checkpoints/generators",
+    "generator_checkpoint_base_name": "vae_generator",
+    "generator_checkpoint_frequency": 10,
+
+    "// IMAGE GENERATION": "==================================================",
+    "generate_nodes_images_frequency": 10,
+    "generate_global_images_frequency": 10,
+    "generate_low_memomy_footprint": true,
+    "generate_global_images_average_text_embeddings": true,
+    "images_output_dir": "output_images",
+    "generate_from_clip_text_embeddings": false,
+    "generate_from_t5_text_embeddings": false,
+
+    "// ADAPTER CONFIGURATION": "==================================================",
+    "t5_adapter_learning_rate": 0.001,
+    "clip_adapter_learning_rate": 0.001,
+    "t5_adapter_weight_decay": 0.0001,
+    "clip_adapter_weight_decay": 0.0001,
+    "adapters_learning_rate": 0.001,
+    "adapters_weight_decay": 0.0001,
+    "adapters_learning_rate_schedule": false,
+    "t5_adapter_learning_rate_schedule": false,
+    "clip_adapter_learning_rate_schedule": true,
+
+    "// AUDIO EMBEDDINGS": "==================================================",
+    "store_audio_embeddings": false,
+    "audio_embedding_file_name": null
+  },
+  "nodes": {
+    "0": {
+      "dataset": "ESC50",
+      "selected_classes": ["dog", "rooster", "pig", "cow", "frog"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4]
+    },
+    "1": {
+      "dataset": "ESC50",
+      "selected_classes": ["rain", "sea_waves", "crackling_fire", "crickets", "chirping_birds"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4]
+    },
+    "2": {
+      "dataset": "ESC50",
+      "selected_classes": ["helicopter", "chainsaw", "siren", "car_horn", "engine"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4]
+    }
+  },
+
+  "// USAGE EXAMPLES": "==================================================",
+  "// EXAMPLE 1 - Generator-only training (unified)": {
+    "feda2v": {
+      "generator_only_mode": true,
+      "generator_training_mode": true,
+      "use_generator": false,
+      "generator_granularity": "unified",
+      "generator_save_checkpoint": true,
+      "generator_checkpoint_frequency": 5
+    }
+  },
+
+  "// EXAMPLE 2 - Per-class generators": {
+    "feda2v": {
+      "generator_only_mode": true,
+      "generator_training_mode": true,
+      "generator_granularity": "per_class",
+      "generator_checkpoint_base_name": "vae_per_class"
+    }
+  },
+
+  "// EXAMPLE 3 - Grouped generators": {
+    "feda2v": {
+      "generator_only_mode": true,
+      "generator_training_mode": true,
+      "generator_granularity": "per_group",
+      "generator_class_groups": {
+        "animals": ["dog", "rooster", "pig", "cow", "frog"],
+        "nature": ["rain", "sea_waves", "crackling_fire", "crickets", "chirping_birds"],
+        "mechanical": ["helicopter", "chainsaw", "siren", "car_horn", "engine"]
+      },
+      "generator_checkpoint_base_name": "vae_grouped"
+    }
+  },
+
+  "// EXAMPLE 4 - Server-only generator training": {
+    "feda2v": {
+      "global_model_train": true,
+      "global_model_train_from_generator": true,
+      "generator_training_mode": false,
+      "use_generator": false
+    }
+  }
+}
