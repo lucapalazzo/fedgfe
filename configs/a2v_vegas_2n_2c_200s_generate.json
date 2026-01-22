@@ -1,0 +1,135 @@
+{
+  "experiment": {
+    "name": "federated_a2v_vegas_generate_from_pretrained",
+    "description": "Generate images using pretrained generators and adapters - 200 images per node respecting dataset classes",
+    "use_balooning": false,
+    "optimize_memory_usage": true
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "diffusion_type": "flux",
+    "num_clients": 3,
+    "global_rounds": 1,
+    "local_epochs": 1,
+    "eval_gap": 1,
+    "model_aggregation": "none",
+    "use_saved_audio_embeddings": false
+  },
+  "training": {
+    "learning_rate": 0.001,
+    "optimizer": "AdamW",
+    "batch_size": 8,
+    "weight_decay": 0.0001
+  },
+  "feda2v": {
+    "_comment_mode": "=== GENERATION-ONLY MODE ===",
+    "_comment_mode_desc": "Load pretrained generators and adapters, then generate images",
+
+    "_comment_generator": "=== PRETRAINED GENERATOR SETTINGS ===",
+    "use_generator": true,
+    "generator_type": "vae",
+    "generator_training_mode": false,
+    "generator_only_mode": false,
+    "use_pretrained_generators": true,
+
+    "generator_granularity": "per_class",
+    "generator_class_groups": null,
+
+    "generator_checkpoint_dir": "checkpoints/generators/vegas-2n-2c-200s",
+    "generator_checkpoint_base_name": "vae_perclass",
+    "generator_save_checkpoint": false,
+    "generator_load_checkpoint": true,
+    "generator_checkpoint_frequency": 1,
+    "generator_training_sequence_length": 1214,
+
+    "_comment_adapter_checkpoint": "=== ADAPTER CHECKPOINT SETTINGS (LOAD PRETRAINED) ===",
+    "adapter_checkpoint_dir": "checkpoints/adapters/vegas-2n-2c-200s",
+    "adapter_checkpoint_base_name": "vegas-2n-2c-200s",
+    "adapter_save_checkpoint": false,
+    "adapter_load_checkpoint": true,
+    "adapter_checkpoint_frequency": 1,
+    "adapter_checkpoint_per_type": true,
+
+    "_comment_training": "=== NO TRAINING (GENERATION ONLY) ===",
+    "generator_training_epochs": 0,
+    "generator_augmentation": false,
+    "generator_augmentation_noise": 0.0,
+    "generator_validation_frequency": 1,
+
+    "_comment_adapter": "=== ADAPTER SETTINGS (NO TRAINING) ===",
+    "adapter_aggregation_mode": "none",
+    "global_model_train": false,
+    "global_model_train_epochs": 0,
+    "global_model_train_from_nodes_adapters": false,
+
+    "t5_adapter_learning_rate": 0.01,
+    "t5_adapter_weight_decay": 0.01,
+    "clip_adapter_learning_rate": 0.001,
+    "clip_adapter_weight_decay": 0.01,
+    "adapters_learning_rate": 0.001,
+    "adapters_weight_decay": 0.01,
+
+    "adapters_learning_rate_schedule": false,
+    "t5_adapter_learning_rate_schedule": false,
+    "clip_adapter_learning_rate_schedule": false,
+
+    "_comment_generation": "=== IMAGE GENERATION SETTINGS ===",
+    "_comment_generation_desc": "Generate N images per node where N = samples_per_node (200)",
+    "generate_nodes_images_frequency": 1,
+    "generate_global_images_frequency": 0,
+    "generate_low_memomy_footprint": true,
+    "images_output_dir": "output_images/vegas-2n-2c-200s-generate",
+    "output_image_base_name": "generated",
+    "generate_from_clip_text_embeddings": true,
+    "generate_from_t5_text_embeddings": true,
+    "nodes_train_metrics_splits": [],
+    "nodes_test_metrics_splits": [],
+    "server_train_metrics_splits": [],
+    "server_test_metrics_splits": [],
+    "save_generated_images_splits": ["train"],
+
+    "_comment_num_samples": "=== NUMBER OF IMAGES TO GENERATE ===",
+    "_comment_num_samples_desc": "Each node will generate samples_per_node images (200 per node)",
+
+    "store_audio_embeddings": false,
+    "audio_embedding_file_name": null
+  },
+  "nodes": {
+    "0": {
+      "dataset": "VEGAS",
+      "selected_classes": ["dog"],
+      "node_split_id": 0,
+      "samples_per_node": 200,
+      "node_split_seed": 42,
+      "diffusion_type": "flux",
+      "train_ratio": 1.0,
+      "val_ratio": 0.0,
+      "test_ratio": 0.0,
+      "_comment": "Generate 200 images of 'dog' class using pretrained generator and adapters"
+    },
+    "1": {
+      "dataset": "VEGAS",
+      "selected_classes": ["chainsaw"],
+      "node_split_id": 0,
+      "samples_per_node": 200,
+      "node_split_seed": 42,
+      "diffusion_type": "flux",
+      "train_ratio": 1.0,
+      "val_ratio": 0.0,
+      "test_ratio": 0.0,
+      "_comment": "Generate 200 images of 'chainsaw' class using pretrained generator and adapters"
+    }
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+  "dataset": {
+    "name": "VEGAS",
+    "path": "./data"
+  },
+  "wandb": {
+    "disabled": false
+  }
+}

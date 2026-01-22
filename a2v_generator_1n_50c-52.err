@@ -1,0 +1,47 @@
+wandb: Currently logged in as: lpalazzo (ngslung) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.20.1
+wandb: Run data is saved locally in /home/lpala/fedgfe/wandb/run-20260120_054202-jdwrz41k
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run autumn-lion-1296
+wandb: ⭐️ View project at https://wandb.ai/ngslung/FedA2V
+wandb: 🚀 View run at https://wandb.ai/ngslung/FedA2V/runs/jdwrz41k
+Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.48, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
+Device set to use cuda:0
+Device set to use cuda
+
+  Gen class 'train' R:1:   0%|          | 0/100 [00:00<?, ?e/s]
+                                                               
+Traceback (most recent call last):
+  File "/home/lpala/fedgfe/system/main.py", line 824, in <module>
+    run(args)
+  File "/home/lpala/fedgfe/system/main.py", line 470, in run
+    server.train()
+  File "/home/lpala/fedgfe/system/flcore/servers/serverA2V.py", line 636, in train
+    self.train_nodes(i, training_task=training_task)
+  File "/home/lpala/fedgfe/system/flcore/servers/serverA2V.py", line 586, in train_nodes
+    node.train()
+  File "/home/lpala/fedgfe/system/flcore/clients/clientA2V.py", line 440, in train
+    self.train_node_generator()
+  File "/home/lpala/fedgfe/system/flcore/clients/clientA2V.py", line 3451, in train_node_generator
+    generator_loss = self.train_generator(class_outputs_for_generator)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lpala/fedgfe/system/flcore/clients/clientA2V.py", line 3601, in train_generator
+    loss = self._train_single_generator(single_class_data, generator, optimizer, f"class '{gen_key}'")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lpala/fedgfe/system/flcore/clients/clientA2V.py", line 3976, in _train_single_generator
+    optimizer.step()
+  File "/home/lpala/miniconda3/envs/flvit/lib/python3.12/site-packages/torch/optim/optimizer.py", line 493, in wrapper
+    out = func(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lpala/miniconda3/envs/flvit/lib/python3.12/site-packages/torch/optim/optimizer.py", line 91, in _use_grad
+    ret = func(self, *args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lpala/miniconda3/envs/flvit/lib/python3.12/site-packages/torch/optim/adamw.py", line 232, in step
+    has_complex = self._init_group(
+                  ^^^^^^^^^^^^^^^^^
+  File "/home/lpala/miniconda3/envs/flvit/lib/python3.12/site-packages/torch/optim/adamw.py", line 175, in _init_group
+    state["exp_avg_sq"] = torch.zeros_like(
+                          ^^^^^^^^^^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 3.56 GiB. GPU 0 has a total capacity of 79.19 GiB of which 1.58 GiB is free. Process 1822705 has 48.24 GiB memory in use. Including non-PyTorch memory, this process has 29.35 GiB memory in use. Of the allocated memory 28.50 GiB is allocated by PyTorch, and 121.22 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+
+ERROR conda.cli.main_run:execute(125): `conda run python system/main.py --config configs/a2v_generator_1n_50c.json` failed. (See above for error)

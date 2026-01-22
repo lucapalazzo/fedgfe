@@ -40,7 +40,12 @@
     "t5_adapter_learning_rate_schedule": false,
     "generate_from_clip_text_embeddings": false,
     "generate_from_t5_text_embeddings": false,
-    "images_output_dir": "esc50-5n-ac-sa-avg"
+    "images_output_dir": "esc50-5n-ac-sa-avg",
+    "nodes_train_metrics_splits": ["train"],
+    "nodes_test_metrics_splits": ["test"],
+    "server_train_metrics_splits": ["train"],
+    "server_test_metrics_splits": ["val"],
+    "save_generated_images_splits": ["val", "test"]
   },
   "nodes": {
     "0": {

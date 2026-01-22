@@ -1,0 +1,148 @@
+{
+  "experiment": {
+    "name": "federated_a2v_generator_training_all_classes",
+    "description": "Training one VAE generator per class for all 50 ESC50 classes",
+    "use_balooning": false,
+    "optimize_memory_usage": true
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "diffusion_type": "flux",
+    "num_clients": 50,
+    "global_rounds": 4,
+    "local_epochs": 100,
+    "eval_gap": 1,
+    "model_aggregation": "per_class_average",
+    "use_saved_audio_embeddings": false
+  },
+  "training": {
+    "learning_rate": 0.001,
+    "optimizer": "AdamW",
+    "batch_size": 8,
+    "weight_decay": 0.0001
+  },
+  "feda2v": {
+    "use_generator": false,
+    "generator_type": "vae",
+    "generator_training_mode": false,
+    "generator_only_mode": false,
+    "use_pretrained_generators": false,
+
+    "_comment_granularity_note": "One generator per class - Best quality but higher memory usage",
+    "generator_granularity": "per_class",
+    "generator_class_groups": null,
+
+    "generator_checkpoint_dir": "checkpoints/generators/vae_50n_1c_real",
+    "generator_checkpoint_base_name": "vae_perclass",
+    "generator_save_checkpoint": false,
+    "generator_load_checkpoint": true,
+    "generator_checkpoint_frequency": 5,
+
+    "_comment_adapter_checkpoint": "=== ADAPTER CHECKPOINT SETTINGS ===",
+    "adapter_checkpoint_dir": "checkpoints/adapters/esc50-50n-1c-real",
+    "adapter_checkpoint_base_name": "esc50-50n-1c-real",
+    "adapter_save_checkpoint": true,
+    "adapter_load_checkpoint": false,
+    "adapter_checkpoint_frequency": 1,
+    "adapter_checkpoint_per_type": true,
+
+    "_comment_training": "=== GENERATOR TRAINING SETTINGS ===",
+    "generator_training_epochs": 0,
+    "generator_augmentation": true,
+    "generator_augmentation_noise": 0.1,
+    "generator_validation_frequency": 5,
+    "generator_training_sequence_length": 1214,
+
+    "_comment_adapter": "=== ADAPTER SETTINGS (Skipped in generator-only mode) ===",
+    "adapter_aggregation_mode": "none",
+    "global_model_train": false,
+    "global_model_train_epochs": 0,
+    "global_model_train_from_nodes_adapters": false,
+
+    "t5_adapter_learning_rate": 0.01,
+    "t5_adapter_weight_decay": 0.0001,
+    "clip_adapter_learning_rate": 0.0001,
+    "clip_adapter_weight_decay": 0.0001,
+    "adapters_learning_rate": 0.001,
+    "adapters_weight_decay": 0.0001,
+
+    "adapters_learning_rate_schedule": false,
+    "t5_adapter_learning_rate_schedule": false,
+    "clip_adapter_learning_rate_schedule": true,
+
+    "_comment_generation": "=== IMAGE GENERATION (disabled in training mode) ===",
+    "generate_nodes_images_frequency": 1,
+    "generate_global_images_frequency": 0,
+    "generate_low_memomy_footprint": true,
+    "images_output_dir": "output_images/esc50-50n-1c-real",
+    "generate_from_clip_text_embeddings": false,
+    "generate_from_t5_text_embeddings": false,
+
+    "store_audio_embeddings": false,
+    "audio_embedding_file_name": null
+  },
+  "nodes": {
+    "0": {"dataset": "ESC50", "selected_classes": ["dog"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "1": {"dataset": "ESC50", "selected_classes": ["rooster"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "2": {"dataset": "ESC50", "selected_classes": ["pig"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "3": {"dataset": "ESC50", "selected_classes": ["cow"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "4": {"dataset": "ESC50", "selected_classes": ["frog"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "5": {"dataset": "ESC50", "selected_classes": ["cat"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "6": {"dataset": "ESC50", "selected_classes": ["hen"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "7": {"dataset": "ESC50", "selected_classes": ["insects"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "8": {"dataset": "ESC50", "selected_classes": ["sheep"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "9": {"dataset": "ESC50", "selected_classes": ["crow"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "10": {"dataset": "ESC50", "selected_classes": ["rain"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "11": {"dataset": "ESC50", "selected_classes": ["sea_waves"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "12": {"dataset": "ESC50", "selected_classes": ["crackling_fire"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "13": {"dataset": "ESC50", "selected_classes": ["crickets"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "14": {"dataset": "ESC50", "selected_classes": ["chirping_birds"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "15": {"dataset": "ESC50", "selected_classes": ["water_drops"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "16": {"dataset": "ESC50", "selected_classes": ["wind"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1   },
+    "17": {"dataset": "ESC50", "selected_classes": ["pouring_water"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "18": {"dataset": "ESC50", "selected_classes": ["toilet_flush"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "19": {"dataset": "ESC50", "selected_classes": ["thunderstorm"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "20": {"dataset": "ESC50", "selected_classes": ["crying_baby"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "21": {"dataset": "ESC50", "selected_classes": ["sneezing"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "22": {"dataset": "ESC50", "selected_classes": ["clapping"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "23": {"dataset": "ESC50", "selected_classes": ["breathing"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "24": {"dataset": "ESC50", "selected_classes": ["coughing"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "25": {"dataset": "ESC50", "selected_classes": ["footsteps"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "26": {"dataset": "ESC50", "selected_classes": ["laughing"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "27": {"dataset": "ESC50", "selected_classes": ["brushing_teeth"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "28": {"dataset": "ESC50", "selected_classes": ["snoring"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "29": {"dataset": "ESC50", "selected_classes": ["drinking_sipping"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "30": {"dataset": "ESC50", "selected_classes": ["door_wood_knock"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "31": {"dataset": "ESC50", "selected_classes": ["mouse_click"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "32": {"dataset": "ESC50", "selected_classes": ["keyboard_typing"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "33": {"dataset": "ESC50", "selected_classes": ["door_wood_creaks"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "34": {"dataset": "ESC50", "selected_classes": ["can_opening"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "35": {"dataset": "ESC50", "selected_classes": ["washing_machine"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "36": {"dataset": "ESC50", "selected_classes": ["vacuum_cleaner"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "37": {"dataset": "ESC50", "selected_classes": ["clock_alarm"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "38": {"dataset": "ESC50", "selected_classes": ["clock_tick"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "39": {"dataset": "ESC50", "selected_classes": ["glass_breaking"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "40": {"dataset": "ESC50", "selected_classes": ["helicopter"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "41": {"dataset": "ESC50", "selected_classes": ["chainsaw"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "42": {"dataset": "ESC50", "selected_classes": ["siren"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "43": {"dataset": "ESC50", "selected_classes": ["car_horn"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "44": {"dataset": "ESC50", "selected_classes": ["engine"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "45": {"dataset": "ESC50", "selected_classes": ["train"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "46": {"dataset": "ESC50", "selected_classes": ["church_bells"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "47": {"dataset": "ESC50", "selected_classes": ["airplane"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "48": {"dataset": "ESC50", "selected_classes": ["fireworks"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1},
+    "49": {"dataset": "ESC50", "selected_classes": ["hand_saw"], "diffusion_type": "flux", "train_ratio": 0.9, "val_ratio": 0.1}
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+  "dataset": {
+    "name": "ESC50",
+    "path": "./data"
+  },
+  "wandb": {
+    "disabled": false
+  }
+}

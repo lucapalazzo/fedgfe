@@ -77,21 +77,19 @@ class DownstreamSinestesia(Downstream):
             args.img_lcm_lora_id = "latent-consistency/lcm-lora-flux-base"
             args.img_lcm_lora_id = "latent-consistency/lcm-lora-sdxl"
 
-
-
-        self.sinestesia_model = SinestesiaWithClassifier (
-            args.audio_model_name,
-            args.image_model_name,
-            args.img_pipe_name,
-            args.img_lcm_lora_id,
-            args.audio_pipe_name,
-            args.diffusion_type,
-            args.use_act_loss,
-            self.device1,
-            self.device2,
-            self.device3,
-            args.mode
-        )
+        # self.sinestesia_model = SinestesiaWithClassifier (
+        #     args.audio_model_name,
+        #     args.image_model_name,
+        #     args.img_pipe_name,
+        #     args.img_lcm_lora_id,
+        #     args.audio_pipe_name,
+        #     args.diffusion_type,
+        #     args.use_act_loss,
+        #     self.device1,
+        #     self.device2,
+        #     self.device3,
+        #     args.mode
+        # )
 
         self.num_classes = num_classes
         self.use_classifier_loss = use_classifier_loss
@@ -143,11 +141,11 @@ class DownstreamSinestesia(Downstream):
         self.mode = 'train_nodata'
         ast_hf_model_name = 'MIT/ast-finetuned-audioset-10-10-0.4593' 
 
-        if self.sinestesia_model is not None and self.sinestesia_model.sinestesia.imagediffusion is None:
-            self.audio2image_model = Audio2Image(max_lenght1, max_lenght2, ast_hf_model_name, self.diffusion_type, use_act_loss, self.torch_dtype, self.mode)
-            self.sinestesia_model.to(self.device)
-        elif self.sinestesia_model is not None:
-            self.audio2image_model = self.get_audio2image_model_from_sinestesia()
+        # if self.sinestesia_model is not None and self.sinestesia_model.sinestesia.imagediffusion is None:
+        #     self.audio2image_model = Audio2Image(max_lenght1, max_lenght2, ast_hf_model_name, self.diffusion_type, use_act_loss, self.torch_dtype, self.mode)
+        #     self.sinestesia_model.to(self.device)
+        # elif self.sinestesia_model is not None:
+        #     self.audio2image_model = self.get_audio2image_model_from_sinestesia()
 
     # @property
     # def audio2image_model(self):
@@ -324,14 +322,17 @@ class DownstreamSinestesia(Downstream):
         preds = []
 
         for i, pred in enumerate(prediction):
-            predicted_label = classes[pred[0]['label']] #classes_dict è un dizionario che puoi creare che mappa l'id testuale in id numerico
+            if isinstance(pred, list):
+                predicted_label = classes[pred[0]['label']] #classes_dict è un dizionario che puoi creare che mappa l'id testuale in id numerico
+            else:
+                predicted_label = classes[pred['label']] #classes_dict è un dizionario che puoi creare che mappa l'id testuale in id numerico
             preds.append(predicted_label)
 
         preds = torch.tensor(preds)
         return preds
 
     def _compute_classification_metrics(self, preds, labels):
-        preds = preds.numpy()
+        preds = preds.detach().cpu().numpy()
         labels = labels.cpu().numpy() # qui labels sono tutte le annotazioni corrette dei sample 
 
         accuracy = accuracy_score(labels, preds)

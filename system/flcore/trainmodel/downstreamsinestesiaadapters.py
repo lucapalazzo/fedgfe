@@ -8,22 +8,14 @@ from tqdm import tqdm
 
 from utils.node_metric import NodeMetric
 from flcore.trainmodel.Audio2Visual_NoData.src.models.sinestesia import SinestesiaWithClassifier
-from transformers import ASTFeatureExtractor
+from transformers import ASTFeatureExtractor, ASTModel
 # Use adapter with INPUT BatchNorm for heterogeneous batch stability
-from flcore.trainmodel.Audio2Visual_NoData.src.models.projection import Adapter
+from flcore.trainmodel.Audio2Visual_NoData.src.models.projection import Adapter, ASTAdapter
 from flcore.trainmodel.Audio2Visual_NoData.src.models.multi_head_attention import MAPBlock
 
 logger = logging.getLogger(__name__)
 
 class DownstreamSinestesiaAdapters(DownstreamSinestesia):
-    """
-    Downstream task wrapper for Sinestesia audio-visual model.
-
-    This class wraps the SinestesiaWithClassifier model to work with the
-    federated learning framework, handling forward passes, loss computation,
-    and metrics tracking.
-    """
-
     def __init__(self,
                  args,
                  num_classes=10,
@@ -35,7 +27,11 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
                  torch_dtype=torch.float32,
                  enable_diffusion=False,
                  use_cls_token_only=False,
-                 adapter_dropout=0):
+                 adapter_dropout=0.1,
+                 ast_model_name="MIT/ast-finetuned-audioset-10-10-0.4593",
+                 use_pretrained_generators=False,
+                 generators_dict=None,
+                 init_ast_model=True):
 
         # Initialize without backbone (we'll use sinestesia_model directly)
         super(DownstreamSinestesiaAdapters, self).__init__(
@@ -50,6 +46,13 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
 
         self.torch_dtype = torch_dtype
         self.mse = nn.MSELoss().to(self.torch_dtype)
+
+        # Callback function for caching embeddings (set by client)
+        self.cache_callback = None
+
+        self.use_map_adapters = False
+
+        self.init_ast_model = init_ast_model
 
         self.adapters = {}
         self.adapters_modules = None
@@ -72,9 +75,28 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
             self.clip_n_latents = 77
             self.t5_n_latents = None
 
-        self.ast_transformer = self.get_ast_transformer()
-        self.ast_feature_extractor = self.get_ast_feature_extractor()
+        # Store the flag for later use
+        self.use_pretrained_generators = use_pretrained_generators
 
+        # Store generators dictionary: {class_id: generator_model}
+        # This will be populated by the server via set_generators() method
+        self.generators_dict = generators_dict if generators_dict is not None else {}
+
+        # Initialize AST model and feature extractor only if NOT using pretrained generators
+        # When using pretrained generators, we generate synthetic audio embeddings directly
+        # without needing to process real audio through AST
+        self.ast_feature_extractor = None
+        self.ast_model = None
+
+        if self.init_ast_model:
+            logger.info(f"Initializing AST model: {ast_model_name}")
+            self.ast_feature_extractor = ASTFeatureExtractor.from_pretrained(ast_model_name)
+            self.ast_model = ASTModel.from_pretrained(ast_model_name)
+            logger.info("AST model initialized successfully")
+        else:
+            logger.info("="*80)
+            logger.info("SKIPPING AST INITIALIZATION - Using pretrained generators mode or disabled by constructor")
+            logger.info("="*80)
 
         self.setup_adapters()
 
@@ -82,38 +104,38 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
         self.setup_losses()
 
     def setup_losses(self):
+        # Use reduction='none' to get per-sample losses, then we can average them properly
+        # This helps with batch stability when different classes have very different embeddings
         for adapter_name in self.adapters.keys():
-            self.adapters_losses[adapter_name] = nn.MSELoss()
+            self.adapters_losses[adapter_name] = nn.MSELoss(reduction='mean')
 
     def setup_adapters(self):
         self.adapters_modules = nn.ModuleList()
 
         if self.diffusion_type == 'sd' or self.diffusion_type == 'flux':
             self.adapters['clip'] = torch.nn.Sequential()
-            self.adapters['clip'].add_module ( "adapter_clip", Adapter(dropout=0, input_dim=768, hidden_dims=[1024,2048], output_dim=768))
+            if self.use_map_adapters:
+                self.adapters['clip'].add_module ( "adapter_clip", ASTAdapter(embed_dim=768, n_latents=64, n_heads=8))
+            else:
+                self.adapters['clip'].add_module ( "adapter_clip", Adapter(input_dim=768, hidden_dims=[1024,2048], output_dim=768))
             self.adapters['clip'].add_module ( "projection_clip", MAPBlock(n_latents=self.clip_n_latents, embed_dim=768, n_heads=8))
             self.adapters_modules.add_module ( "clip", self.adapters['clip'])
 
         if self.diffusion_type == 'flux':
             self.adapters['t5'] = torch.nn.Sequential()
-            self.adapters['t5'].add_module ( "adapter_t5", Adapter(input_dim=768, hidden_dims=[1024,2048,2048], output_dim=4096))
+            if self.use_map_adapters:
+                self.adapters['t5'].add_module ( "adapter_t5", ASTAdapter(embed_dim=768, n_latents=64, n_heads=8, output_dim=4096))
+            else:
+                self.adapters['t5'].add_module ( "adapter_t5", Adapter(input_dim=768, hidden_dims=[1024,2048,2048], output_dim=4096))
             self.adapters['t5'].add_module (  "projection_t5", MAPBlock(n_latents=self.t5_n_latents, embed_dim=4096, n_heads=8))
             self.adapters_modules.add_module ( "t5", self.adapters['t5'])
         
         return self.adapters
-        if self.diffusion_type == 'sd' or self.diffusion_type == 'flux':
-            self.clip_adapter = Adapter(input_dim=768, hidden_dims=[1024], output_dim=768).to(self.diffusion_dtype)
-            self.clip_projection = MAPBlock(n_latents=77, embed_dim=768, n_heads=8).to(self.diffusion_dtype)
-
-        elif self.diffusion_type == 'flux':
-            self.clip_adapter = Adapter(input_dim=768, hidden_dims=[1024], output_dim=768).to(self.diffusion_dtype)
-            self.clip_projection = MAPBlock(n_latents=1, embed_dim=768, n_heads=8).to(self.diffusion_dtype)
-            self.t5_adapter = Adapter(input_dim=768, hidden_dims=[1024,2048,2048], output_dim=4096).to(self.diffusion_dtype)
-            self.t5_projection = Adapter(input_dim=768, hidden_dims=[1024,2048,2048], output_dim=4096).to(self.diffusion_dtype)
 
     def to(self, device):
-        self.audio2image_model.to(device)
-        self.ast_transformer.to(device)
+        # Only move AST model to device if it was initialized
+        if self.ast_model is not None:
+            self.ast_model.to(device)
         self.adapters_modules.to(device)
         self.device = device
         return self
@@ -127,30 +149,49 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
         return []
 
     def get_ast_transformer(self):
-        return self.audio2image_model.ast_model
+        return self.ast_model
     
     def get_ast_feature_extractor(self):
-        return self.audio2image_model.feature_extractor
+        return self.ast_feature_extractor
 
-    def get_sinestesia_adapters(self):
+    def set_generators(self, generators_dict):
+        """
+        Set the dictionary of class-specific generators.
+        Called by the server to pass pretrained generators to the client model.
 
-        a2i_model = self.get_audio2image_model_from_sinestesia()
+        Args:
+            generators_dict (dict): Dictionary mapping class_id (int) -> generator model
+                                   Example: {0: generator_class0, 1: generator_class1, ...}
+        """
+        self.generators_dict = generators_dict
+        logger.info(f"Set {len(generators_dict)} class-specific generators")
 
-        self.adapters_modules = nn.ModuleList()
+        # Move generators to the correct device
+        if self.device is not None:
+            for class_id, generator in self.generators_dict.items():
+                if generator is not None:
+                    generator.to(self.device)
+                    generator.eval()  # Set to eval mode for inference
 
-        if self.diffusion_type == 'sd' or self.diffusion_type == 'flux':
-            self.adapters['clip'] = torch.nn.Sequential()
-            self.adapters['clip'].add_module ( "adapter_clip", a2i_model.clip_adapter)
-            self.adapters['clip'].add_module ( "projection_clip", a2i_model.clip_projection )
-            self.adapters_modules.add_module ( "clip", self.adapters['clip'])
+    # def get_sinestesia_adapters(self):
 
-        if self.diffusion_type == 'flux':
-            self.adapters['t5'] = torch.nn.Sequential()
-            self.adapters['t5'].add_module ( "adapter_t5", a2i_model.t5_adapter)
-            self.adapters['t5'].add_module (  "projection_t5", a2i_model.t5_projection )
-            self.adapters_modules.add_module ( "t5", self.adapters['t5'])
+    #     a2i_model = self.get_audio2image_model_from_sinestesia()
+
+    #     self.adapters_modules = nn.ModuleList()
+
+    #     if self.diffusion_type == 'sd' or self.diffusion_type == 'flux':
+    #         self.adapters['clip'] = torch.nn.Sequential()
+    #         self.adapters['clip'].add_module ( "adapter_clip", a2i_model.clip_adapter)
+    #         self.adapters['clip'].add_module ( "projection_clip", a2i_model.clip_projection )
+    #         self.adapters_modules.add_module ( "clip", self.adapters['clip'])
+
+    #     if self.diffusion_type == 'flux':
+    #         self.adapters['t5'] = torch.nn.Sequential()
+    #         self.adapters['t5'].add_module ( "adapter_t5", a2i_model.t5_adapter)
+    #         self.adapters['t5'].add_module (  "projection_t5", a2i_model.t5_projection )
+    #         self.adapters_modules.add_module ( "t5", self.adapters['t5'])
         
-        return self.adapters
+    #     return self.adapters
         
     def train(self, mode: bool = True) -> None:
         for adapter in self.adapters.values():
@@ -164,7 +205,7 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
 
 
 
-    def define_metrics(self, metrics_path=None):
+    def define_metrics(self, metrics_path=None, train_splits = None, test_splits = None ):
         # if self.wandb_log == False:
         #     return None
 
@@ -173,18 +214,33 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
         path = "/" if metrics_path is None else "/" + metrics_path 
 
         # Train metrics
-        for metric in self.defined_train_metrics:
-            metric_name = f"train{path}{metric}"
-            # metric_name = f"train{path}{self.task_name}_{metric}"
-            self.defined_train_metrics[metric] = metric_name
-            defined_metrics.append(metric_name)
+        if train_splits is not None and type(train_splits) == list:
+            for split in train_splits:
+                for metric in self.defined_train_metrics:
+                    metric_name = f"train{path}{metric}_on_{split}"
+                    self.defined_train_metrics[metric] = metric_name
+                    defined_metrics.append(metric_name)
+        else:
+            for metric in self.defined_train_metrics:
+                metric_name = f"train{path}{metric}"
+                # metric_name = f"train{path}{self.task_name}_{metric}"
+                self.defined_train_metrics[metric] = metric_name
+                defined_metrics.append(metric_name)
 
         # Test metrics
-        for metric in self.defined_test_metrics:
-            # metric_name = f"test{path}{self.task_name}_{metric}"
-            metric_name = f"test{path}{metric}"
-            self.defined_test_metrics[metric] = metric_name
-            defined_metrics.append(metric_name)
+        if test_splits is not None and type(test_splits) == list:
+            for split in test_splits:
+                for metric in self.defined_test_metrics:
+                    metric_name = f"test{path}{metric}_on_{split}"
+                    self.defined_test_metrics[metric] = metric_name
+                    defined_metrics.append(metric_name)
+
+        else:
+            for metric in self.defined_test_metrics:
+                # metric_name = f"test{path}{self.task_name}_{metric}"
+                metric_name = f"test{path}{metric}"
+                self.defined_test_metrics[metric] = metric_name
+                defined_metrics.append(metric_name)
 
         for metric in defined_metrics:
             wandb.define_metric(metric, step_metric="round")
@@ -196,20 +252,20 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
                 img_target_pooled_prompt_embeds=None,
                 audio_target_prompt_embeds=None,
                 baseline_prompt_embeds=None,
-                baseline_pooled_prompt_embeds=None, audio_embedding=None):
+                baseline_pooled_prompt_embeds=None,
+                audio_embedding=None,
+                labels=None,
+                class_names=None,
+                return_loss=True):
 
-
-
-        if audio_embedding is None:
+        if audio_embedding is not None:
+            x = audio_embedding.to(self.ast_model.device, self.torch_dtype)
+        else:
             x = self.ast_feature_extractor(audio,sampling_rate=16000,
                                            return_tensors="pt",
-                                           padding = True).input_values.to(self.ast_transformer.device, self.torch_dtype)
-            x = self.ast_transformer(x).last_hidden_state
-        else:
-            x = audio_embedding.to(self.ast_transformer.device, self.torch_dtype)
+                                           padding = True).input_values.to(self.ast_model.device, self.torch_dtype)
+            x = self.ast_model(x).last_hidden_state
 
-        # Extract CLS token if configured to use only CLS token
-        # The CLS token is typically the first token (index 0) in the sequence
         if self.use_cls_token_only:
             x_cls = x[:, 0:1, :]  # Shape: (batch_size, 1, hidden_dim) - keep dimension for compatibility
             logger.debug(f"Using CLS token only. Original shape: {x.shape}, CLS shape: {x_cls.shape}")
@@ -217,317 +273,34 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
 
         output = {}
         losses = {}
+        targets = { 'clip': img_target_pooled_prompt_embeds, 't5': img_target_prompt_embeds}
         x = x.detach()
         output['audio_embeddings'] = x
         for adapter_name, adapter in self.adapters.items():
-            # Process full sequence through adapter
-            adapter_output = adapter(x)  # Shape: [batch, n_latents, hidden_dim]
+            output[adapter_name] = adapter(x)
 
-           
-            if adapter_name == 'clip':
-                # output[f'{adapter_name}_full'] = adapter_output
-
-                # adapter_output_pooled = adapter_output.mean(dim=1)  # Shape: [batch, hidden_dim]
-                # output[adapter_name] = adapter_output_pooled
-
-                # Now both are [batch, 768]
-                losses[adapter_name] = self.adapters_losses[adapter_name](
-                    adapter_output,
-                    img_target_pooled_prompt_embeds
-                )
-            elif adapter_name == 't5':
-                losses[adapter_name] = self.adapters_losses[adapter_name](
-                    adapter_output,
-                    img_target_prompt_embeds
-                )
-
-        # text_loss = self.text_mse( output, target_prompt_embeds= img_target_prompt_embeds, target_pooled_prompt_embeds=img_target_pooled_prompt_embeds)
-
-        output['text_loss'] = losses
+        if return_loss: 
+            text_loss = self.text_mse( output, targets)
+            output['text_loss'] = text_loss
 
         return output
     
-    def text_mse(self, output, target_prompt_embeds, target_pooled_prompt_embeds=None,):
-        
-        for model in self.adapters.keys():
-            if model == 'clip':
-                pooled_prompt_embeds = output['clip']
-            elif model == 't5':
-                prompt_embeds = output['t5']
+    def text_mse(self, output, targets):
 
-        if self.diffusion_type == 'flux' and target_pooled_prompt_embeds is not None:
-            mse_t5 = self.mse(target_prompt_embeds, prompt_embeds)
-            mse_clip = self.mse(target_pooled_prompt_embeds, pooled_prompt_embeds)
-            return {'t5': mse_t5 , 'clip': mse_clip}
-        elif self.diffusion_type == 'sd' and target_prompt_embeds is not None:
-            mse_clip = self.mse(target_prompt_embeds, pooled_prompt_embeds)
-            return {'clip': mse_clip}
-        else:
+        losses = {} 
+        if self.diffusion_type == 'flux':
+            mse_t5 = self.mse(output['t5'], targets['t5'])
+            losses['t5'] = mse_t5
+
+        if self.diffusion_type == 'sd' or self.diffusion_type == 'flux':
+            mse_clip = self.mse(output['clip'], targets['clip'])
+            losses['clip'] = mse_clip
+        
+        if len(losses) == 0:
             logger.warn("No target prompt embeddings provided for text MSE computation.")
 
-        return torch.tensor(0.0, device=self.device, requires_grad=True)
+        return losses
 
-    def downstream_loss(self, outputs, labels=None, samples=None):
-        """
-        Compute combined loss from Sinestesia outputs.
-
-        Args:
-            outputs: Dictionary with model outputs from forward()
-            labels: Ground truth labels (for classifier)
-            samples: Additional sample information
-
-        Returns:
-            Combined loss tensor
-        """
-        total_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
-        loss_components = {}
-
-        # Image text loss (from audio2image)
-        if outputs.get('img_text_loss') is not None:
-            img_text_loss = outputs['img_text_loss']
-            total_loss = total_loss + self.loss_weights['img_text'] * img_text_loss
-            loss_components['img_text_loss'] = img_text_loss.item()
-
-        # Image reconstruction loss
-        if outputs.get('image_loss') is not None:
-            image_loss = outputs['image_loss']
-            total_loss = total_loss + self.loss_weights['image'] * image_loss
-            loss_components['image_loss'] = image_loss.item()
-
-        # Audio text loss (from image2audio)
-        if outputs.get('audio_text_loss') is not None:
-            audio_text_loss = outputs['audio_text_loss']
-            total_loss = total_loss + self.loss_weights['audio_text'] * audio_text_loss
-            loss_components['audio_text_loss'] = audio_text_loss.item()
-
-        # Classification loss (if using classifier)
-        if self.use_classifier_loss and outputs.get('logits') is not None and labels is not None:
-            logits = outputs['logits']
-
-            # Handle different label formats
-            if isinstance(labels, dict) and 'labels' in labels:
-                labels = labels['labels']
-
-            # Ensure labels are on correct device and long type
-            if isinstance(labels, torch.Tensor):
-                labels = labels.to(self.device).long()
-
-                # Handle multi-dimensional labels
-                if len(labels.shape) > 1:
-                    labels = labels[:, 0]  # Take first label if multi-task
-
-                classifier_loss = self.classification_loss(logits, labels)
-                total_loss = total_loss + self.loss_weights['classifier'] * classifier_loss
-                loss_components['classifier_loss'] = classifier_loss.item()
-
-        return total_loss, loss_components
-
-    def loss(self, outputs, labels=None, samples=None):
-        """
-        Compute loss (wrapper for downstream_loss).
-
-        Args:
-            outputs: Model outputs
-            labels: Ground truth labels
-            samples: Additional sample information
-
-        Returns:
-            Loss tensor
-        """
-        total_loss, _ = self.downstream_loss(outputs, labels, samples)
-        return total_loss
-
-    # def train_metrics(self, dataloader, metrics=None):
-    #     """
-    #     Compute training metrics on a dataloader.
-
-    #     Args:
-    #         dataloader: DataLoader with training data
-    #         metrics: Optional existing metrics object
-
-    #     Returns:
-    #         NodeMetric object with computed metrics
-    #     """
-    #     train_num = 0
-    #     total_loss = 0.0
-    #     total_components = {
-    #         'img_text_loss': 0.0,
-    #         'image_loss': 0.0,
-    #         'audio_text_loss': 0.0,
-    #         'classifier_loss': 0.0
-    #     }
-    #     total_correct = 0
-
-    #     self.eval()
-
-    #     with torch.no_grad():
-    #         pbar = tqdm(dataloader, desc="Computing train metrics", unit="batch")
-    #         for batch_data in pbar:
-    #             # Handle different data formats
-    #             if isinstance(batch_data, (tuple, list)) and len(batch_data) >= 2:
-    #                 samples, labels = batch_data[0], batch_data[1]
-    #             elif isinstance(batch_data, dict):
-    #                 samples = batch_data.get('audio', batch_data.get('samples'))
-    #                 labels = batch_data.get('label', batch_data.get('labels'))
-    #             else:
-    #                 continue
-
-    #             # Move to device
-    #             if isinstance(samples, torch.Tensor):
-    #                 samples = samples.to(self.device)
-    #             if isinstance(labels, torch.Tensor):
-    #                 labels = labels.to(self.device)
-
-    #             # Forward pass
-    #             outputs = self(samples)
-
-    #             if outputs is None:
-    #                 continue
-
-    #             # Compute loss
-    #             loss, components = self.downstream_loss(outputs, labels)
-
-    #             total_loss += loss.item()
-    #             for key, value in components.items():
-    #                 if key in total_components:
-    #                     total_components[key] += value
-
-    #             # Compute accuracy if using classifier
-    #             if self.use_classifier_loss and outputs.get('logits') is not None:
-    #                 logits = outputs['logits']
-    #                 if isinstance(labels, dict) and 'labels' in labels:
-    #                     labels_for_acc = labels['labels']
-    #                 else:
-    #                     labels_for_acc = labels
-
-    #                 if isinstance(labels_for_acc, torch.Tensor):
-    #                     labels_for_acc = labels_for_acc.to(self.device).long()
-    #                     if len(labels_for_acc.shape) > 1:
-    #                         labels_for_acc = labels_for_acc[:, 0]
-
-    #                     predictions = torch.argmax(logits, dim=1)
-    #                     total_correct += (predictions == labels_for_acc).sum().item()
-
-    #             train_num += 1
-
-    #             # Update progress bar with current metrics
-    #             if train_num > 0:
-    #                 current_avg_loss = total_loss / train_num
-    #                 pbar.set_postfix({'avg_loss': f"{current_avg_loss:.4f}"})
-
-    #     # Average metrics
-    #     if train_num > 0:
-    #         avg_loss = total_loss / train_num
-    #         avg_components = {k: v / train_num for k, v in total_components.items()}
-    #         avg_accuracy = total_correct / (train_num * dataloader.batch_size) if self.use_classifier_loss else 0.0
-
-    #         # Log to wandb
-    #         if self.wandb_log:
-    #             log_dict = {
-    #                 self.defined_train_metrics['loss']: avg_loss,
-    #                 "round": self.round
-    #             }
-
-    #             for key in ['img_text_loss', 'image_loss', 'audio_text_loss', 'classifier_loss']:
-    #                 if key in self.defined_train_metrics and key in avg_components:
-    #                     log_dict[self.defined_train_metrics[key]] = avg_components[key]
-
-    #             if self.use_classifier_loss and 'accuracy' in self.defined_train_metrics:
-    #                 log_dict[self.defined_train_metrics['accuracy']] = avg_accuracy
-
-    #             wandb.log(log_dict)
-
-    #     return avg_loss if train_num > 0 else 0.0
-
-    # def test_metrics(self, dataloader, metrics=None):
-    #     """
-    #     Compute test metrics on a dataloader.
-
-    #     Args:
-    #         dataloader: DataLoader with test data
-    #         metrics: Optional existing metrics object
-
-    #     Returns:
-    #         Dictionary with test metrics
-    #     """
-    #     test_num = 0
-    #     total_loss = 0.0
-    #     total_correct = 0
-
-    #     self.eval()
-
-    #     with torch.no_grad():
-    #         pbar = tqdm(dataloader, desc="Computing test metrics", unit="batch")
-    #         for batch_data in pbar:
-    #             # Handle different data formats
-    #             if isinstance(batch_data, (tuple, list)) and len(batch_data) >= 2:
-    #                 samples, labels = batch_data[0], batch_data[1]
-    #             elif isinstance(batch_data, dict):
-    #                 samples = batch_data.get('audio', batch_data.get('samples'))
-    #                 labels = batch_data.get('label', batch_data.get('labels'))
-    #             else:
-    #                 continue
-
-    #             # Move to device
-    #             if isinstance(samples, torch.Tensor):
-    #                 samples = samples.to(self.device)
-    #             if isinstance(labels, torch.Tensor):
-    #                 labels = labels.to(self.device)
-
-    #             # Forward pass
-    #             outputs = self(samples)
-
-    #             if outputs is None:
-    #                 continue
-
-    #             # Compute loss
-    #             loss, _ = self.downstream_loss(outputs, labels)
-    #             total_loss += loss.item()
-
-    #             # Compute accuracy if using classifier
-    #             if self.use_classifier_loss and outputs.get('logits') is not None:
-    #                 logits = outputs['logits']
-    #                 if isinstance(labels, dict) and 'labels' in labels:
-    #                     labels_for_acc = labels['labels']
-    #                 else:
-    #                     labels_for_acc = labels
-
-    #                 if isinstance(labels_for_acc, torch.Tensor):
-    #                     labels_for_acc = labels_for_acc.to(self.device).long()
-    #                     if len(labels_for_acc.shape) > 1:
-    #                         labels_for_acc = labels_for_acc[:, 0]
-
-    #                     predictions = torch.argmax(logits, dim=1)
-    #                     total_correct += (predictions == labels_for_acc).sum().item()
-
-    #             test_num += 1
-
-    #             # Update progress bar with current metrics
-    #             if test_num > 0:
-    #                 current_avg_loss = total_loss / test_num
-    #                 pbar.set_postfix({'avg_loss': f"{current_avg_loss:.4f}"})
-
-    #     # Average metrics
-    #     test_metrics = {}
-    #     if test_num > 0:
-    #         test_metrics['loss'] = total_loss / test_num
-    #         if self.use_classifier_loss:
-    #             test_metrics['accuracy'] = total_correct / (test_num * dataloader.batch_size)
-
-    #         # Log to wandb
-    #         if self.wandb_log:
-    #             log_dict = {
-    #                 self.defined_test_metrics['loss']: test_metrics['loss'],
-    #                 "round": self.round
-    #             }
-
-    #             if self.use_classifier_loss and 'accuracy' in self.defined_test_metrics:
-    #                 log_dict[self.defined_test_metrics['accuracy']] = test_metrics['accuracy']
-
-    #             wandb.log(log_dict)
-
-    #     return test_metrics
-    
     def train_metrics( self, dataloader, audio2image_only=False, target_image=None,
                 img_target_prompt_embeds=None,
                 img_target_pooled_prompt_embeds=None,
@@ -553,9 +326,9 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
         with torch.no_grad():
             split = dataloader.dataset.split if hasattr(dataloader.dataset, 'split') else 'train'
             pbar = tqdm(dataloader, desc=f"Computing train metrics on {split}", unit="batch")
-            for audio_data in pbar:
+            for samples in pbar:
 
-                text_embeddings = audio_data.get('text_emb', None)
+                text_embeddings = samples.get('text_emb', None)
                 target_prompt_embeds = None
                 target_pooled_prompt_embeds = None
 
@@ -569,22 +342,31 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
                     raise ValueError("Text embeddings not found or invalid format in audio_data.")
 
                 steps += 1
-                if ( 'audio' in audio_data and isinstance(audio_data['audio'], torch.Tensor) ):
+                audio_embedding = samples.get('audio_emb', None)
+                if ( 'audio' in samples and isinstance(samples['audio'], torch.Tensor) ):
                     # print ( f"Filenames {audio_data['audio_filename']} classes {audio_data['class_name']}")
-                    audio_data = audio_data['audio']
+                    audio_data = samples['audio']
 
                 samples_count += audio_data.shape[0]
 
-                if isinstance(audio_data, torch.Tensor) and isinstance(self.audio2image_model.feature_extractor, ASTFeatureExtractor):
+                if isinstance(audio_data, torch.Tensor) and isinstance(self.ast_feature_extractor, ASTFeatureExtractor):
                     audio_data = audio_data.cpu().numpy()
                 else:
                     audio_data = audio_data.to(self.device)
+                if audio_embedding is not None:
+                    audio_embedding = audio_embedding.to(self.device)
+                
+                class_names = samples.get('class_name', None)
 
                 output = self(audio_data,img_target_prompt_embeds=target_prompt_embeds,
-                        img_target_pooled_prompt_embeds=target_pooled_prompt_embeds) 
+                        img_target_pooled_prompt_embeds=target_pooled_prompt_embeds,audio_embedding=audio_embedding, class_names=class_names)
                 if output == None:
                     continue
-                
+
+                # Call cache callback if provided (set by client)
+                if hasattr(self, 'cache_callback') and self.cache_callback is not None:
+                    self.cache_callback(samples, output, dataloader=dataloader)
+
                 # if ( "text_loss" in output ) and ( "recon_loss" in output ) and ( "audio_loss" in output ):
                 if ( "text_loss" in output ):
                     text_loss = output['text_loss']

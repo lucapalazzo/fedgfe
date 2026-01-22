@@ -8,6 +8,7 @@ import torch.nn as nn
 import numpy as np
 import time
 from torch.utils.data import DataLoader, Subset
+import glob
 
 import wandb
 
@@ -49,11 +50,85 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+def check_gpu_memory(device, prefix="", print_info=True):
+    """
+    Controlla e restituisce informazioni dettagliate sull'utilizzo della memoria GPU.
+
+    Args:
+        device: torch device (es. 'cuda:0')
+        prefix: Stringa da anteporre al messaggio per identificare il punto di controllo
+        print_info: Se True, stampa le informazioni (default True)
+
+    Returns:
+        dict: Dizionario con le seguenti chiavi (valori in GB):
+            - 'allocated': Memoria allocata corrente
+            - 'reserved': Memoria riservata corrente
+            - 'max_allocated': Picco di memoria allocata
+            - 'free': Memoria libera disponibile
+            - 'total': Memoria totale della GPU
+            - 'percent_used': Percentuale di memoria utilizzata (0-100)
+            - 'device': Nome del device
+    """
+    if not torch.cuda.is_available():
+        if print_info:
+            print(f"{prefix} GPU not available")
+        return None
+
+    if not isinstance(device, torch.device) or device.type != 'cuda':
+        if print_info:
+            print(f"{prefix} Device is not CUDA: {device}")
+        return None
+
+    # Ottieni statistiche memoria in bytes
+    allocated = torch.cuda.memory_allocated(device)
+    reserved = torch.cuda.memory_reserved(device)
+    max_allocated = torch.cuda.max_memory_allocated(device)
+    total = torch.cuda.get_device_properties(device).total_memory
+    free = total - reserved
+
+    # Converti in GB
+    allocated_gb = allocated / 1024**3
+    reserved_gb = reserved / 1024**3
+    max_allocated_gb = max_allocated / 1024**3
+    total_gb = total / 1024**3
+    free_gb = free / 1024**3
+    percent_used = (reserved / total) * 100
+
+    memory_info = {
+        'allocated': allocated_gb,
+        'reserved': reserved_gb,
+        'max_allocated': max_allocated_gb,
+        'free': free_gb,
+        'total': total_gb,
+        'percent_used': percent_used,
+        'device': str(device)
+    }
+
+    if print_info:
+        print(f"\n{'='*80}")
+        print(f"{prefix} GPU Memory Status [{device}]:")
+        print(f"  Allocated:     {allocated_gb:6.2f} GB  (memoria effettivamente in uso)")
+        print(f"  Reserved:      {reserved_gb:6.2f} GB  (memoria riservata da PyTorch)")
+        print(f"  Max Allocated: {max_allocated_gb:6.2f} GB  (picco di allocazione)")
+        print(f"  Free:          {free_gb:6.2f} GB  (memoria disponibile)")
+        print(f"  Total:         {total_gb:6.2f} GB  (memoria totale GPU)")
+        print(f"  Usage:         {percent_used:5.1f}%")
+        print(f"{'='*80}\n")
+
+    return memory_info
+
+
 class clientA2V(Client):
     def __init__(self, args, node_id, node_config=None, global_model=None, dataset=None, store_audio_embedding=False, **kwargs):
         super().__init__(args, node_id, None, None, dataset = dataset, **kwargs)
 
         self.logger = logging.getLogger(f"{__name__}_{node_id}")
+
+        self.experiment_config = getattr(args.json_config, 'experiment', None)
+
+        self.optimize_memory_usage = getattr(self.experiment_config, 'optimize_memory_usage', False )
+
 
         self.id = node_id
         self.learning_rate = args.local_learning_rate
@@ -63,7 +138,11 @@ class clientA2V(Client):
         self.test_dataloader = None
         self.global_model = global_model
         self.global_rounds = args.global_rounds
+        if self.global_model is not None and self.global_model.zero_shot_model is not None:
+            self.zero_shot_model = self.global_model.zero_shot_model
+
         self.server = None  # Reference to server, will be set later
+
 
 
         self.feda2v_config = getattr(self.args.json_config, 'feda2v', None)
@@ -87,6 +166,12 @@ class clientA2V(Client):
             self.adapters_learning_rate_schedule = self.feda2v_config.get('adapters_learning_rate_schedule', False)
             self.t5_adapter_learning_rate_schedule = self.feda2v_config.get('t5_adapter_learning_rate_schedule', False)
             self.clip_adapter_learning_rate_schedule = self.feda2v_config.get('clip_adapter_learning_rate_schedule', False)
+            self.optimizer_clip_gradients = self.feda2v_config.get( 'optimizer_clip_gradients', False )
+            self.nodes_test_metrics_splits = self.feda2v_config.get( 'nodes_test_metrics_splits', ['val'])
+            self.nodes_train_metrics_splits = self.feda2v_config.get( 'nodes_train_metrics_splits', ['train'])
+            # Nodes metrics splits
+            self.nodes_test_metrics_splits = self.feda2v_config.get( 'nodes_test_metrics_splits', ['val', 'test'])
+            self.nodes_train_metrics_splits = self.feda2v_config.get( 'nodes_train_metrics_splits', ['train'])
 
         if node_config is not None:
             self.t5_adapter_learning_rate = node_config.t5_adapter_learning_rate if node_config.t5_adapter_learning_rate is not None else self.t5_adapter_learning_rate
@@ -97,6 +182,8 @@ class clientA2V(Client):
         self.store_audio_embedding = self.args.json_config.feda2v.store_audio_embeddings
 
         self.save_generated_images_splits = self.feda2v_config.save_generated_images_splits if self.feda2v_config else []
+
+
 
         # Get use_cls_token_only configuration
         # Priority: node_config > feda2v global config > default (False)
@@ -122,16 +209,17 @@ class clientA2V(Client):
             diffusion_type=self.global_model.diffusion_type,
             enable_diffusion=False,  # Explicitly disable diffusion for local nodes
             use_cls_token_only=self.use_cls_token_only,
-            adapter_dropout=self.adapter_dropout
+            adapter_dropout=self.adapter_dropout,
+            generators_dict=self.global_model.generators_dict if self.global_model else None,
+            init_ast_model=False  # Disable AST initialization for local nodes
         )
 
+        # Set cache callback: model will call this method when it has embeddings to cache
+        self.model.cache_callback = self.audio_embeddings_dataset_cache
+
         # Share the AST model from global model (read-only, not trainable)
-        self.model.audio2image_model.ast_model = self.global_model.audio2image_model.ast_model.to(self.device)
-        self.model.audio2image_model.feature_extractor = self.global_model.audio2image_model.feature_extractor
-        self.audio2image_model = self.model.get_audio2image_model()
-
-
-        self.epoch_audio_embedding_cache = {}
+        self.model.ast_model = self.global_model.ast_model
+        self.model.ast_feature_extractor = self.global_model.ast_feature_extractor
 
         if 'data_log' in kwargs:
             self.data_log = kwargs['data_log']
@@ -148,10 +236,7 @@ class clientA2V(Client):
         self.node_data = NodeData(args, node_id, dataset=dataset)
         self.node_data.dataset_name = self.dataset_name
 
-        self.experiment_config = getattr(args.json_config, 'experiment', None)
-
-        self.optimize_memory_usage = getattr(self.experiment_config, 'optimize_memory_usage', False )
-
+ 
         self.train_optimizer = None
         self.finetuning_optimizer = None
         self.train_optimizers = {}
@@ -198,6 +283,13 @@ class clientA2V(Client):
         self.generator_granularity = getattr(self.feda2v_config, 'generator_granularity', 'unified') if self.feda2v_config else 'unified'
         self.generator_class_groups = getattr(self.feda2v_config, 'generator_class_groups', None) if self.feda2v_config else None
 
+        # Generator sharing and reset configuration
+        self.shared_generator_in_only_mode = getattr(self.feda2v_config, 'shared_generator_in_only_mode', True) if self.feda2v_config else True
+        self.reset_generator_on_class_change = getattr(self.feda2v_config, 'reset_generator_on_class_change', False) if self.feda2v_config else False
+
+        # Track previously trained classes for reset detection
+        self.previously_trained_classes = set()
+
         # Per-node generator configuration overrides
         # 1. Override granularity for this specific node
         node_granularity = getattr(node_config, 'generator_granularity', None)
@@ -224,10 +316,22 @@ class clientA2V(Client):
         self.generator_checkpoint_dir = getattr(self.feda2v_config, 'generator_checkpoint_dir', 'checkpoints/generators') if self.feda2v_config else 'checkpoints/generators'
         self.generator_checkpoint_base_name = getattr(self.feda2v_config, 'generator_checkpoint_base_name', 'client_generator') if self.feda2v_config else 'client_generator'
 
+        # Adapter checkpoint configuration
+        self.adapter_checkpoint_dir = getattr(self.feda2v_config, 'adapter_checkpoint_dir', 'checkpoints/adapters') if self.feda2v_config else 'checkpoints/adapters'
+        self.adapter_checkpoint_base_name = getattr(self.feda2v_config, 'adapter_checkpoint_base_name', 'adapter') if self.feda2v_config else 'adapter'
+        self.adapter_save_checkpoint = getattr(self.feda2v_config, 'adapter_save_checkpoint', False) if self.feda2v_config else False
+        self.adapter_load_checkpoint = getattr(self.feda2v_config, 'adapter_load_checkpoint', False) if self.feda2v_config else False
+        self.adapter_checkpoint_frequency = getattr(self.feda2v_config, 'adapter_checkpoint_frequency', 5) if self.feda2v_config else 5
+        self.adapter_checkpoint_per_type = getattr(self.feda2v_config, 'adapter_checkpoint_per_type', True) if self.feda2v_config else True
+
         self.generator_training_epochs = getattr(self.feda2v_config, 'generator_training_epochs', 5) if self.feda2v_config else 5
         self.generator_augmentation = getattr(self.feda2v_config, 'generator_augmentation', True) if self.feda2v_config else True
         self.generator_augmentation_noise = getattr(self.feda2v_config, 'generator_augmentation_noise', 0.1) if self.feda2v_config else 0.1
+        # synthetic_samples_per_class can be:
+        # - explicit number (e.g., 5, 100)
+        # - "auto" or None: use dataset size (calculated later after dataset is loaded)
         self.synthetic_samples_per_class = getattr(self.feda2v_config, 'synthetic_samples_per_class', 5) if self.feda2v_config else 5
+        self.generator_load_checkpoint = getattr(self.feda2v_config, 'generator_load_checkpoint', False) if self.feda2v_config else False
 
         # Target sequence length for generated samples (None = use generator's default of 4, 1214 = full AST output length)
         # Sequence length for generator training (should be small to fit in GPU memory, e.g., 4 or 8)
@@ -245,21 +349,35 @@ class clientA2V(Client):
         self.generator_loss_fn = None
 
         # Initialize generators if needed
-        if self.use_generator or self.generator_training_mode or self.generator_only_mode:
+        if self.use_generator:
             self.initialize_generators()
 
-        # Load pretrained generators if specified
-        if self.use_pretrained_generators and not self.generator_training_mode:
-            self.load_generator_checkpoint()
+        # Calculate synthetic_samples_per_class if set to "auto" or None
+        self._setup_synthetic_samples_count()
 
-        self._move_to_gpu(self.device)
+        # NOTE: Generator checkpoint loading is now handled by the server
+        # Generators will be received from server via set_server() method
+        # The use_pretrained_generators flag is still respected server-side
+
+        # Load adapter checkpoint if configured
+        if self.adapter_load_checkpoint:
+            print(f"[Client {self.id}] Loading adapter checkpoint from configuration")
+            success = self.load_adapter_checkpoint()
+            if success:
+                print(f"[Client {self.id}] Successfully loaded adapter checkpoint")
+            else:
+                print(f"[Client {self.id}] Warning: Could not load adapter checkpoint, starting from scratch")
 
         self.audio_embedding_store = {}
 
-    def define_metrics(self):
+        # Storage for synthetic samples received from server (used in KD aggregation mode)
+        self.server_synthetic_samples = None
+
+
+    def define_metrics(self, split = ""):
         self.metrics_path = "node_" + str(self.id) + "/"
         if self.global_model is not None:
-            self.global_model.define_metrics(metrics_path=self.metrics_path)
+            self.global_model.define_metrics(metrics_path=self.metrics_path, train_splits = self.nodes_train_metrics_splits, test_splits=self.nodes_test_metrics_splits)
 
 
         return
@@ -277,6 +395,9 @@ class clientA2V(Client):
             elif metrics.phase == NodeMetric.Phase.TEST:
                 metric_path = f"test/{self.metrics_path}{prefix}{metric_name}{suffix}"
                 # metric_path = f"test/{self.metrics_path}a2v_{prefix}{metric_name}{suffix}"
+            elif metrics.phase == NodeMetric.Phase.VALIDATE:
+                metric_path = f"val/{self.metrics_path}{prefix}{metric_name}{suffix}"
+
             metric_value = metrics[metric_name]['mean']
             if round == None:
                 round = self.round
@@ -301,6 +422,10 @@ class clientA2V(Client):
     def train(self, client_device=None, rewind_train_node=None, training_task="both"):
         """Train the Audio2Visual model."""
         logger.debug(f"*** Node {self.id} memory before training {torch.cuda.memory_allocated(self.device)//(1024**2)} MB")
+
+        # Clear training caches at the start of each round to prevent memory leaks
+        if self.round > 1:
+            clear_training_caches(self)
 
         # Generator-only mode: skip adapter training, only train generators
         if self.generator_only_mode:
@@ -338,15 +463,12 @@ class clientA2V(Client):
         if self.round == 1:
             print(f"Creating optimizer for node {self.id} with model optimizer {self.model_optimizer} and learning rate {self.learning_rate}")
             self.setup_optimizer()
-            self.optimizer = self.train_optimizer
 
             print(f"Creating learning rate scheduler for node {self.id}")
-            self.scheduler = ConstantLR(self.optimizer, factor=1.0, total_iters=self.global_rounds)
-
             self.setup_learning_rate_scheduler(self.global_rounds)
 
-            if self.no_wandb == False:
-                wandb.watch(self.audio2image_model, log='all', log_freq=100, criterion=None, log_graph=False, idx=self.id)
+            # if self.no_wandb == False:
+            #     wandb.watch(self.audio2image_model, log='all', log_freq=100, criterion=None, log_graph=False, idx=self.id)
 
             self.print_optimizer_info(self.id)
 
@@ -357,9 +479,9 @@ class clientA2V(Client):
         self.train_a2v(local_epochs, trainloader, client_device=device)
 
         # Compute and store per-class mean output at the end of the round
-        print(f"Node {self.id} computing per-class mean output for round {self.round}")
+        # print(f"Node {self.id} computing per-class mean output for round {self.round}")
 
-        self.update_per_class_mean_output(use_train=True, device=device)
+        # self.update_per_class_mean_output(use_train=True, device=device)
 
         self.train_time_cost['num_rounds'] += 1
         self.train_time_cost['total_cost'] += time.time() - start_time
@@ -375,31 +497,56 @@ class clientA2V(Client):
                 global_adapter_state_dict = adapters[module_name].state_dict()
                 local_adapter.load_state_dict(global_adapter_state_dict)
 
-    def audio_emebedding_cache_store(self, samples, outputs):
+    def audio_embeddings_dataset_cache(self, samples, outputs, dataloader = None, device = 'cpu'):
+        """
+        Cache audio embeddings from model outputs to dataset.
+        This method is called by the client after receiving model outputs.
+
+        Args:
+            samples: Batch samples
+            outputs: Model outputs containing audio embeddings
+            dataloader: DataLoader instance (optional)
+            device: Device to use
+        """
         audio_embeddings_batch = outputs['audio_embeddings']
         file_ids = samples.get('file_id', None)
+        classes = samples.get('class_name', 'unknown')
+
+        if dataloader == None:
+            train_dataset = self.node_data.train_dataset
+        else:
+            train_dataset = dataloader.dataset
+
+        if hasattr(train_dataset, 'dataset'):
+            base_dataset = train_dataset.dataset
+        else:
+            base_dataset = train_dataset
 
         if file_ids is not None:
-            # Ottieni riferimento al dataset sottostante
-            train_dataset = self.node_data.train_dataset
-            # Unwrap Subset se necessario
-            if hasattr(train_dataset, 'dataset'):
-                base_dataset = train_dataset.dataset
-            else:
-                base_dataset = train_dataset
 
             #  audio_embs se non esiste
             if not hasattr(base_dataset, 'audio_embs') or base_dataset.audio_embs is None:
                 base_dataset.audio_embs = {}
 
-            for idx, file_id in enumerate(file_ids):
-                base_dataset.audio_embs[file_id] = audio_embeddings_batch[idx].detach().cpu()
-                self.epoch_audio_embedding_cache[file_id] = audio_embeddings_batch[idx].detach().cpu()
-        logger.debug(f"Node {self.id}: stored {len(file_ids)} audio embeddings int dataset  {len(base_dataset.audio_embs)})")
+            for file_id, class_name, audio_emb in zip(file_ids,classes,audio_embeddings_batch):
+                file_index = f'{file_id}:{class_name}'
+                audio_emb_cpu = audio_emb.detach().cpu()
+                base_dataset.audio_embs[file_index] = audio_emb_cpu
+
+                # Also store in client's audio_embedding_store for server aggregation
+                if self.store_audio_embedding:
+                    self.audio_embedding_store[file_index] = audio_emb_cpu
+
+        logger.debug(f"Node {self.id}: stored {len(file_ids)} audio embeddings in dataset ({len(base_dataset.audio_embs)} total)")
 
     def audio_embedding_cache_load(self, samples ):
         audio_embedding = None
         file_ids = samples.get('file_id', None)
+        if 'class_name' in samples:
+            classes = samples['class_name']
+        else:
+            classes = [ 'uknown' * len(file_ids)]
+            
         if file_ids is not None:
             train_dataset = self.node_data.train_dataset
             if hasattr(train_dataset, 'dataset'):
@@ -411,9 +558,10 @@ class clientA2V(Client):
                 cached_embeddings = []
                 all_cached = True
 
-                for file_id in file_ids:
-                    if file_id in base_dataset.audio_embs:
-                        cached_embeddings.append(base_dataset.audio_embs[file_id])
+                for file_id,class_name in zip(file_ids,classes):
+                    file_index = f'{file_id}:{class_name}'
+                    if file_index in base_dataset.audio_embs:
+                        cached_embeddings.append(base_dataset.audio_embs[file_index].detach())
                     else:
                         all_cached = False
                         break
@@ -427,9 +575,23 @@ class clientA2V(Client):
     def train_a2v(self, epochs, dataloader, client_device=None):
         device = client_device if client_device is not None else self.device
 
+        # Memory tracking - before training
+        mem_start = None
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            mem_start = check_gpu_memory(device,
+                                        prefix=f"[Node {self.id}] BEFORE train_a2v (Round {self.round})",
+                                        print_info=False)
+            if mem_start:
+                logger.debug(f"[MemTrack] Node {self.id} - Before train_a2v: {mem_start['allocated']:.2f} GB allocated, {mem_start['reserved']:.2f} GB reserved ({mem_start['percent_used']:.1f}% used)")
+
         self.model.train()
 
-        epoch_audio_embedding_cache = {}
+        # Memory tracking per epoch
+        epoch_memory_tracker = {
+            'epochs': [],
+            'start': mem_start
+        }
 
         for epoch in range(epochs):
             epoch_loss = 0.0
@@ -437,9 +599,14 @@ class clientA2V(Client):
             training_adapter_outputs = defaultdict(lambda: defaultdict(list))
 
             # Create progress bar for batches
+            # IMPORTANT: Progress bar must not keep tensor references
             pbar = tqdm(enumerate(dataloader), total=len(dataloader),
-                       desc=f"Node {self.id} Epoch {epoch+1}/{epochs}",
-                       unit="batch")
+                       desc=f"Node {self.id} R:{self.round} E:{epoch+1}/{epochs}",
+                       unit="b",
+                       bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]',
+                       leave=False,
+                       position=0,
+                       file=None)  # Disable file output to reduce memory overhead
 
             # for batch_idx, (audio_data, text_embeddings) in enumerate(dataloader):
             for batch_idx, samples in pbar:
@@ -459,58 +626,64 @@ class clientA2V(Client):
                         target_prompt_embeds = text_embeddings['sd']
 
                         if target_prompt_embeds is not None:
-                            target_prompt_embeds = target_prompt_embeds.to(device)
+                            # CRITICAL: Detach to prevent computation graph accumulation
+                            target_prompt_embeds = target_prompt_embeds.detach().to(device)
 
                     elif self.diffusion_type == 'flux':
                         target_prompt_embeds = text_embeddings['flux'].get('prompt_embeds', None)
                         target_pooled_prompt_embeds = text_embeddings['flux'].get('pooled_prompt_embeds', None)
 
                         if target_prompt_embeds is not None:
-                            target_prompt_embeds = target_prompt_embeds.to(device)
+                            # CRITICAL: Detach to prevent computation graph accumulation
+                            target_prompt_embeds = target_prompt_embeds.detach().to(device)
                         if target_pooled_prompt_embeds is not None:
-                            target_pooled_prompt_embeds = target_pooled_prompt_embeds.to(device)
+                            # CRITICAL: Detach to prevent computation graph accumulation
+                            target_pooled_prompt_embeds = target_pooled_prompt_embeds.detach().to(device)
 
-                audio_filename = samples.get('audio_filename', None)
-                audio_embedding = None
+                audio_embedding = samples.get('audio_emb', None)
 
-                if audio_embedding is None:
-                    audio_embedding = samples.get('audio_emb', None)
+                if audio_embedding is not None:
+                    # CRITICAL: Detach cached embeddings to prevent computation graph accumulation
+                    audio_embedding = audio_embedding.detach().to(device)
 
-                if epoch > 0 or self.round > 1 and audio_embedding is None:
+                if ( epoch > 0 or self.round > 1 ) and audio_embedding is None:
                     audio_embedding = self.audio_embedding_cache_load( samples )
                     if audio_embedding is not None:
-                        audio_embedding = audio_embedding.to(device)
+                        # CRITICAL: Detach loaded embeddings to prevent memory leaks
+                        audio_embedding = audio_embedding.detach().to(device)
                
 
+                # CRITICAL: Use set_to_none=True to fully release gradient memory
                 if len(self.train_optimizers) > 0:
                     for optimizer_name, optimizer in self.train_optimizers.items():
-                        optimizer.zero_grad()
+                        optimizer.zero_grad(set_to_none=True)
                 else:
-                    self.optimizer.zero_grad()
+                    self.optimizer.zero_grad(set_to_none=True)
 
-                if audio_embedding is None and isinstance(audio_data, torch.Tensor) and isinstance(self.audio2image_model.feature_extractor, ASTFeatureExtractor):
-                    audio_data = audio_data.to('cpu').numpy()
+                if audio_embedding is None:
+                    if isinstance(audio_data, torch.Tensor) and isinstance(self.model.ast_feature_extractor, ASTFeatureExtractor):
+                        audio_data = audio_data.to('cpu').numpy()
                 else:
                     audio_data = None
+
+                classes = samples.get('class_name', None)
 
                 outputs = self.model( audio_data,
                                         img_target_prompt_embeds=target_prompt_embeds,
                                         img_target_pooled_prompt_embeds=target_pooled_prompt_embeds,
-                                        audio_embedding=audio_embedding
+                                        audio_embedding=audio_embedding,
+                                        class_names=classes
                                     )
 
-                outputs['class_name'] = samples.get('class_name', None)
+                outputs['class_name'] = classes
 
                 # Salva gli audio embeddings nel dataset per riutilizzo nelle epoche successive (epoch 0)
                 if epoch == 0 and self.round == 1 and 'audio_embeddings' in outputs:
-                    self.audio_emebedding_cache_store( samples, outputs )
+                    self.audio_embeddings_dataset_cache( samples, outputs, dataloader = dataloader )
 
                 if self.store_audio_embedding:
                     outputs['audio_filename'] = samples.get('audio_filename', None)
                     self.store_audio_embeddings(audio_data, outputs)
-
-                if epoch == epochs - 1:
-                    training_adapter_outputs = self.store_adapters_output_per_class ( outputs, training_adapter_outputs )
 
                 losses = outputs['text_loss']
                 losses_dict = {}  # Dictionary to hold individual losses for display
@@ -540,11 +713,14 @@ class clientA2V(Client):
                 else:
                     adapters_loss = outputs['text_loss']
                     losses_count = len(losses)
-                    loss_names = ['clip', 't5']  # Adapter names
-                    for loss_names, loss in adapters_loss.items():
+                    for adapter_name, loss in adapters_loss.items():
                         loss.backward()
                         epoch_loss += loss.item()
-                        losses_dict[loss_names] = f"{loss.item():.3f}"
+                        losses_dict[adapter_name] = f"{loss.item():.3f}"
+
+                # CRITICAL FIX: Store adapter outputs AFTER backward to allow safe detaching
+                if epoch == epochs - 1:
+                    training_adapter_outputs = self.store_adapters_output_per_class ( outputs, training_adapter_outputs )
 
 
                 # Gradient clipping to stabilize training
@@ -552,14 +728,15 @@ class clientA2V(Client):
                     grad_norms = {}
                     for optimizer_name, optimizer in self.train_optimizers.items():
                         # Clip gradients for this optimizer's parameters
-                        params = [p for group in optimizer.param_groups for p in group['params'] if p.grad is not None]
-                        if len(params) > 0:
-                            grad_norm = torch.nn.utils.clip_grad_norm_(params, max_norm=1.0)
-                            grad_norms[optimizer_name] = grad_norm.item()
+                        if self.optimizer_clip_gradients:
+                            params = [p for group in optimizer.param_groups for p in group['params'] if p.grad is not None]
+                            if len(params) > 0:
+                                grad_norm = torch.nn.utils.clip_grad_norm_(params, max_norm=1.0)
+                                grad_norms[optimizer_name] = grad_norm.item()
                         optimizer.step()
 
                     # Log gradient norms occasionally for debugging
-                    if num_batches % 50 == 0 and epoch == 0:
+                    if self.optimizer_clip_gradients and num_batches % 50 == 0 and epoch == 0:
                         grad_info = " ".join([f"{k}_grad:{v:.4f}" for k, v in grad_norms.items()])
                         logger.debug(f"Node {self.id} Batch {num_batches}: {grad_info}")
                 else:
@@ -567,10 +744,31 @@ class clientA2V(Client):
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                     self.optimizer.step()
 
+                # Free memory: delete outputs and samples to release computation graph
+                del outputs, samples, losses
+                # Delete intermediate variables that may hold GPU tensors
+                if 'audio_data' in locals():
+                    del audio_data
+                if 'target_prompt_embeds' in locals():
+                    del target_prompt_embeds
+                if 'target_pooled_prompt_embeds' in locals():
+                    del target_pooled_prompt_embeds
+                if 'audio_embedding' in locals():
+                    del audio_embedding
+                if 'loss' in locals():
+                    del loss
+
                 num_batches += 1
 
+                # Empty cache periodically (every 5 batches) to avoid fragmentation
+                if num_batches % 5 == 0:
+                    torch.cuda.empty_cache()
+
                 # Update progress bar with loss information (clip, t5, and total)
-                pbar.set_postfix(losses_dict)
+                # CRITICAL: Copy dict to prevent progress bar from keeping tensor references
+                pbar.set_postfix(**losses_dict.copy())
+                # Clear losses_dict to free any lingering references
+                losses_dict.clear()
             for learning_rate_scheduler_name, learning_rate_scheduler in self.adapters_learning_rate_scheduler.items():
                 learning_rate_scheduler.step(self.round*self.local_epochs+epoch)
 
@@ -580,38 +778,91 @@ class clientA2V(Client):
             # if num_batches > 0:
             #     avg_loss = epoch_loss / num_batches
             #     tqdm.write(f"Node {self.id} Epoch {epoch+1}/{epochs} completed. Average Loss: {avg_loss:.3f}")
-            
+
             for class_name, output in training_adapter_outputs.items():
                 for k in output:
                     if type(k) == list:
-                        training_adapter_outputs[k] = torch.stack(training_adapter_outputs[k])    
+                        training_adapter_outputs[k] = torch.stack(training_adapter_outputs[k])
+
+            # Free memory at end of epoch
+            torch.cuda.empty_cache()
+
+            # Memory tracking at end of epoch
+            if torch.cuda.is_available() and mem_start is not None:
+                torch.cuda.synchronize()
+                mem_after_epoch = check_gpu_memory(device,
+                                                   prefix=f"[Node {self.id}] AFTER Epoch {epoch+1}/{epochs}",
+                                                   print_info=False)
+                if mem_after_epoch:
+                    # Calculate memory delta from start
+                    mem_delta_alloc = mem_after_epoch['allocated'] - mem_start['allocated']
+                    mem_delta_reserved = mem_after_epoch['reserved'] - mem_start['reserved']
+
+                    epoch_info = {
+                        'epoch': epoch + 1,
+                        'memory': mem_after_epoch,
+                        'delta_from_start': {
+                            'allocated_gb': mem_delta_alloc,
+                            'reserved_gb': mem_delta_reserved
+                        },
+                        'avg_loss': epoch_loss / num_batches if num_batches > 0 else 0.0
+                    }
+                    epoch_memory_tracker['epochs'].append(epoch_info)
+
+                    # Log every epoch
+                    logger.debug(f"[MemTrack] Node {self.id} Epoch {epoch+1}/{epochs}: "
+                               f"Allocated={mem_after_epoch['allocated']:.2f} GB (Δ{mem_delta_alloc:+.3f}), "
+                               f"Reserved={mem_after_epoch['reserved']:.2f} GB (Δ{mem_delta_reserved:+.3f}), "
+                               f"Usage={mem_after_epoch['percent_used']:.1f}%")
 
         # Compute mean outputs for each class and adapter at the end of all epochs
         print(f"Node {self.id} - Computing mean adapter outputs per class from training data")
-        self.training_adapter_outputs_all = dict(training_adapter_outputs)  # Store all outputs
+
+        # Detach all tensors before storing to avoid memory leaks from computational graph
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            mem_before_detach = torch.cuda.memory_allocated(device) / (1024**2)
+
+        training_adapter_outputs_detached = {}
+        for class_name, adapters_dict in training_adapter_outputs.items():
+            training_adapter_outputs_detached[class_name] = {}
+            for adapter_name, tensor_list in adapters_dict.items():
+                training_adapter_outputs_detached[class_name][adapter_name] = [
+                    t.detach() if torch.is_tensor(t) else t for t in tensor_list
+                ]
+
+        self.training_adapter_outputs_all = training_adapter_outputs_detached  # Store all outputs (detached)
         self.training_adapter_outputs_mean = {}
+
+        # Memory tracking - after detach
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            mem_after_detach = torch.cuda.memory_allocated(device) / (1024**2)
+            mem_freed = mem_before_detach - mem_after_detach
+            logger.debug(f"[MemTrack] Node {self.id} - After detach & cache clear: {mem_after_detach:.2f} MB (freed {mem_freed:.2f} MB)")
 
         total_samples_stored = 0
         total_adapters = set()
 
-        # Structure: {class_name: {adapter_name: mean_output}}
-        for class_name, adapters_dict in training_adapter_outputs.items():
-            self.training_adapter_outputs_mean[class_name] = {}
+        # # Structure: {class_name: {adapter_name: mean_output}}
+        # for class_name, adapters_dict in training_adapter_outputs.items():
+        #     self.training_adapter_outputs_mean[class_name] = {}
 
-            for adapter_name, outputs_list in adapters_dict.items():
-                if adapter_name not in self.adapters.keys():
-                    continue
+        #     for adapter_name, outputs_list in adapters_dict.items():
+        #         if adapter_name not in self.adapters.keys():
+        #             continue
                 
-                if len(outputs_list) > 0:
-                    # Stack all outputs and compute mean
-                    self.training_adapter_outputs_mean[class_name][adapter_name] = torch.mean(
-                        torch.stack(outputs_list), dim=0
-                    )
-                    total_samples_stored += len(outputs_list)
-                    total_adapters.add(adapter_name)
-                    print(f"  - Class '{class_name}' {adapter_name}: mean from {len(outputs_list)} samples")
-                else:
-                    print(f"  Warning: No outputs for class '{class_name}' {adapter_name}")
+        #         if len(outputs_list) > 0:
+        #             # Stack all outputs and compute mean
+        #             self.training_adapter_outputs_mean[class_name][adapter_name] = torch.mean(
+        #                 torch.stack(outputs_list), dim=0
+        #             )
+        #             total_samples_stored += len(outputs_list)
+        #             total_adapters.add(adapter_name)
+        #             print(f"  - Class '{class_name}' {adapter_name}: mean from {len(outputs_list)} samples")
+        #         else:
+        #             print(f"  Warning: No outputs for class '{class_name}' {adapter_name}")
 
         print(f"Node {self.id} - Stored outputs for {len(self.training_adapter_outputs_mean)} classes, "
               f"{len(total_adapters)} adapters, {total_samples_stored} total samples")
@@ -620,8 +871,59 @@ class clientA2V(Client):
         if self.generator_training_mode and self.prompt_generator is not None:
             self.train_node_generator()
 
-        if self.data_log:
-            self.data_log({f"train/node_{self.id}/a2v_loss": avg_loss, "epoch": epoch, "round": self.round})
+        # Memory tracking - after training (FINAL REPORT)
+        if torch.cuda.is_available() and mem_start is not None:
+            torch.cuda.synchronize()
+            mem_end = check_gpu_memory(device,
+                                      prefix=f"[Node {self.id}] AFTER train_a2v (FINAL)",
+                                      print_info=False)
+
+            if mem_end:
+                mem_delta_alloc = mem_end['allocated'] - mem_start['allocated']
+                mem_delta_reserved = mem_end['reserved'] - mem_start['reserved']
+
+                epoch_memory_tracker['end'] = mem_end
+                epoch_memory_tracker['total_growth'] = {
+                    'allocated_gb': mem_delta_alloc,
+                    'reserved_gb': mem_delta_reserved
+                }
+
+                logger.debug(f"[MemTrack] Node {self.id} - After train_a2v: {mem_end['allocated']:.2f} GB allocated (Δ {mem_delta_alloc:+.3f} GB), "
+                           f"{mem_end['reserved']:.2f} GB reserved (Δ {mem_delta_reserved:+.3f} GB)")
+
+                # Print detailed memory report if there's significant growth (> 1GB allocated or reserved)
+                if abs(mem_delta_alloc) > 1.0 or abs(mem_delta_reserved) > 1.0:
+                    print(f"\n{'='*100}")
+                    print(f"[Node {self.id}] ⚠️  MEMORY GROWTH DETECTED - Round {self.round}")
+                    print(f"{'='*100}")
+                    print(f"\n📊 MEMORY SUMMARY:")
+                    print(f"  Start:  Allocated={mem_start['allocated']:.2f} GB, Reserved={mem_start['reserved']:.2f} GB ({mem_start['percent_used']:.1f}%)")
+                    print(f"  End:    Allocated={mem_end['allocated']:.2f} GB, Reserved={mem_end['reserved']:.2f} GB ({mem_end['percent_used']:.1f}%)")
+                    print(f"  Growth: Allocated={mem_delta_alloc:+.3f} GB, Reserved={mem_delta_reserved:+.3f} GB")
+
+                    # Per-epoch breakdown if we have epoch data
+                    if len(epoch_memory_tracker['epochs']) > 0:
+                        print(f"\n📈 PER-EPOCH BREAKDOWN:")
+                        print(f"{'Epoch':<8} {'Allocated (GB)':<20} {'Reserved (GB)':<20} {'Δ Alloc':<15} {'Δ Reserved':<15} {'Avg Loss':<12}")
+                        print(f"{'-'*8} {'-'*20} {'-'*20} {'-'*15} {'-'*15} {'-'*12}")
+                        for ep_info in epoch_memory_tracker['epochs']:
+                            print(f"{ep_info['epoch']:<8} "
+                                  f"{ep_info['memory']['allocated']:>6.2f} GB          "
+                                  f"{ep_info['memory']['reserved']:>6.2f} GB          "
+                                  f"{ep_info['delta_from_start']['allocated_gb']:>+6.3f} GB     "
+                                  f"{ep_info['delta_from_start']['reserved_gb']:>+6.3f} GB     "
+                                  f"{ep_info['avg_loss']:>6.4f}")
+
+                        # Find epoch with max growth
+                        max_growth_epoch = max(epoch_memory_tracker['epochs'],
+                                             key=lambda x: x['delta_from_start']['reserved_gb'])
+                        print(f"\n  🔴 Max growth at Epoch {max_growth_epoch['epoch']}: "
+                              f"{max_growth_epoch['delta_from_start']['reserved_gb']:+.3f} GB reserved")
+
+                    print(f"{'='*100}\n")
+
+        # if self.data_log:
+        #     self.data_log({f"train/node_{self.id}/a2v_loss": avg_loss, "epoch": epoch, "round": self.round})
 
     def store_adapters_output_per_class(self, batch_output, per_class_adapters ):
         if 'class_name' in batch_output:
@@ -637,15 +939,22 @@ class clientA2V(Client):
             if 'audio_embeddings' not in per_class_adapters[class_name]:
                 per_class_adapters[class_name]['audio_embeddings'] = []
 
-            per_class_adapters[class_name]['audio_embeddings'].append(batch_output['audio_embeddings'][idx])
+            # audio_embeddings è già detachato nel modello (downstreamsinestesiaadapters.py:276)
+            per_class_adapters[class_name]['audio_embeddings'].append(
+                batch_output['audio_embeddings'][idx].detach().cpu()
+            )
 
             for adapter_name in self.adapters.keys():
                 if adapter_name not in per_class_adapters[class_name]:
                     per_class_adapters[class_name][adapter_name] = []
 
                 if adapter_name in batch_output:
-                    per_class_adapters[class_name][adapter_name].append(batch_output[adapter_name][idx])
-
+                    # CRITICAL FIX: Detach and move to CPU immediately after backward
+                    # This function is now called AFTER backward (line 701), so we can safely detach
+                    # to prevent massive memory leak from accumulated computation graphs
+                    per_class_adapters[class_name][adapter_name].append(
+                        batch_output[adapter_name][idx].detach().cpu()
+                    )
 
         return per_class_adapters
                 
@@ -744,7 +1053,7 @@ class clientA2V(Client):
                     if target_pooled_prompt_embeds is not None:
                         target_pooled_prompt_embeds = target_pooled_prompt_embeds.to(self.device)
                 
-                if isinstance(audio_data, torch.Tensor) and isinstance(self.audio2image_model.feature_extractor, ASTFeatureExtractor):
+                if isinstance(audio_data, torch.Tensor) and isinstance(self.model.ast_feature_extractor, ASTFeatureExtractor):
                     audio_data = audio_data.to('cpu').numpy()
                 # Forward pass
                 outputs = self.model(audio_data, target_prompt_embeds, target_pooled_prompt_embeds)
@@ -789,11 +1098,6 @@ class clientA2V(Client):
                   f"size {size} lr {param_group['lr']}")
 
     def setup_optimizer(self):
-        """
-        Setup optimizer for Audio2Visual model.
-        Only trains the local copies of adapters and projections.
-        """
-        # Get trainable parameters from LOCAL adapters and projections only
         trainable_params = []
 
         trainable_params.extend(self.model.parameters())
@@ -807,11 +1111,11 @@ class clientA2V(Client):
 
         # Create optimizer
         if self.model_optimizer.lower() == "adamw":
-            self.train_optimizer = torch.optim.AdamW(
-                trainable_params,
-                lr=self.learning_rate,
-                weight_decay=self.adapters_weight_decay
-            )
+            # self.train_optimizer = torch.optim.AdamW(
+            #     trainable_params,
+            #     lr=self.learning_rate,
+            #     weight_decay=self.adapters_weight_decay
+            # )
             for module_name, params in trainable_params_dict.items():
                 learning_rate = self.adapters_learning_rate
                 weight_decay = self.adapters_weight_decay
@@ -827,21 +1131,14 @@ class clientA2V(Client):
                     weight_decay=weight_decay
                 )
         elif self.model_optimizer.lower() == "sgd":
-            self.train_optimizer = torch.optim.SGD(
-                trainable_params,
-                lr=self.learning_rate,
-                momentum=self.optimizer_momentum,
-                # weight_decay=self.optimizer_weight_decay
-            )
-        else:
-            self.train_optimizer = torch.optim.Adam(
-                trainable_params,
-                lr=self.learning_rate,
-                # weight_decay=self.optimizer_weight_decay
-            )
+            # self.train_optimizer = torch.optim.SGD(
+            #     trainable_params,
+            #     lr=self.learning_rate,
+            #     momentum=self.optimizer_momentum,
+            #     # weight_decay=self.optimizer_weight_decay
+            # )
+            pass
 
-        self.finetuning_optimizer = self.train_optimizer
-        self.optimizer = self.train_optimizer
         self.optimizers = self.train_optimizers
 
     def setup_learning_rate_scheduler(self, rounds):
@@ -1017,6 +1314,37 @@ class clientA2V(Client):
 
         return node_metrics
 
+    def local_test(self):
+        """
+        Perform local validation using the validation dataset.
+        This is used for local monitoring during training without touching the test set.
+
+        Returns:
+            NodeMetric object with validation metrics
+        """
+        # Check if validation dataset exists
+        if not hasattr(self.node_data, 'val_dataset') or self.node_data.val_dataset is None:
+            logger.warning(f"Client {self.id}: No validation dataset available for local test")
+            return None
+
+        # Load validation data
+        val_loader = self.load_val_data()
+
+        if val_loader is None:
+            logger.warning(f"Client {self.id}: Could not load validation data")
+            return None
+
+        # Set model to evaluation mode
+        self.model.eval()
+
+        # Compute metrics on validation set
+        node_metrics = self.model.train_metrics(val_loader, audio2image_only=True)
+        node_metrics.phase = NodeMetric.Phase.VALIDATE
+
+        logger.info(f"Client {self.id}: Local validation metrics computed")
+
+        return node_metrics
+
         """Calculate training metrics for Audio2Visual model."""
         if trainloader is None:
             trainloader = self.load_train_data()
@@ -1065,54 +1393,55 @@ class clientA2V(Client):
 
         return node_metrics
 
-    def _move_to_device(self, device):
+    def _move_to_device(self, device, models=['generator'], classes=None):
         """Move Audio2Visual model to specified device."""
-        self.model.to(device)
+        self.model = self.model.to(device)
+
+        self.node_data = self.node_data.to(device)
+
 
         # Move optimizer state if needed
         if hasattr(self, 'optimizer') and self.optimizer is not None:
-            if isinstance(self.optimizer, torch.optim.AdamW):
-                move_optimizer_state(self.optimizer, device)
+            # if isinstance(self.optimizer, torch.optim.AdamW):
+            move_optimizer_state(self.optimizer, device)
         if hasattr(self, 'optimizers') and self.optimizers is not None:
             for optimizer_name, optimizer in self.optimizers.items():
-                if isinstance(optimizer, torch.optim.AdamW):
-                    move_optimizer_state(optimizer, device)
+                # if isinstance(optimizer, torch.optim.AdamW):
+                move_optimizer_state(optimizer, device)
 
         # Move generators and their optimizers if in generator training mode
-        if self.generator_training_mode or self.generator_only_mode:
+        if 'generator' in models and (self.generator_training_mode or self.generator_only_mode):
+            if classes == None:
+                classes = self.node_data.active_classes
             # Move unified generator if exists
             if hasattr(self, 'prompt_generator') and self.prompt_generator is not None:
-                self.prompt_generator.to(device)
-                # Move unified generator optimizer
+                self.prompt_generator = self.prompt_generator.to(device)
                 if hasattr(self, 'generator_optimizer') and self.generator_optimizer is not None:
-                    if isinstance(self.generator_optimizer, torch.optim.AdamW):
-                        move_optimizer_state(self.generator_optimizer, device)
-
-            # Move per-class or per-group generators if exist
+                    move_optimizer_state(self.generator_optimizer, device)
             if hasattr(self, 'prompt_generators') and self.prompt_generators is not None:
                 for gen_key, generator in self.prompt_generators.items():
-                    if generator is not None:
-                        generator.to(device)
-
-            # Move per-class or per-group generator optimizers if exist
+                    if generator is not None and gen_key in classes:
+                        self.prompt_generators[gen_key] = generator.to(device)  
             if hasattr(self, 'generator_optimizers') and self.generator_optimizers is not None:
                 for gen_key, optimizer in self.generator_optimizers.items():
-                    if optimizer is not None and isinstance(optimizer, torch.optim.AdamW):
+                    if optimizer is not None and gen_key in classes:
                         move_optimizer_state(optimizer, device)
+                # Move unified generator optimizer
 
             # Move GAN discriminator if exists (for GAN generator type)
             if hasattr(self, 'generator_discriminator') and self.generator_discriminator is not None:
-                self.generator_discriminator.to(device)
+                self.generator_discriminator = self.generator_discriminator.to(device)
+        torch.cuda.empty_cache()
 
-    def _move_to_gpu(self, device, force = True ):
+    def _move_to_gpu(self, device, force = True, models = [], classes = None):
         if self.optimize_memory_usage or force or self.round <= 1:
             self.logger.debug(f"Node {self.id} moving to GPU: {device}")
-            self._move_to_device(device)
+            self._move_to_device(device, models=models, classes=classes)
 
-    def _move_to_cpu(self, force = True):
+    def _move_to_cpu(self, force = True, models = [], classes = None):
         if self.optimize_memory_usage or force or self.round <= 1:
             self.logger.debug(f"Node {self.id} moving to CPU for memory optimization")
-            self._move_to_device('cpu')
+            self._move_to_device('cpu', models=models, classes=classes)
 
     def filter_batch_by_class(self, batch_data, target_class):
         filtered_batch = {}
@@ -1175,6 +1504,11 @@ class clientA2V(Client):
                     raise ValueError("Audio data not found in the batch samples")
 
                 # Forward pass through feature extractor and AST model
+                # Skip if AST not initialized (using pretrained generators)
+                if self.audio2image_model.ast_model is None or self.audio2image_model.feature_extractor is None:
+                    logger.warning("AST model not initialized (using pretrained generators), cannot process audio")
+                    return None
+
                 if isinstance(audio_data, torch.Tensor) and isinstance(self.audio2image_model.feature_extractor, ASTFeatureExtractor):
                     audio_data = audio_data.to('cpu').numpy()
 
@@ -1186,7 +1520,7 @@ class clientA2V(Client):
                 ).input_values.to(self.device, self.audio2image_model.torch_dtype)
 
                 ast_model = self.audio2image_model.ast_model
-                ast_model.to(self.device)
+                ast_model = ast_model.to(self.device)
                 ast_model.eval()
 
                 audio_embeddings = ast_model(audio_inputs).last_hidden_state  # (batch, seq_len, feature_dim)
@@ -1204,45 +1538,176 @@ class clientA2V(Client):
         return embeddings
 
     def get_audio_embeddings_from_dataset(self, dataset):
-        """Generate audio embeddings for all samples in a given dataset."""
+        """
+        Generate audio embeddings for all samples in a given dataset.
+
+        FIXED VERSION - Properly accumulates all batches and cleans up GPU memory.
+
+        Args:
+            dataset: Dataset to process (train/test/val)
+
+        Returns:
+            dict: {
+                'clip': torch.Tensor of shape (total_samples, hidden_dim),
+                't5': torch.Tensor of shape (total_samples, seq_len, hidden_dim),
+                'class_name': list of class names
+            }
+            Returns None if AST model is not initialized.
+        """
         # Create dataloader for the entire dataset
-        dataloader = DataLoader(dataset, batch_size=len(dataset), shuffle=False)
+        dataloader = DataLoader(dataset, batch_size=8, shuffle=False)
+
+        # Check if AST model is initialized (needed for audio processing)
+        if self.model.ast_model is None or self.model.ast_feature_extractor is None:
+            logger.warning(f"Node {self.id}: AST model not initialized (using pretrained generators), cannot process audio")
+            return None
+
+        # Accumulatori per tutti i batch
+        all_embeddings = {module_name: [] for module_name in self.adapters.keys()}
+        all_class_names = []
+
+        # Move AST model to device ONCE (not in every iteration)
+        ast_model = self.model.ast_model.to(self.device)
+        ast_model.eval()
+
+        # Move adapters to device ONCE (not in every iteration)
+        for module_name in self.adapters.keys():
+            self.adapters[module_name] = self.adapters[module_name].to(self.device)
+
+        total_batches = len(dataloader)
+        print(f"Node {self.id} - Processing {total_batches} batches from dataset...")
 
         with torch.no_grad():
             for batch_idx, samples in enumerate(dataloader):
-                # Move data to device
-                if 'audio' in samples and isinstance(samples['audio'], torch.Tensor):
+                # Variables to cleanup in finally block
+                audio_data = None
+                audio_data_np = None
+                audio_inputs = None
+                audio_embeddings = None
+
+                try:
+                    # Extract audio data from batch
+                    if 'audio' not in samples or not isinstance(samples['audio'], torch.Tensor):
+                        logger.warning(f"Node {self.id}: Batch {batch_idx} missing audio data, skipping")
+                        continue
+
                     audio_data = samples['audio'].to(self.device)
-                else:
-                    raise ValueError("Audio data not found in the batch samples")
 
-                # Forward pass through feature extractor and AST model
-                if isinstance(audio_data, torch.Tensor) and isinstance(self.audio2image_model.feature_extractor, ASTFeatureExtractor):
-                    audio_data = audio_data.to('cpu').numpy()
+                    # Convert to numpy for AST feature extractor
+                    if isinstance(self.model.ast_feature_extractor, ASTFeatureExtractor):
+                        audio_data_np = audio_data.cpu().numpy()
 
-                audio_inputs = self.audio2image_model.feature_extractor(
-                    audio_data,
-                    sampling_rate=16000,
-                    return_tensors="pt",
-                    padding=True
-                ).input_values.to(self.device, self.audio2image_model.torch_dtype)
+                        # Extract features using AST feature extractor
+                        audio_inputs = self.model.ast_feature_extractor(
+                            audio_data_np,
+                            sampling_rate=16000,
+                            return_tensors="pt",
+                            padding=True
+                        ).input_values.to(self.device, self.model.torch_dtype)
 
-                ast_model = self.audio2image_model.ast_model
-                ast_model.eval()
-                ast_model.to(self.device)
+                        # Forward through AST model to get audio embeddings
+                        audio_embeddings = ast_model(audio_inputs).last_hidden_state  # (batch, seq_len, feature_dim)
+                    else:
+                        # Alternative path if not using AST feature extractor
+                        # (e.g., using pretrained generators directly)
+                        class_names = samples.get('class_name', [])
+                        audio_embeddings_list = []
+                        for class_name in class_names:
+                            if class_name in self.model.generators_dict:
+                                gen_emb = self.model.generators_dict[class_name].sample(
+                                    num_samples=1,
+                                    device=self.device,
+                                    target_sequence_length=1214
+                                )
+                                audio_embeddings_list.append(gen_emb)
+                            else:
+                                logger.warning(f"Node {self.id}: No generator for class '{class_name}'")
 
-                audio_embeddings = ast_model(audio_inputs).last_hidden_state  # (batch, seq_len, feature_dim)
-                embeddings = {}
-                for module_name in self.adapters.keys():
-                    adapter = self.adapters[module_name].to(self.device)
-                    output = adapter(audio_embeddings)
-                    embeddings[module_name] = output
+                        if audio_embeddings_list:
+                            audio_embeddings = torch.cat(audio_embeddings_list, dim=0)
+                        else:
+                            logger.warning(f"Node {self.id}: Batch {batch_idx} failed to generate embeddings")
+                            continue
 
-                embeddings['class_name'] = samples.get('class_name', None)
+                    # Process through adapters to get text embeddings
+                    batch_embeddings = {}
+                    for module_name in self.adapters.keys():
+                        adapter = self.adapters[module_name]  # Already on device
+                        adapter.eval()
 
-        print(f"Node {self.id} - Retrieved {audio_embeddings.shape[0]} audio embeddings from dataset")
+                        # Forward through adapter
+                        output = adapter(audio_embeddings)
 
-        return embeddings
+                        # Move to CPU immediately to free GPU memory
+                        # Store in list for later concatenation
+                        batch_embeddings[module_name] = output.cpu()
+
+                    # Accumulate results
+                    for module_name in self.adapters.keys():
+                        all_embeddings[module_name].append(batch_embeddings[module_name])
+
+                    # Store class names
+                    batch_class_names = samples.get('class_name', [])
+                    all_class_names.extend(batch_class_names)
+
+                    # Progress logging
+                    if (batch_idx + 1) % 10 == 0 or (batch_idx + 1) == total_batches:
+                        print(f"  Progress: {batch_idx + 1}/{total_batches} batches processed, "
+                              f"{len(all_class_names)} total samples")
+
+                except Exception as e:
+                    logger.error(f"Node {self.id}: Error processing batch {batch_idx}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
+
+                finally:
+                    # CRITICAL: Cleanup batch tensors to free GPU memory
+                    # This prevents accumulation of tensors across iterations
+                    if audio_data is not None:
+                        del audio_data
+                    if audio_data_np is not None:
+                        del audio_data_np
+                    if audio_inputs is not None:
+                        del audio_inputs
+                    if audio_embeddings is not None:
+                        del audio_embeddings
+                    if 'batch_embeddings' in locals():
+                        for key in list(batch_embeddings.keys()):
+                            del batch_embeddings[key]
+                        del batch_embeddings
+
+                    # Force GPU cache cleanup every 10 batches
+                    if (batch_idx + 1) % 10 == 0:
+                        torch.cuda.empty_cache()
+
+        # Check if we collected any data
+        if not all_class_names:
+            logger.warning(f"Node {self.id}: No samples collected from dataset")
+            return None
+
+        # Concatenate all batches
+        result = {}
+        for module_name in all_embeddings.keys():
+            if all_embeddings[module_name]:
+                # Concatenate tensors from all batches
+                result[module_name] = torch.cat(all_embeddings[module_name], dim=0)
+            else:
+                logger.warning(f"Node {self.id}: No embeddings collected for adapter '{module_name}'")
+
+        result['class_name'] = all_class_names
+
+        # Final cleanup
+        for module_name in list(all_embeddings.keys()):
+            del all_embeddings[module_name]
+        del all_embeddings
+
+        torch.cuda.empty_cache()
+
+        print(f"Node {self.id} - ✓ Retrieved {len(all_class_names)} audio embeddings from dataset")
+        print(f"Node {self.id} - Embedding shapes: {', '.join([f'{k}: {v.shape}' for k, v in result.items() if isinstance(v, torch.Tensor)])}")
+
+        return result
 
 
 
@@ -1268,15 +1733,15 @@ class clientA2V(Client):
             return {}
 
         # Get AST model
-        ast_model = self.audio2image_model.ast_model
-        feature_extractor = self.audio2image_model.feature_extractor
+        ast_model = self.model.ast_transformer
+        feature_extractor = self.model.ast_feature_extractor
 
         if ast_model is None:
             print(f"Warning: Node {self.id} - AST model not available")
             return {}
 
         # Move model to device and set to eval mode
-        ast_model.to(device)
+        ast_model = ast_model.to(device)
         ast_model.eval()
 
         # Storage for features per class
@@ -1406,7 +1871,7 @@ class clientA2V(Client):
         # Process through each adapter
         for adapter_name, adapter in self.adapters.items():
             print(f"Node {self.id} - Computing {adapter_name} outputs for all classes")
-            adapter.to(device)
+            adapter = adapter.to(device)
             adapter.eval()
 
             adapter_outputs[adapter_name] = {}
@@ -1458,16 +1923,6 @@ class clientA2V(Client):
         return self.per_class_outputs_mean
 
     def compute_adapter_mean_outputs(self, adapter_outputs):
-        """
-        Compute mean outputs for each adapter and class from all stored outputs.
-
-        Args:
-            adapter_outputs: dict from compute_per_class_adapter_outputs()
-                            {adapter_name: {class_name: [list of outputs]}}
-
-        Returns:
-            dict: {adapter_name: {class_name: mean_output}}
-        """
         adapter_means = {}
 
         for adapter_name, class_outputs_dict in adapter_outputs.items():
@@ -1605,32 +2060,45 @@ class clientA2V(Client):
         """
         Get the appropriate generator for a given class.
 
+        Since the server now always uses prompt_generators (dictionary),
+        we can directly access by class name.
+
         Args:
             class_name: Name of the class
 
         Returns:
             tuple: (generator, optimizer, generator_key) or (None, None, None) if not found
         """
-        if not hasattr(self, 'class_to_generator_map'):
-            print(f"[Client {self.id}] Warning: class_to_generator_map not initialized")
-            return None, None, None
+        # Direct lookup in prompt_generators dictionary
+        if hasattr(self, 'prompt_generators') and self.prompt_generators:
+            if class_name in self.prompt_generators:
+                generator = self.prompt_generators[class_name]
 
-        if class_name not in self.class_to_generator_map:
-            print(f"[Client {self.id}] Warning: class '{class_name}' not in mapping")
-            return None, None, None
+                # Try to find the optimizer
+                # For per_class: optimizer key = class name
+                # For per_group: optimizer key = group name (need to find it)
+                optimizer = None
+                if hasattr(self, 'generator_optimizers') and self.generator_optimizers:
+                    # First try direct match
+                    if class_name in self.generator_optimizers:
+                        optimizer = self.generator_optimizers[class_name]
+                    else:
+                        # For per_group, find which optimizer corresponds to this generator
+                        gen_id = id(generator)
+                        for opt_key, opt in self.generator_optimizers.items():
+                            # Check if this optimizer's generator matches
+                            if opt_key in self.prompt_generators and id(self.prompt_generators.get(opt_key)) == gen_id:
+                                optimizer = opt
+                                break
 
-        gen_key = self.class_to_generator_map[class_name]
-
-        if self.generator_granularity == 'unified':
-            return self.prompt_generator, self.generator_optimizer, 'unified'
-        else:
-            if gen_key in self.prompt_generators:
-                generator = self.prompt_generators[gen_key]
-                optimizer = self.generator_optimizers.get(gen_key, None)
-                return generator, optimizer, gen_key
+                return generator, optimizer, class_name
             else:
-                print(f"[Client {self.id}] Warning: generator '{gen_key}' not found")
+                print(f"[Client {self.id}] Warning: No generator for class '{class_name}'")
+                print(f"[Client {self.id}] Available classes: {sorted(list(self.prompt_generators.keys()))}")
                 return None, None, None
+        else:
+            print(f"[Client {self.id}] Warning: prompt_generators not initialized")
+            return None, None, None
 
     def _get_class_to_generator_mapping(self):
         """
@@ -1722,10 +2190,43 @@ class clientA2V(Client):
 
         # Transpose back: [batch, target_length, dim]
         return x_pooled.transpose(1, 2)
+    
+    def get_global_generators(self):
+        if self.generator_load_checkpoint or self.use_pretrained_generators and type(self.global_model.generators_dict) is not None:
+            for class_name in self.node_data.dataset.active_classes:
+                if class_name in self.global_model.generators_dict:
+                    print(f"[Client {self.id}] Warning: Pretrained generator for class '{class_name}' not found in global model")
+                    self.prompt_generators[class_name] = self.global_model.generators_dict[class_name]
+            self.model.generators_dict = self.prompt_generators
 
     def initialize_generators(self):
-        """Initialize VAE/GAN generators based on granularity setting."""
+        if self.generator_load_checkpoint:
+            return
+
+        if self.use_generator or self.generator_training_mode or self.generator_only_mode:
+            self.create_generators()
+    
+    def create_generators(self):
         print(f"[Client {self.id}] Initializing {self.generator_type} generator(s) with granularity={self.generator_granularity}")
+
+        # Check if we should use a shared generator from the server instead of creating a new one
+        # This happens when:
+        # 1. shared_generator_in_only_mode is True (server provides a single shared generator)
+        # 2. generator_only_mode is True (we're in generator-only training mode)
+        # 3. The generator has already been received from the server
+        if (self.shared_generator_in_only_mode and
+            self.generator_only_mode ):
+            for class_name in self.node_data.dataset.active_classes:
+                print(f"[Client {self.id}] Using shared generator for class '{class_name}' from server")
+                self.prompt_generators[class_name] = self.global_model.prompt_generator
+
+            if self.generator_type == 'vae':
+                # Initialize loss with adaptive beta scheduling based on configured training epochs
+                self.generator_loss_fn = VAELoss(
+                    total_epochs=self.generator_training_epochs,
+                    beta_warmup_ratio=0.5  # Beta reaches 1.0 at 50% of total epochs
+                )
+            return
 
         # Get class-to-generator mapping
         class_mapping = self._get_class_to_generator_mapping()
@@ -1751,7 +2252,7 @@ class clientA2V(Client):
                         latent_dim=256,
                         visual_dim=visual_dim,  # Adjusted based on diffusion_type
                         sequence_length=self.generator_training_sequence_length
-                    ).to(self.device)
+                    )
                     print(f"[Client {self.id}] Using conditioned VAE generator (training_seq_len={self.generator_training_sequence_length}, output_seq_len={self.generator_output_sequence_length or 'default'})")
                 else:
                     self.prompt_generator = VAEGenerator(
@@ -1759,7 +2260,7 @@ class clientA2V(Client):
                         hidden_dim=1024,
                         latent_dim=256,
                         sequence_length=self.generator_training_sequence_length
-                    ).to(self.device)
+                    )
                     print(f"[Client {self.id}] Using unconditioned VAE generator (training_seq_len={self.generator_training_sequence_length}, output_seq_len={self.generator_output_sequence_length or 'default'})")
 
                 # Initialize loss with adaptive beta scheduling based on configured training epochs
@@ -1813,18 +2314,19 @@ class clientA2V(Client):
                             hidden_dim=1024,
                             latent_dim=256,
                             sequence_length=self.generator_training_sequence_length
-                        ).to(self.device)
+                        )
                         print(f"[Client {self.id}]   Created unconditioned VAE generator for '{gen_key}' (training_seq_len={self.generator_training_sequence_length})")
 
                     self.prompt_generators[gen_key] = generator
 
-                    # Create optimizer for this generator
-                    optimizer = torch.optim.AdamW(
-                        generator.parameters(),
-                        lr=1e-3,
-                        weight_decay=1e-5
-                    )
-                    self.generator_optimizers[gen_key] = optimizer
+                    # Create optimizer for this generator if generator training is enabled training
+                    if self.generator_training_mode or self.generator_only_mode:
+                        optimizer = torch.optim.AdamW(
+                            generator.parameters(),
+                            lr=1e-2,
+                            weight_decay=1e-5
+                        )
+                        self.generator_optimizers[gen_key] = optimizer
 
             elif self.generator_type == 'gan':
                 for gen_key in generator_keys:
@@ -1841,7 +2343,205 @@ class clientA2V(Client):
         self.class_to_generator_map = class_mapping
         print(f"[Client {self.id}] Generator initialization complete")
 
-    def save_generator_checkpoint(self, round_num=None):
+    def _setup_synthetic_samples_count(self):
+        """
+        Setup the number of synthetic samples per class.
+        If synthetic_samples_per_class is "auto" or None, calculate it based on dataset size.
+        Otherwise, use the explicit value from configuration.
+        """
+        # Check if synthetic_samples_per_class is set to "auto" or None
+        if self.synthetic_samples_per_class == "auto" or self.synthetic_samples_per_class is None:
+            # Calculate per-class sample count from dataset
+            if hasattr(self.node_data, 'train_dataset') and self.node_data.train_dataset is not None:
+                train_dataset = self.node_data.train_dataset
+
+                # Get the actual dataset (unwrap Subset if needed)
+                if isinstance(train_dataset, torch.utils.data.Subset):
+                    base_dataset = train_dataset.dataset
+                else:
+                    base_dataset = train_dataset
+
+                # Get number of classes
+                num_classes = len(base_dataset.active_classes) if hasattr(base_dataset, 'active_classes') else 1
+
+                if num_classes > 0:
+                    # Calculate samples per class (total samples / number of classes)
+                    total_samples = len(train_dataset)
+                    samples_per_class = max(1, total_samples // num_classes)
+
+                    self.synthetic_samples_per_class = samples_per_class
+                    print(f"[Client {self.id}] Auto-calculated synthetic_samples_per_class = {samples_per_class} "
+                          f"(total samples: {total_samples}, classes: {num_classes})")
+                else:
+                    # Fallback to default
+                    self.synthetic_samples_per_class = 5
+                    print(f"[Client {self.id}] Could not determine number of classes, using default synthetic_samples_per_class = 5")
+            else:
+                # No train dataset, fallback to default
+                self.synthetic_samples_per_class = 5
+                print(f"[Client {self.id}] No train dataset available, using default synthetic_samples_per_class = 5")
+        else:
+            # Explicit value provided in configuration
+            print(f"[Client {self.id}] Using configured synthetic_samples_per_class = {self.synthetic_samples_per_class}")
+
+    def _reinitialize_model_weights(self, model):
+        """
+        Reinitialize the weights of a PyTorch model using standard initialization.
+
+        Args:
+            model: PyTorch model whose weights should be reinitialized
+        """
+        for module in model.modules():
+            if isinstance(module, (torch.nn.Linear, torch.nn.Conv1d, torch.nn.Conv2d)):
+                # Reinitialize linear and convolutional layers
+                torch.nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+                if module.bias is not None:
+                    torch.nn.init.constant_(module.bias, 0)
+            elif isinstance(module, (torch.nn.BatchNorm1d, torch.nn.BatchNorm2d, torch.nn.LayerNorm)):
+                # Reinitialize normalization layers
+                if module.weight is not None:
+                    torch.nn.init.constant_(module.weight, 1)
+                if module.bias is not None:
+                    torch.nn.init.constant_(module.bias, 0)
+
+    def reset_generator_parameters(self, generator_key=None):
+        """
+        Reset generator parameters to initial state by reinitializing weights in-place.
+
+        This function handles all three granularities:
+        - unified: Reset the single shared generator
+        - per_class: Reset the generator for a specific class
+        - per_group: Reset the generator for a specific group
+
+        Args:
+            generator_key: Optional key identifying which generator to reset.
+                          - None for unified granularity (resets the single generator)
+                          - Class name for per_class granularity
+                          - Group name for per_group granularity
+
+        Returns:
+            bool: True if reset was successful, False otherwise
+        """
+        print(f"[Client {self.id}] Resetting generator parameters (granularity={self.generator_granularity}, key={generator_key})")
+
+        try:
+            if self.generator_granularity == 'unified':
+                # Reset the unified generator
+                if self.generator_type == 'vae':
+                    # Reinitialize generator weights in-place
+                    if hasattr(self, 'prompt_generator') and self.prompt_generator is not None:
+                        self._reinitialize_model_weights(self.prompt_generator)
+                        vae_type = "conditioned" if self.use_conditioned_vae else "unconditioned"
+                        print(f"[Client {self.id}]   Reinitialized {vae_type} VAE generator weights")
+                    else:
+                        print(f"[Client {self.id}]   WARNING: No prompt_generator found to reset")
+                        return False
+
+                    # Ensure loss function exists
+                    if self.generator_loss_fn is None:
+                        from system.flcore.trainmodel.generators import VAELoss
+                        self.generator_loss_fn = VAELoss(
+                            total_epochs=self.generator_training_epochs,
+                            beta_warmup_ratio=0.5
+                        )
+                        print(f"[Client {self.id}]   Initialized VAE loss function")
+
+                    # Reset optimizer state by creating a new optimizer
+                    # IMPORTANT: In shared generator mode, optimizer is stored in generator_optimizers['unified']
+                    # to ensure all clients use the same optimizer instance
+                    optimizer_key = 'unified'
+
+                    # Check both locations for backward compatibility
+                    has_shared_optimizer = hasattr(self, 'generator_optimizers') and optimizer_key in self.generator_optimizers
+                    has_legacy_optimizer = hasattr(self, 'generator_optimizer') and self.generator_optimizer is not None
+
+                    if has_shared_optimizer or has_legacy_optimizer:
+                        new_optimizer = torch.optim.AdamW(
+                            self.prompt_generator.parameters(),
+                            lr=1e-3,
+                            weight_decay=1e-5
+                        )
+
+                        # Store in generator_optimizers dict for shared access
+                        if not hasattr(self, 'generator_optimizers'):
+                            self.generator_optimizers = {}
+                        self.generator_optimizers[optimizer_key] = new_optimizer
+
+                        # Also update legacy reference for backward compatibility
+                        self.generator_optimizer = new_optimizer
+                        print(f"[Client {self.id}]   Reset optimizer state (shared mode: key='{optimizer_key}')")
+
+                elif self.generator_type == 'gan':
+                    # Reset GAN generator weights
+                    if hasattr(self, 'prompt_generator_clip') and self.prompt_generator_clip is not None:
+                        self._reinitialize_model_weights(self.prompt_generator_clip)
+                        print(f"[Client {self.id}]   Reinitialized GAN generator weights")
+                    else:
+                        print(f"[Client {self.id}]   WARNING: No prompt_generator_clip found to reset")
+                        return False
+
+            else:
+                # Reset specific generator in per_class or per_group mode
+                if generator_key is None:
+                    print(f"[Client {self.id}] ERROR: generator_key required for {self.generator_granularity} granularity")
+                    return False
+
+                if generator_key not in self.prompt_generators:
+                    print(f"[Client {self.id}] WARNING: Generator key '{generator_key}' not found")
+                    return False
+
+                if self.generator_type == 'vae':
+                    # Reinitialize generator weights in-place
+                    generator = self.prompt_generators[generator_key]
+                    if generator is not None:
+                        self._reinitialize_model_weights(generator)
+                        vae_type = "conditioned" if self.use_conditioned_vae else "unconditioned"
+                        print(f"[Client {self.id}]   Reinitialized {vae_type} VAE generator weights for '{generator_key}'")
+                    else:
+                        print(f"[Client {self.id}]   WARNING: Generator for '{generator_key}' is None")
+                        return False
+
+                    # Ensure loss function exists
+                    if self.generator_loss_fn is None:
+                        from system.flcore.trainmodel.generators import VAELoss
+                        self.generator_loss_fn = VAELoss(
+                            total_epochs=self.generator_training_epochs,
+                            beta_warmup_ratio=0.5
+                        )
+                        print(f"[Client {self.id}]   Initialized VAE loss function")
+
+                    # Reset optimizer state by creating a new optimizer
+                    # Create optimizer regardless of whether it existed before
+                    if not hasattr(self, 'generator_optimizers'):
+                        self.generator_optimizers = {}
+                    optimizer = torch.optim.AdamW(
+                        generator.parameters(),
+                        lr=1e-2,
+                        weight_decay=1e-5
+                    )
+                    self.generator_optimizers[generator_key] = optimizer
+                    print(f"[Client {self.id}]   Reset optimizer state for '{generator_key}'")
+
+                elif self.generator_type == 'gan':
+                    # Reset GAN generator weights
+                    generator = self.prompt_generators[generator_key]
+                    if generator is not None:
+                        self._reinitialize_model_weights(generator)
+                        print(f"[Client {self.id}]   Reinitialized GAN generator weights for '{generator_key}'")
+                    else:
+                        print(f"[Client {self.id}]   WARNING: Generator for '{generator_key}' is None")
+                        return False
+
+            print(f"[Client {self.id}] ✓ Generator reset complete")
+            return True
+
+        except Exception as e:
+            print(f"[Client {self.id}] ERROR resetting generator: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def save_generator_checkpoint(self, round_num=None, generator_class=None):
         """
         Save generator checkpoint(s) for this client with comprehensive metadata.
         Handles unified, per_class, and per_group granularities.
@@ -1875,7 +2575,15 @@ class clientA2V(Client):
         else:
             # Save multiple generator checkpoints (per_class or per_group)
             for gen_key, generator in self.prompt_generators.items():
+                if type(generator_class) is list and gen_key not in generator_class:
+                    continue
+
+                if type(generator_class) is str and gen_key != generator_class:
+                    continue
+
+
                 # Build filename based on granularity
+
                 if self.generator_granularity == 'per_class':
                     suffix = f"class_{gen_key}"
                 elif self.generator_granularity == 'per_group':
@@ -1911,6 +2619,7 @@ class clientA2V(Client):
         Returns:
             str: Path where checkpoint was saved
         """
+        logger.info(f"[Client {self.id}] Creating generator checkpoint to {checkpoint_path}")
         import datetime
 
         # Use provided generator or default unified one
@@ -1918,9 +2627,13 @@ class clientA2V(Client):
             generator = self.prompt_generator
 
         # Get optimizer for this generator
+        # Priority: 1) specific key in dict, 2) 'unified' key in dict, 3) legacy attribute
+        optimizer = None
         if gen_key and gen_key in self.generator_optimizers:
             optimizer = self.generator_optimizers[gen_key]
-        else:
+        elif hasattr(self, 'generator_optimizers') and 'unified' in self.generator_optimizers:
+            optimizer = self.generator_optimizers['unified']
+        elif hasattr(self, 'generator_optimizer'):
             optimizer = self.generator_optimizer
 
         # Extract metadata from dataset
@@ -1958,9 +2671,19 @@ class clientA2V(Client):
         # Get classes for this specific generator (if applicable)
         generator_classes = None
         if gen_key and self.generator_granularity == 'per_class':
+            # For per_class, only save the specific class this generator handles
             generator_classes = [gen_key]
         elif gen_key and self.generator_granularity == 'per_group' and self.generator_class_groups:
+            # For per_group, save all classes in this group
             generator_classes = self.generator_class_groups.get(gen_key, [])
+
+        # Determine visual_dim based on diffusion_type (same logic as in initialize_generators)
+        if self.diffusion_type == 'flux':
+            # FLUX uses T5 (4096) + CLIP (768) = 4864
+            visual_dim = 4864
+        else:
+            # SD uses only CLIP (768)
+            visual_dim = 768
 
         # Prepare comprehensive checkpoint metadata
         checkpoint = {
@@ -1996,265 +2719,439 @@ class clientA2V(Client):
             # Model architecture info
             'audio_model_name': self.audio_model_name,
             'img_pipe_name': self.img_pipe_name,
+
+            # VAE-specific architecture parameters (critical for loading)
+            'sequence_length': self.generator_training_sequence_length,
+            'visual_dim': visual_dim,
+            'use_conditioned_vae': self.use_conditioned_vae,
         }
 
-        # Save generator state
+        # Save generator state (moving tensors to CPU to prevent GPU memory leaks)
         if self.generator_type == 'vae':
             if generator:
-                checkpoint['generator_state_dict'] = generator.state_dict()
+                checkpoint['generator_state_dict'] = {k: v.cpu() for k, v in generator.state_dict().items()}
             else:
-                checkpoint['generator_state_dict'] = self.prompt_generator.state_dict()
+                checkpoint['generator_state_dict'] = {k: v.cpu() for k, v in self.prompt_generator.state_dict().items()}
 
-            if optimizer:
-                checkpoint['optimizer_state_dict'] = optimizer.state_dict()
+            # if optimizer:
+            #     # Optimizer state dict may contain both tensors and non-tensor values
+            #     checkpoint['optimizer_state_dict'] = {
+            #         k: v.cpu() if isinstance(v, torch.Tensor) else v
+            #         for k, v in optimizer.state_dict().items()
+            #     }
 
         elif self.generator_type == 'gan':
             if generator:
-                checkpoint['generator_clip_state_dict'] = generator.state_dict()
+                checkpoint['generator_clip_state_dict'] = {k: v.cpu() for k, v in generator.state_dict().items()}
             elif self.prompt_generator_clip:
-                checkpoint['generator_clip_state_dict'] = self.prompt_generator_clip.state_dict()
+                checkpoint['generator_clip_state_dict'] = {k: v.cpu() for k, v in self.prompt_generator_clip.state_dict().items()}
+
+        # Save checkpoint
+        logger.info(f"[Client {self.id}] Saving generator checkpoint to {checkpoint_path}")
+
+        try:
+            torch.save(checkpoint, checkpoint_path)
+
+            # Create concise log message
+            if gen_key:
+                print(f"[Client {self.id}] Saved {self.generator_granularity} generator '{gen_key}' to {os.path.basename(checkpoint_path)}")
+            else:
+                print(f"[Client {self.id}] Saved generator checkpoint to {checkpoint_path}")
+        finally:
+            # Explicitly free checkpoint memory to prevent leaks
+            del checkpoint
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        return checkpoint_path
+
+    # def load_generator_checkpoint(self, checkpoint_path=None, strict_validation=True, warn_only=False):
+    #     """
+    #     DEPRECATED: Generator checkpoint loading is now handled by the server.
+
+    #     The server loads all generator checkpoints and exposes them to clients via set_server().
+    #     This method is kept for backward compatibility but does nothing.
+
+    #     Args:
+    #         checkpoint_path: Ignored (kept for API compatibility)
+    #         strict_validation: Ignored (kept for API compatibility)
+    #         warn_only: Ignored (kept for API compatibility)
+
+    #     Returns:
+    #         bool: Always returns True (generators are provided by server)
+    #     """
+    #     self.logger.info(f"Client {self.id}: Generator checkpoint loading is now handled by the server.")
+    #     self.logger.info(f"Client {self.id}: Generators will be received from server via set_server()")
+    #     return True
+
+    # def _load_single_generator_checkpoint(self, checkpoint_path, strict_validation=True, warn_only=False, multi_mode=False):
+    #     """
+    #     DEPRECATED: Generator checkpoint loading is now handled by the server.
+
+    #     This method is kept for backward compatibility but does nothing.
+
+    #     Args:
+    #         checkpoint_path: Ignored (kept for API compatibility)
+    #         strict_validation: Ignored (kept for API compatibility)
+    #         warn_only: Ignored (kept for API compatibility)
+    #         multi_mode: Ignored (kept for API compatibility)
+
+    #     Returns:
+    #         bool: Always returns True (generators are provided by server)
+    #     """
+    #     return True
+
+    def save_adapter_checkpoint(self, round_num=None):
+        import os
+
+        if not self.adapter_save_checkpoint:
+            return []
+
+        # Create checkpoint directory if it doesn't exist
+        os.makedirs(self.adapter_checkpoint_dir, exist_ok=True)
+
+        saved_paths = []
+
+        if self.adapter_checkpoint_per_type:
+            # Save each adapter type separately
+            adapter_types = []
+
+            # Get adapter modules based on diffusion_type
+            if 'clip' in self.adapters:
+                clip_adapter = self.adapters['clip']
+                if hasattr(clip_adapter, 'adapter_clip'):
+                    adapter_types.append(('clip_adapter', clip_adapter.adapter_clip))
+                if hasattr(clip_adapter, 'projection_clip'):
+                    adapter_types.append(('clip_projection', clip_adapter.projection_clip))
+
+            # T5 adapters are only available for flux diffusion type
+            if self.diffusion_type == 'flux' and 't5' in self.adapters:
+                t5_adapter = self.adapters['t5']
+                if hasattr(t5_adapter, 'adapter_t5'):
+                    adapter_types.append(('t5_adapter', t5_adapter.adapter_t5))
+                if hasattr(t5_adapter, 'projection_t5'):
+                    adapter_types.append(('t5_projection', t5_adapter.projection_t5))
+
+            for adapter_name, adapter in adapter_types:
+                classes = self.node_data.dataset.active_classes if hasattr(self.node_data, 'dataset') and hasattr(self.node_data.dataset, 'active_classes') else None
+
+                if classes is not None:
+                    classes_str = "class_" + "_".join(str(c) for c in classes)
+                else:
+                    classes_str = "no_classes_info"
+                if round_num is not None:
+                    checkpoint_path = os.path.join(
+                        self.adapter_checkpoint_dir,
+                        f'{self.adapter_checkpoint_base_name}_node{self.id}_{adapter_name}_round_{round_num}_{classes_str}.pt'
+                    )
+                else:
+                    checkpoint_path = os.path.join(
+                        self.adapter_checkpoint_dir,
+                        f'{self.adapter_checkpoint_base_name}_node{self.id}_{adapter_name}.pt'
+                    )
+
+                saved_paths.append(self._save_single_adapter_checkpoint(
+                    checkpoint_path, round_num, adapter_name, adapter
+                ))
+        else:
+            # Save all adapters in a single checkpoint
+            if round_num is not None:
+                checkpoint_path = os.path.join(
+                    self.adapter_checkpoint_dir,
+                    f'{self.adapter_checkpoint_base_name}_node{self.id}_round_{round_num}.pt'
+                )
+            else:
+                checkpoint_path = os.path.join(
+                    self.adapter_checkpoint_dir,
+                    f'{self.adapter_checkpoint_base_name}_node{self.id}.pt'
+                )
+
+            saved_paths.append(self._save_single_adapter_checkpoint(
+                checkpoint_path, round_num, 'all', None
+            ))
+
+        return saved_paths
+
+    def _save_single_adapter_checkpoint(self, checkpoint_path, round_num, adapter_name, adapter=None):
+        """
+        Save a single adapter checkpoint with metadata.
+
+        Args:
+            checkpoint_path: Path where to save the checkpoint
+            round_num: Training round number
+            adapter_name: Name of the adapter ('clip_adapter', 't5_adapter', 'clip_projection', 't5_projection', or 'all')
+            adapter: Adapter instance (or None to save all adapters)
+
+        Returns:
+            str: Path where checkpoint was saved
+        """
+        import datetime
+
+        # Prepare comprehensive checkpoint metadata
+        checkpoint = {
+            # Node identification
+            'client_id': self.id,
+            'node_id': self.id,
+
+            # Training state
+            'round': round_num if round_num is not None else self.round,
+            'timestamp': datetime.datetime.now().isoformat(),
+
+            # Configuration
+            'adapter_name': adapter_name,
+            'dataset_name': self.dataset_name,
+        }
+
+        # Extract dataset metadata
+        selected_classes = None
+        train_folds = None
+        test_folds = None
+        num_train_samples = 0
+        num_test_samples = 0
+
+        if hasattr(self.node_data, 'train_dataset') and self.node_data.train_dataset is not None:
+            train_dataset = self.node_data.train_dataset
+            num_train_samples = len(train_dataset)
+
+            if hasattr(train_dataset, 'selected_classes'):
+                selected_classes = train_dataset.selected_classes
+            elif hasattr(train_dataset, 'dataset') and hasattr(train_dataset.dataset, 'selected_classes'):
+                selected_classes = train_dataset.dataset.selected_classes
+
+            if hasattr(train_dataset, 'train_folds'):
+                train_folds = train_dataset.train_folds
+            elif hasattr(train_dataset, 'dataset') and hasattr(train_dataset.dataset, 'train_folds'):
+                train_folds = train_dataset.dataset.train_folds
+
+        if hasattr(self.node_data, 'test_dataset') and self.node_data.test_dataset is not None:
+            test_dataset = self.node_data.test_dataset
+            num_test_samples = len(test_dataset)
+
+            if hasattr(test_dataset, 'test_folds'):
+                test_folds = test_dataset.test_folds
+            elif hasattr(test_dataset, 'dataset') and hasattr(test_dataset.dataset, 'test_folds'):
+                test_folds = test_dataset.dataset.test_folds
+
+        checkpoint.update({
+            'selected_classes': selected_classes,
+            'train_folds': train_folds,
+            'test_folds': test_folds,
+            'num_train_samples': num_train_samples,
+            'num_test_samples': num_test_samples,
+        })
+
+        # Save adapter state(s)
+        if adapter_name == 'all':
+            # Save all adapters in one checkpoint
+            if hasattr(self, 'local_clip_adapter') and self.local_clip_adapter is not None:
+                checkpoint['clip_adapter_state_dict'] = self.local_clip_adapter.state_dict()
+
+            if hasattr(self, 'local_t5_adapter') and self.local_t5_adapter is not None:
+                checkpoint['t5_adapter_state_dict'] = self.local_t5_adapter.state_dict()
+
+            if hasattr(self, 'local_clip_projection') and self.local_clip_projection is not None:
+                checkpoint['clip_projection_state_dict'] = self.local_clip_projection.state_dict()
+
+            if hasattr(self, 'local_t5_projection') and self.local_t5_projection is not None:
+                checkpoint['t5_projection_state_dict'] = self.local_t5_projection.state_dict()
+        else:
+            # Save specific adapter
+            if adapter is not None:
+                checkpoint['adapter_state_dict'] = adapter.state_dict()
 
         # Save checkpoint
         torch.save(checkpoint, checkpoint_path)
 
         # Create concise log message
-        if gen_key:
-            print(f"[Client {self.id}] Saved {self.generator_granularity} generator '{gen_key}' to {os.path.basename(checkpoint_path)}")
+        if adapter_name == 'all':
+            print(f"[Client {self.id}] Saved all adapters to {os.path.basename(checkpoint_path)}")
         else:
-            print(f"[Client {self.id}] Saved generator checkpoint to {checkpoint_path}")
+            print(f"[Client {self.id}] Saved {adapter_name} to {os.path.basename(checkpoint_path)}")
 
         return checkpoint_path
 
-    def load_generator_checkpoint(self, checkpoint_path=None, strict_validation=True, warn_only=False):
+    def load_adapter_checkpoint(self, checkpoint_path=None, strict_validation=True, warn_only=False):
         """
-        Load generator checkpoint(s) for this client with metadata validation.
-        Automatically detects and loads multiple checkpoints for per_class/per_group modes.
+        Load adapter checkpoint(s) for this client with metadata validation.
 
         Args:
-            checkpoint_path: Optional path to checkpoint file (for unified mode)
+            checkpoint_path: Optional path to checkpoint file (for single file mode)
             strict_validation: If True, reject checkpoint on metadata mismatch
             warn_only: If True, only print warnings without rejecting checkpoint
 
         Returns:
             bool: True if all checkpoints loaded successfully, False otherwise
         """
-        import os
-        import glob
 
-        if self.generator_granularity == 'unified':
-            # Load single checkpoint
-            if checkpoint_path is None:
-                checkpoint_path = os.path.join(
-                    self.generator_checkpoint_dir,
-                    f'{self.generator_checkpoint_base_name}_node{self.id}.pt'
+        if not self.adapter_load_checkpoint:
+            return False
+
+        success = True
+
+        if self.adapter_checkpoint_per_type:
+            # Load each adapter type separately
+            adapter_types = ['clip_adapter', 't5_adapter', 'clip_projection', 't5_projection']
+
+            for adapter_name in adapter_types:
+                # Find checkpoint file for this adapter type
+                pattern = os.path.join(
+                    self.adapter_checkpoint_dir,
+                    # f'{self.adapter_checkpoint_base_name}_node{self.id}_{adapter_name}*.pt'
+                    f'{self.adapter_checkpoint_base_name}_node*_{adapter_name}*.pt'
                 )
 
-            if not os.path.exists(checkpoint_path):
-                print(f"[Client {self.id}] Warning: Generator checkpoint not found at {checkpoint_path}")
-                return False
+                checkpoint_files = sorted(glob.glob(pattern))
 
-            return self._load_single_generator_checkpoint(checkpoint_path, strict_validation, warn_only)
+                if not checkpoint_files:
+                    print(f"[Client {self.id}] ⚠ No checkpoint found for {adapter_name}")
+                    continue
 
+                # Find checkpoint that matches this node's classes
+                checkpoint_file = None
+                node_classes = self.node_data.dataset.active_classes if hasattr(self.node_data, 'dataset') else []
+                
+                for ckpt in checkpoint_files:
+                    # Check if checkpoint filename contains any of this node's classes
+                    for class_name in node_classes:
+                        if class_name in ckpt:
+                            checkpoint_file = ckpt
+                            break
+                    if checkpoint_file:
+                        break
+                
+                # Fallback to most recent checkpoint if no class-specific match found
+                if checkpoint_file is None:
+                    logger.warning(f"[Client {self.id}] No class-specific checkpoint found for {adapter_name}, using most recent checkpoint")   
+                    checkpoint_file = checkpoint_files[-1]
+
+                loaded = self._load_single_adapter_checkpoint(
+                    checkpoint_file, strict_validation, warn_only, adapter_name
+                )
+
+                if not loaded:
+                    success = False
         else:
-            # Load multiple checkpoints for per_class or per_group
-            print(f"\n[Client {self.id}] Loading {self.generator_granularity} generators from {self.generator_checkpoint_dir}")
-
-            # Build pattern to find all checkpoint files for this node
-            if self.generator_granularity == 'per_class':
+            # Load all adapters from a single checkpoint
+            if checkpoint_path is None:
+                # Auto-detect checkpoint file
                 pattern = os.path.join(
-                    self.generator_checkpoint_dir,
-                    f'{self.generator_checkpoint_base_name}_node{self.id}_class_*.pt'
-                )
-            else:  # per_group
-                pattern = os.path.join(
-                    self.generator_checkpoint_dir,
-                    f'{self.generator_checkpoint_base_name}_node{self.id}_group_*.pt'
+                    self.adapter_checkpoint_dir,
+                    f'{self.adapter_checkpoint_base_name}_node{self.id}*.pt'
                 )
 
-            # Find all matching checkpoint files
-            checkpoint_files = glob.glob(pattern)
+                checkpoint_files = sorted(glob.glob(pattern))
 
-            if not checkpoint_files:
-                print(f"[Client {self.id}] Warning: No {self.generator_granularity} checkpoints found matching pattern: {pattern}")
-                return False
+                if not checkpoint_files:
+                    print(f"[Client {self.id}] ⚠ No adapter checkpoint found")
+                    return False
 
-            print(f"[Client {self.id}] Found {len(checkpoint_files)} checkpoint files")
+                checkpoint_path = checkpoint_files[-1]
 
-            # Load each checkpoint
-            success_count = 0
-            for checkpoint_file in sorted(checkpoint_files):
-                if self._load_single_generator_checkpoint(checkpoint_file, strict_validation, warn_only, multi_mode=True):
-                    success_count += 1
+            success = self._load_single_adapter_checkpoint(
+                checkpoint_path, strict_validation, warn_only, 'all'
+            )
 
-            print(f"\n[Client {self.id}] Loaded {success_count}/{len(checkpoint_files)} generators successfully")
-            return success_count == len(checkpoint_files)
+        return success
 
-    def _load_single_generator_checkpoint(self, checkpoint_path, strict_validation=True, warn_only=False, multi_mode=False):
+    def _load_single_adapter_checkpoint(self, checkpoint_path, strict_validation=True, warn_only=False, adapter_name='all'):
         """
-        Load a single generator checkpoint with validation.
+        Load a single adapter checkpoint with validation.
 
         Args:
             checkpoint_path: Path to checkpoint file
-            strict_validation: If True, reject on critical errors
-            warn_only: If True, only warn without rejecting
-            multi_mode: If True, loading multiple generators (suppress some output)
+            strict_validation: If True, reject checkpoint on metadata mismatch
+            warn_only: If True, only print warnings without rejecting checkpoint
+            adapter_name: Name of adapter to load ('clip_adapter', 't5_adapter', etc., or 'all')
 
         Returns:
-            bool: True if loaded successfully
+            bool: True if loaded successfully, False otherwise
         """
         import os
 
+        if not os.path.exists(checkpoint_path):
+            print(f"[Client {self.id}] ⚠ Checkpoint not found: {checkpoint_path}")
+            return False
+
         try:
-            # Load checkpoint
-            checkpoint = torch.load(checkpoint_path, map_location=self.device)
+            checkpoint = torch.load(checkpoint_path, map_location='cpu')
 
-            # Extract generator key from checkpoint or filename
-            gen_key = checkpoint.get('generator_key', None)
-            if gen_key is None and multi_mode:
-                # Extract from filename
-                basename = os.path.basename(checkpoint_path)
-                if '_class_' in basename:
-                    gen_key = basename.split('_class_')[1].replace('.pt', '').split('_round_')[0]
-                elif '_group_' in basename:
-                    gen_key = basename.split('_group_')[1].replace('.pt', '').split('_round_')[0]
+            # Validate metadata
+            if strict_validation and not warn_only:
+                if checkpoint.get('client_id') != self.id:
+                    print(f"[Client {self.id}] ⚠ Warning: Checkpoint is from client {checkpoint.get('client_id')}")
+                    if not warn_only:
+                        return False
 
-            # Display checkpoint metadata (compact in multi_mode)
-            if not multi_mode:
-                print(f"\n[Client {self.id}] Loading checkpoint from: {checkpoint_path}")
-                print(f"  Checkpoint metadata:")
-                print(f"    - Node ID: {checkpoint.get('node_id', 'N/A')}")
-                print(f"    - Round: {checkpoint.get('round', 'N/A')}")
-                print(f"    - Granularity: {checkpoint.get('generator_granularity', 'N/A')}")
-                print(f"    - Generator key: {gen_key or 'unified'}")
-                print(f"    - Generator type: {checkpoint.get('generator_type', 'N/A')}")
-            else:
-                print(f"  Loading '{gen_key}' from {os.path.basename(checkpoint_path)}")
-
-            # Validation flags
-            validation_errors = []
-            validation_warnings = []
-
-            # Validate node ID
-            if 'client_id' in checkpoint or 'node_id' in checkpoint:
-                checkpoint_node_id = checkpoint.get('node_id', checkpoint.get('client_id'))
-                if checkpoint_node_id != self.id:
-                    msg = f"Node ID mismatch: checkpoint={checkpoint_node_id}, current={self.id}"
-                    validation_errors.append(msg)
-
-            # Validate generator type
-            if 'generator_type' in checkpoint:
-                if checkpoint['generator_type'] != self.generator_type:
-                    msg = f"Generator type mismatch: checkpoint={checkpoint['generator_type']}, current={self.generator_type}"
-                    validation_errors.append(msg)
-
-            # Validate dataset
-            if 'dataset_name' in checkpoint:
-                if checkpoint['dataset_name'] != self.dataset_name:
-                    msg = f"Dataset mismatch: checkpoint={checkpoint['dataset_name']}, current={self.dataset_name}"
-                    validation_warnings.append(msg)
-
-            # Validate selected classes
-            if 'selected_classes' in checkpoint and checkpoint['selected_classes'] is not None:
-                current_classes = None
-                if hasattr(self.node_data, 'train_dataset') and self.node_data.train_dataset is not None:
-                    train_dataset = self.node_data.train_dataset
-                    if hasattr(train_dataset, 'selected_classes'):
-                        current_classes = train_dataset.selected_classes
-                    elif hasattr(train_dataset, 'dataset') and hasattr(train_dataset.dataset, 'selected_classes'):
-                        current_classes = train_dataset.dataset.selected_classes
-
-                if current_classes is not None:
-                    checkpoint_classes = set(checkpoint['selected_classes'])
-                    current_classes_set = set(current_classes)
-                    if checkpoint_classes != current_classes_set:
-                        msg = f"Selected classes mismatch: checkpoint={sorted(checkpoint_classes)}, current={sorted(current_classes_set)}"
-                        validation_warnings.append(msg)
-
-            # Print validation results
-            if validation_errors:
-                print(f"\n[Client {self.id}] Validation ERRORS:")
-                for error in validation_errors:
-                    print(f"    ✗ {error}")
-
-            if validation_warnings:
-                print(f"\n[Client {self.id}] Validation WARNINGS:")
-                for warning in validation_warnings:
-                    print(f"    ⚠ {warning}")
-
-            # Decide whether to reject checkpoint
-            if validation_errors and strict_validation and not warn_only:
-                print(f"\n[Client {self.id}] Checkpoint validation failed. Set strict_validation=False to load anyway.")
-                return False
-
-            if not validation_errors and not validation_warnings:
-                print(f"[Client {self.id}] ✓ Checkpoint validation passed")
-
-            # Initialize generators if not already initialized
-            if self.generator_granularity == 'unified':
-                if self.prompt_generator is None and self.prompt_generator_clip is None:
-                    self.initialize_generators()
-            else:
-                # For multi-generator mode, ensure generators dict exists
-                if not hasattr(self, 'prompt_generators') or not self.prompt_generators:
-                    self.initialize_generators()
-
-            # Load generator state based on granularity
-            if self.generator_granularity == 'unified':
-                # Load into single generator
-                if self.generator_type == 'vae' and 'generator_state_dict' in checkpoint:
-                    try:
-                        self.prompt_generator.load_state_dict(checkpoint['generator_state_dict'])
-                    except RuntimeError as e:
-                        if 'size mismatch' in str(e):
-                            print(f"[Client {self.id}] ⚠ Warning: Checkpoint has incompatible dimensions (likely old visual_dim).")
-                            print(f"    Checkpoint was created with different architecture. Skipping load.")
-                            return False
-                        else:
-                            raise
-
-                    if 'optimizer_state_dict' in checkpoint and self.generator_optimizer:
+            # Load adapter state(s)
+            if adapter_name == 'all':
+                # Load all adapters from checkpoint
+                # Load CLIP adapters
+                if 'clip_adapter_state_dict' in checkpoint and 'clip' in self.adapters:
+                    clip_seq = self.adapters['clip']
+                    if hasattr(clip_seq, 'adapter_clip'):
                         try:
-                            self.generator_optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                        except:
-                            print(f"[Client {self.id}] ⚠ Warning: Could not load optimizer state (architecture changed)")
+                            clip_seq.adapter_clip.load_state_dict(checkpoint['clip_adapter_state_dict'])
+                            print(f"  ✓ Loaded clip_adapter from round {checkpoint.get('round', 'N/A')}")
+                        except Exception as e:
+                            print(f"  ⚠ Warning: Could not load clip_adapter: {e}")
 
-                    if not multi_mode:
-                        print(f"[Client {self.id}] ✓ Loaded VAE generator from round {checkpoint.get('round', 'N/A')}")
-
-                elif self.generator_type == 'gan' and 'generator_clip_state_dict' in checkpoint:
-                    self.prompt_generator_clip.load_state_dict(checkpoint['generator_clip_state_dict'])
-                    if not multi_mode:
-                        print(f"[Client {self.id}] ✓ Loaded GAN generator from round {checkpoint.get('round', 'N/A')}")
-
-            else:
-                # Load into specific generator (per_class or per_group)
-                if gen_key and gen_key in self.prompt_generators:
-                    generator = self.prompt_generators[gen_key]
-
-                    if self.generator_type == 'vae' and 'generator_state_dict' in checkpoint:
+                if 'clip_projection_state_dict' in checkpoint and 'clip' in self.adapters:
+                    clip_seq = self.adapters['clip']
+                    if hasattr(clip_seq, 'projection_clip'):
                         try:
-                            generator.load_state_dict(checkpoint['generator_state_dict'])
-                        except RuntimeError as e:
-                            if 'size mismatch' in str(e):
-                                print(f"    ⚠ Warning: Checkpoint for '{gen_key}' has incompatible dimensions. Skipping load.")
-                                return False
-                            else:
-                                raise
+                            clip_seq.projection_clip.load_state_dict(checkpoint['clip_projection_state_dict'])
+                            print(f"  ✓ Loaded clip_projection from round {checkpoint.get('round', 'N/A')}")
+                        except Exception as e:
+                            print(f"  ⚠ Warning: Could not load clip_projection: {e}")
 
-                        if 'optimizer_state_dict' in checkpoint and gen_key in self.generator_optimizers:
+                # Load T5 adapters (only for flux)
+                if self.diffusion_type == 'flux':
+                    if 't5_adapter_state_dict' in checkpoint and 't5' in self.adapters:
+                        t5_seq = self.adapters['t5']
+                        if hasattr(t5_seq, 'adapter_t5'):
                             try:
-                                self.generator_optimizers[gen_key].load_state_dict(checkpoint['optimizer_state_dict'])
-                            except:
-                                print(f"    ⚠ Warning: Could not load optimizer state for '{gen_key}'")
+                                t5_seq.adapter_t5.load_state_dict(checkpoint['t5_adapter_state_dict'])
+                                print(f"  ✓ Loaded t5_adapter from round {checkpoint.get('round', 'N/A')}")
+                            except Exception as e:
+                                print(f"  ⚠ Warning: Could not load t5_adapter: {e}")
 
-                        print(f"    ✓ Loaded VAE generator '{gen_key}' from round {checkpoint.get('round', 'N/A')}")
+                    if 't5_projection_state_dict' in checkpoint and 't5' in self.adapters:
+                        t5_seq = self.adapters['t5']
+                        if hasattr(t5_seq, 'projection_t5'):
+                            try:
+                                t5_seq.projection_t5.load_state_dict(checkpoint['t5_projection_state_dict'])
+                                print(f"  ✓ Loaded t5_projection from round {checkpoint.get('round', 'N/A')}")
+                            except Exception as e:
+                                print(f"  ⚠ Warning: Could not load t5_projection: {e}")
+            else:
+                # Load specific adapter
+                if 'adapter_state_dict' in checkpoint:
+                    adapter = None
 
-                    elif self.generator_type == 'gan' and 'generator_clip_state_dict' in checkpoint:
-                        generator.load_state_dict(checkpoint['generator_clip_state_dict'])
-                        print(f"    ✓ Loaded GAN generator '{gen_key}' from round {checkpoint.get('round', 'N/A')}")
-                else:
-                    print(f"    ⚠ Warning: Generator key '{gen_key}' not found in initialized generators")
-                    return False
+                    # Get adapter from self.adapters based on adapter_name
+                    if adapter_name == 'clip_adapter' and 'clip' in self.adapters:
+                        clip_seq = self.adapters['clip']
+                        adapter = clip_seq.adapter_clip if hasattr(clip_seq, 'adapter_clip') else None
+                    elif adapter_name == 'clip_projection' and 'clip' in self.adapters:
+                        clip_seq = self.adapters['clip']
+                        adapter = clip_seq.projection_clip if hasattr(clip_seq, 'projection_clip') else None
+                    elif adapter_name == 't5_adapter' and self.diffusion_type == 'flux' and 't5' in self.adapters:
+                        t5_seq = self.adapters['t5']
+                        adapter = t5_seq.adapter_t5 if hasattr(t5_seq, 'adapter_t5') else None
+                    elif adapter_name == 't5_projection' and self.diffusion_type == 'flux' and 't5' in self.adapters:
+                        t5_seq = self.adapters['t5']
+                        adapter = t5_seq.projection_t5 if hasattr(t5_seq, 'projection_t5') else None
+
+                    if adapter is not None:
+                        try:
+                            adapter.load_state_dict(checkpoint['adapter_state_dict'])
+                            print(f"[Client {self.id}] ✓ Loaded {adapter_name} from round {checkpoint.get('round', 'N/A')}")
+                        except Exception as e:
+                            print(f"[Client {self.id}] ⚠ Warning: Could not load {adapter_name}: {e}")
+                            return False
+                    else:
+                        print(f"[Client {self.id}] ⚠ Warning: Adapter {adapter_name} not found in client")
+                        return False
 
             return True
 
@@ -2301,21 +3198,28 @@ class clientA2V(Client):
                 if self.use_conditioned_vae and text_embeddings is None:
                     continue
 
+                # Process through AST model to get audio embeddings
+                # Skip if AST not initialized (using pretrained generators)
+                if self.model.ast_model is None or self.model.ast_feature_extractor is None:
+                    logger.warning("AST model not initialized (using pretrained generators), cannot collect audio embeddings for generator training")
+                    continue
+
                 # Prepare audio for AST model
                 if isinstance(audio_data, torch.Tensor):
                     audio_data_np = audio_data.cpu().numpy()
                 else:
                     audio_data_np = audio_data
 
-                # Process through AST model to get audio embeddings
-                audio_inputs = self.audio2image_model.feature_extractor(
-                    audio_data_np,
-                    sampling_rate=16000,
-                    return_tensors="pt",
-                    padding=True
-                ).input_values.to(self.device)
+                # audio_inputs = self.model.ast_feature_extractor(
+                #     audio_data_np,
+                #     sampling_rate=16000,
+                #     return_tensors="pt",
+                #     padding=True
+                # ).input_values.to(self.device)
 
-                audio_embeddings = self.audio2image_model.ast_model(audio_inputs).last_hidden_state
+                # audio_embeddings = self.model.ast_model(audio_inputs).last_hidden_state
+
+                audio_embeddings = self.model(audio_data_np, return_loss=False)
 
                 # Extract pre-generated text embeddings only for conditioned VAE
                 clip_embeddings = None
@@ -2357,10 +3261,12 @@ class clientA2V(Client):
                             if self.diffusion_type == 'flux':
                                 per_class_embeddings[class_name]['t5'] = []
 
-                    # Always store audio embeddings
-                    per_class_embeddings[class_name]['audio_embeddings'].append(
-                        audio_embeddings[idx].detach().cpu()
-                    )
+                    if type(audio_embeddings) is dict:
+                        embs = audio_embeddings['audio_embeddings'][idx].detach().cpu()
+                    else:
+                        embs = audio_embeddings[idx].detach().cpu()
+                    
+                    per_class_embeddings[class_name]['audio_embeddings'].append( embs )
 
                     # Store visual embeddings only for conditioned VAE
                     if self.use_conditioned_vae:
@@ -2430,9 +3336,50 @@ class clientA2V(Client):
             classes_to_train = [c for c in classes_to_train if c in self.node_generator_train_classes]
             print(f"[Client {self.id}] Training on subset of classes: {classes_to_train}")
 
+        # # Check for new classes and reset generators if configured
+        # if self.reset_generator_on_class_change:
+        #     current_classes = set(classes_to_train)
+        #     new_classes = current_classes - self.previously_trained_classes
+
+        #     if new_classes:
+        #         print(f"[Client {self.id}] Detected new classes: {sorted(list(new_classes))}")
+        #         print(f"[Client {self.id}] Previously trained classes: {sorted(list(self.previously_trained_classes))}")
+
+        #         # Reset generators based on granularity
+        #         if self.generator_granularity == 'unified':
+        #             # Reset the single unified generator when ANY new class appears
+        #             print(f"[Client {self.id}] Resetting unified generator due to new classes")
+        #             self.reset_generator_parameters()
+
+        #         elif self.generator_granularity == 'per_class':
+        #             # Reset only generators for the new classes
+        #             print(f"[Client {self.id}] Resetting generators for new classes only")
+        #             for new_class in new_classes:
+        #                 if new_class in self.class_to_generator_map:
+        #                     gen_key = self.class_to_generator_map[new_class]
+        #                     print(f"[Client {self.id}]   Resetting generator for class '{gen_key}'")
+        #                     self.reset_generator_parameters(generator_key=gen_key)
+
+        #         elif self.generator_granularity == 'per_group':
+        #             # Reset generators for groups that contain new classes
+        #             affected_groups = set()
+        #             for new_class in new_classes:
+        #                 if new_class in self.class_to_generator_map:
+        #                     group_key = self.class_to_generator_map[new_class]
+        #                     affected_groups.add(group_key)
+
+        #             print(f"[Client {self.id}] Resetting generators for affected groups: {sorted(list(affected_groups))}")
+        #             for group_key in affected_groups:
+        #                 print(f"[Client {self.id}]   Resetting generator for group '{group_key}'")
+        #                 self.reset_generator_parameters(generator_key=group_key)
+
+        #     # Update previously trained classes
+        #     self.previously_trained_classes.update(current_classes)
+
         # Build class outputs dict with ALL individual samples
         total_samples = 0
         for class_name in classes_to_train:
+           
             if class_name not in self.per_class_embeddings:
                 continue
 
@@ -2506,16 +3453,24 @@ class clientA2V(Client):
         # Train the generator(s) based on granularity
         generator_loss = self.train_generator(class_outputs_for_generator)
 
-        # Save checkpoint periodically based on configured frequency
+        # Save checkpoint: immediately in generator_only_mode, or periodically based on configured frequency
         checkpoint_frequency = getattr(self, 'generator_checkpoint_frequency', 5)
-        if self.round % checkpoint_frequency == 0 or self.round == self.global_rounds:
+        should_save_checkpoint = (
+            self.generator_only_mode or  # Always save in generator-only mode
+            self.round % checkpoint_frequency == 0 or
+            self.round == self.global_rounds
+        )
+
+        if should_save_checkpoint:
             checkpoint_paths = self.save_generator_checkpoint(round_num=self.round)
 
             # Log saved checkpoints
             if self.generator_granularity == 'unified':
-                print(f"[Client {self.id}] Saved unified generator checkpoint at round {self.round}")
+                mode_msg = " (generator-only mode)" if self.generator_only_mode else ""
+                print(f"[Client {self.id}] Saved unified generator checkpoint at round {self.round}{mode_msg}")
             else:
-                print(f"[Client {self.id}] Saved {len(checkpoint_paths)} {self.generator_granularity} generator checkpoint(s) at round {self.round}")
+                mode_msg = " (generator-only mode)" if self.generator_only_mode else ""
+                print(f"[Client {self.id}] Saved {len(checkpoint_paths)} {self.generator_granularity} generator checkpoint(s) at round {self.round}{mode_msg}")
 
         # Log generator loss
         if self.data_log and not self.no_wandb:
@@ -2530,6 +3485,24 @@ class clientA2V(Client):
                 log_data[f"train/node_{self.id}/num_generators"] = len(self.prompt_generators) if hasattr(self, 'prompt_generators') else 0
 
             self.data_log(log_data)
+
+        # Reset generator parameters after training in generator_only_mode
+        # This ensures that each client starts fresh with the shared generator in the next round
+        if self.generator_only_mode and self.shared_generator_in_only_mode:
+            print(f"\n[Client {self.id}] Resetting generator parameters after training (shared_generator_in_only_mode=True)")
+
+            # Reset all generators based on granularity
+            if self.generator_granularity == 'unified':
+                # Reset the single unified generator
+                self.reset_generator_parameters()
+                print(f"[Client {self.id}] Reset unified generator")
+            else:
+                # Reset all generators (per_class or per_group)
+                reset_count = 0
+                for gen_key in self.prompt_generators.keys():
+                    self.reset_generator_parameters(generator_key=gen_key)
+                    reset_count += 1
+                print(f"[Client {self.id}] Reset {reset_count} {self.generator_granularity} generator(s)")
 
         return generator_loss
 
@@ -2546,7 +3519,28 @@ class clientA2V(Client):
         if self.generator_granularity == 'unified':
             # Single generator for all classes
             print(f"[Client {self.id}] Training UNIFIED generator on {len(class_outputs)} class(es)")
-            return self._train_single_generator(class_outputs, self.prompt_generator, self.generator_optimizer, 'unified')
+
+            # Get optimizer from shared dict if available, otherwise use legacy attribute
+            optimizer = None
+            if hasattr(self, 'generator_optimizers') and 'unified' in self.generator_optimizers:
+                optimizer = self.generator_optimizers['unified']
+            elif hasattr(self, 'generator_optimizer') and self.generator_optimizer is not None:
+                optimizer = self.generator_optimizer
+
+            if optimizer is None:
+                print(f"[Client {self.id}] ⚠ Warning: No optimizer found for unified generator, creating one")
+                optimizer = torch.optim.AdamW(
+                    self.prompt_generator.parameters(),
+                    lr=1e-3,
+                    weight_decay=1e-5
+                )
+                # Store in both locations for compatibility
+                if not hasattr(self, 'generator_optimizers'):
+                    self.generator_optimizers = {}
+                self.generator_optimizers['unified'] = optimizer
+                self.generator_optimizer = optimizer
+
+            return self._train_single_generator(class_outputs, self.prompt_generator, optimizer, 'unified')
 
         elif self.generator_granularity == 'per_class':
             # Train each class generator separately (one generator per class)
@@ -2554,12 +3548,40 @@ class clientA2V(Client):
             total_losses = []
             trained_count = 0
 
-            for class_name, class_data in class_outputs.items():
-                if class_name not in self.class_to_generator_map:
-                    print(f"  ⚠ Warning: Class '{class_name}' not in generator mapping, skipping")
-                    continue
+            # Struttura dati per tracciare la memoria per ogni classe
+            memory_tracker = {
+                'round': self.round,
+                'client_id': self.id,
+                'timestamp': None,  # Will be set at the end
+                'classes': [],
+                'summary': {}
+            }
 
-                gen_key = self.class_to_generator_map[class_name]
+            # Controllo memoria GPU all'inizio del training per-class
+            mem_start = check_gpu_memory(self.device, prefix=f"[Client {self.id}] BEFORE per-class training loop", print_info=True)
+            mem_previous = mem_start  # Memoria della classe precedente
+
+            print(f"\n{'='*100}")
+            print(f"[Client {self.id}] 🔍 MEMORY LEAK DETECTION MODE - Training {len(class_outputs)} classes")
+            print(f"{'='*100}")
+            print(f"{'Class':<20} {'Before (GB)':<25} {'After (GB)':<25} {'Δ from prev':<20} {'Cumulative Δ':<20}")
+            print(f"{'-'*20} {'-'*25} {'-'*25} {'-'*20} {'-'*20}")
+
+            for class_name, class_data in class_outputs.items():
+                # Memoria PRIMA di processare questa classe
+                mem_before_class = check_gpu_memory(self.device,
+                                                     prefix=f"[Client {self.id}] BEFORE class '{class_name}' ({trained_count+1}/{len(class_outputs)})",
+                                                     print_info=False)
+
+                self._move_to_gpu(self.device, models=['generator'], classes=[class_name])
+                if self.reset_generator_on_class_change:
+                    self.reset_generator_parameters(generator_key=class_name)
+                # if class_name not in self.class_to_generator_map:
+                #     print(f"  ⚠ Warning: Class '{class_name}' not in generator mapping, skipping")
+                #     continue
+
+                # gen_key = self.class_to_generator_map[class_name]
+                gen_key = class_name  # In per_class granularity, generator key is the class name
                 if gen_key not in self.prompt_generators:
                     print(f"  ⚠ Warning: Generator '{gen_key}' not initialized, skipping")
                     continue
@@ -2567,12 +3589,197 @@ class clientA2V(Client):
                 # Train on this class only
                 single_class_data = {class_name: class_data}
                 generator = self.prompt_generators[gen_key]
+
+                # Ensure optimizer exists for this generator
+                if gen_key not in self.generator_optimizers:
+                    print(f"  ⚠ Warning: No optimizer found for '{gen_key}', creating one")
+                    self.generator_optimizers[gen_key] = torch.optim.AdamW(
+                        generator.parameters(),
+                        lr=1e-2,
+                        weight_decay=1e-5
+                    )
                 optimizer = self.generator_optimizers[gen_key]
 
                 print(f"\n  Training generator for class '{gen_key}':")
                 loss = self._train_single_generator(single_class_data, generator, optimizer, f"class '{gen_key}'")
+
+                if self.generator_only_mode:
+                    print(f"  [Client {self.id}] Generator-only mode: completed training for class '{gen_key}'")
+                    self.save_generator_checkpoint(round_num=self.round, generator_class=gen_key)
+
                 total_losses.append(loss)
                 trained_count += 1
+
+                # if not self.shared_generator_in_only_mode:
+                self._move_to_cpu(models=['generator'], classes=[class_name])
+
+                # Forza garbage collection e pulizia cache CUDA
+                import gc
+                gc.collect()
+                torch.cuda.empty_cache()
+
+                # Memoria DOPO aver processato questa classe
+                mem_after_class = check_gpu_memory(self.device,
+                                                   prefix=f"[Client {self.id}] AFTER training class '{class_name}' ({trained_count}/{len(class_outputs)})",
+                                                   print_info=False)
+
+                # Calcola le differenze di memoria
+                if mem_before_class is not None and mem_after_class is not None and mem_previous is not None:
+                    # Differenza rispetto all'inizio totale
+                    delta_from_start_allocated = mem_after_class['allocated'] - mem_start['allocated']
+                    delta_from_start_reserved = mem_after_class['reserved'] - mem_start['reserved']
+
+                    # Differenza rispetto alla classe precedente (crescita incrementale)
+                    delta_from_prev_allocated = mem_after_class['allocated'] - mem_previous['allocated']
+                    delta_from_prev_reserved = mem_after_class['reserved'] - mem_previous['reserved']
+
+                    # Salva i dati per questa classe
+                    class_memory_info = {
+                        'class_name': class_name,
+                        'class_index': trained_count,
+                        'loss': float(loss),
+                        'memory_before': {
+                            'allocated_gb': mem_before_class['allocated'],
+                            'reserved_gb': mem_before_class['reserved'],
+                            'percent_used': mem_before_class['percent_used']
+                        },
+                        'memory_after': {
+                            'allocated_gb': mem_after_class['allocated'],
+                            'reserved_gb': mem_after_class['reserved'],
+                            'percent_used': mem_after_class['percent_used']
+                        },
+                        'delta_from_start': {
+                            'allocated_gb': delta_from_start_allocated,
+                            'reserved_gb': delta_from_start_reserved
+                        },
+                        'delta_from_previous': {
+                            'allocated_gb': delta_from_prev_allocated,
+                            'reserved_gb': delta_from_prev_reserved
+                        }
+                    }
+
+                    memory_tracker['classes'].append(class_memory_info)
+
+                    # Formatta output in formato tabellare
+                    before_str = f"A:{mem_before_class['allocated']:.2f} R:{mem_before_class['reserved']:.2f}"
+                    after_str = f"A:{mem_after_class['allocated']:.2f} R:{mem_after_class['reserved']:.2f}"
+                    delta_prev_str = f"A:{delta_from_prev_allocated:+.3f} R:{delta_from_prev_reserved:+.3f}"
+                    delta_cum_str = f"A:{delta_from_start_allocated:+.3f} R:{delta_from_start_reserved:+.3f}"
+
+                    # Icone di warning
+                    warning_icon = ""
+                    if delta_from_prev_reserved > 0.1:  # Soglia di 100MB
+                        warning_icon = " ⚠️ LEAK!"
+                    elif delta_from_prev_reserved > 0.05:  # Soglia di 50MB
+                        warning_icon = " ⚠"
+
+                    print(f"{class_name:<20} {before_str:<25} {after_str:<25} {delta_prev_str:<20} {delta_cum_str:<20}{warning_icon}")
+
+                    # Aggiorna memoria precedente
+                    mem_previous = mem_after_class
+
+            print(f"{'='*100}\n")
+
+            # Controllo memoria GPU alla fine del training per-class
+            mem_end = check_gpu_memory(self.device, prefix=f"[Client {self.id}] AFTER per-class training loop (FINAL)", print_info=False)
+
+            # Report finale sulla crescita della memoria e salvataggio dati
+            if mem_start is not None and mem_end is not None:
+                mem_total_growth_allocated = mem_end['allocated'] - mem_start['allocated']
+                mem_total_growth_reserved = mem_end['reserved'] - mem_start['reserved']
+
+                # Summary statistics
+                memory_tracker['summary'] = {
+                    'total_classes': len(class_outputs),
+                    'memory_start': {
+                        'allocated_gb': mem_start['allocated'],
+                        'reserved_gb': mem_start['reserved'],
+                        'percent_used': mem_start['percent_used']
+                    },
+                    'memory_end': {
+                        'allocated_gb': mem_end['allocated'],
+                        'reserved_gb': mem_end['reserved'],
+                        'percent_used': mem_end['percent_used']
+                    },
+                    'total_growth': {
+                        'allocated_gb': mem_total_growth_allocated,
+                        'reserved_gb': mem_total_growth_reserved
+                    },
+                    'avg_loss': sum(total_losses) / len(total_losses) if total_losses else 0.0
+                }
+
+                print(f"\n{'='*100}")
+                print(f"[Client {self.id}] 📊 FINAL MEMORY ANALYSIS REPORT")
+                print(f"{'='*100}")
+                print(f"\n📈 OVERALL MEMORY GROWTH:")
+                print(f"  Start:  Allocated={mem_start['allocated']:.2f} GB, Reserved={mem_start['reserved']:.2f} GB ({mem_start['percent_used']:.1f}%)")
+                print(f"  End:    Allocated={mem_end['allocated']:.2f} GB, Reserved={mem_end['reserved']:.2f} GB ({mem_end['percent_used']:.1f}%)")
+                print(f"  Growth: Allocated={mem_total_growth_allocated:+.3f} GB, Reserved={mem_total_growth_reserved:+.3f} GB")
+                print(f"\n📊 PER-CLASS STATISTICS:")
+                print(f"  Classes Trained: {len(class_outputs)}")
+                print(f"  Avg Growth/Class: Allocated={mem_total_growth_allocated/len(class_outputs):+.4f} GB, Reserved={mem_total_growth_reserved/len(class_outputs):+.4f} GB")
+
+                # Analizza i dati per trovare le classi problematiche
+                if memory_tracker['classes']:
+                    # Trova le classi con crescita massima
+                    max_growth_class = max(memory_tracker['classes'],
+                                          key=lambda x: x['delta_from_previous']['reserved_gb'])
+                    min_growth_class = min(memory_tracker['classes'],
+                                          key=lambda x: x['delta_from_previous']['reserved_gb'])
+
+                    print(f"\n🔍 MEMORY GROWTH ANALYSIS:")
+                    print(f"  Max incremental growth: '{max_growth_class['class_name']}' (+{max_growth_class['delta_from_previous']['reserved_gb']:.3f} GB reserved)")
+                    print(f"  Min incremental growth: '{min_growth_class['class_name']}' ({min_growth_class['delta_from_previous']['reserved_gb']:+.3f} GB reserved)")
+
+                    # Conta le classi con leak
+                    leak_classes = [c for c in memory_tracker['classes']
+                                   if c['delta_from_previous']['reserved_gb'] > 0.1]
+
+                    if leak_classes:
+                        print(f"\n⚠️  MEMORY LEAK WARNINGS ({len(leak_classes)} classes with >100MB growth):")
+                        for i, cls in enumerate(leak_classes, 1):
+                            print(f"  {i}. '{cls['class_name']}' (index {cls['class_index']}): "
+                                  f"+{cls['delta_from_previous']['reserved_gb']:.3f} GB reserved, "
+                                  f"+{cls['delta_from_previous']['allocated_gb']:.3f} GB allocated")
+
+                        print(f"\n💡 DIAGNOSTIC SUGGESTIONS:")
+                        print(f"  - Le classi sopra mostrano crescita anomala della memoria")
+                        print(f"  - Controllare se i tensori vengono correttamente liberati")
+                        print(f"  - Verificare che i gradienti siano detached quando necessario")
+                        print(f"  - Considerare l'uso di torch.no_grad() dove appropriato")
+                        print(f"  - Verificare che gli optimizer siano gestiti correttamente")
+
+                if mem_total_growth_reserved > 0.5:
+                    print(f"\n🚨 CRITICAL: Crescita totale della memoria > 500 MB!")
+                    print(f"   È presente un memory leak significativo nel training loop.")
+                elif mem_total_growth_reserved > 0.2:
+                    print(f"\n⚠️  WARNING: Crescita totale della memoria > 200 MB.")
+                    print(f"   Possibile memory leak, monitorare attentamente.")
+                elif mem_total_growth_reserved < 0.05:
+                    print(f"\n✅ GOOD: Memoria stabile, nessun leak significativo rilevato.")
+                else:
+                    print(f"\n✅ OK: Crescita memoria contenuta ({mem_total_growth_reserved:.3f} GB).")
+
+                # Salva le statistiche in un file JSON
+                import json
+                from datetime import datetime
+                memory_tracker['timestamp'] = datetime.now().isoformat()
+
+                # Crea directory se non esiste
+                import os
+                memory_logs_dir = os.path.join(os.getcwd(), 'memory_logs')
+                os.makedirs(memory_logs_dir, exist_ok=True)
+
+                # Nome file con timestamp
+                log_filename = f"memory_tracking_client{self.id}_round{self.round}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                log_filepath = os.path.join(memory_logs_dir, log_filename)
+
+                with open(log_filepath, 'w') as f:
+                    json.dump(memory_tracker, f, indent=2)
+
+                print(f"\n💾 Detailed memory tracking data saved to:")
+                print(f"   {log_filepath}")
+                print(f"{'='*100}\n")
 
             avg_loss = sum(total_losses) / len(total_losses) if total_losses else 0.0
             print(f"\n[Client {self.id}] Completed per-class training: {trained_count} generator(s), avg loss={avg_loss:.4f}")
@@ -2604,6 +3811,15 @@ class clientA2V(Client):
                     continue
 
                 generator = self.prompt_generators[gen_key]
+
+                # Ensure optimizer exists for this generator
+                if gen_key not in self.generator_optimizers:
+                    print(f"  ⚠ Warning: No optimizer found for '{gen_key}', creating one")
+                    self.generator_optimizers[gen_key] = torch.optim.AdamW(
+                        generator.parameters(),
+                        lr=1e-2,
+                        weight_decay=1e-5
+                    )
                 optimizer = self.generator_optimizers[gen_key]
 
                 print(f"\n  Training generator for group '{gen_key}' ({len(group_class_data)} classes):")
@@ -2646,11 +3862,41 @@ class clientA2V(Client):
 
         print(f"[Client {self.id}] Training generator '{generator_name}' ({total_samples} samples, {len(class_outputs)} class(es))")
 
+        # Memory optimization: Move all tensors to device ONCE before epoch loop
+        # This prevents repeated GPU memory allocations across epochs
+        class_outputs_on_device = {}
+        for class_name, outputs in class_outputs.items():
+            if 'audio_embeddings' not in outputs:
+                print(f"    ⚠ Warning: Missing audio embeddings for class '{class_name}', skipping")
+                continue
+
+            class_outputs_on_device[class_name] = {
+                'audio_embeddings': outputs['audio_embeddings'].to(self.device),
+                'num_samples': outputs['audio_embeddings'].shape[0]
+            }
+
+            if self.use_conditioned_vae:
+                if self.diffusion_type == 'flux':
+                    if 'clip' not in outputs or 't5' not in outputs:
+                        print(f"    ⚠ Warning: Missing CLIP or T5 embeddings for class '{class_name}', skipping")
+                        del class_outputs_on_device[class_name]
+                        continue
+                    class_outputs_on_device[class_name]['clip'] = outputs['clip'].to(self.device)
+                    class_outputs_on_device[class_name]['t5'] = outputs['t5'].to(self.device)
+                else:
+                    if 'clip' not in outputs:
+                        print(f"    ⚠ Warning: Missing CLIP embeddings for class '{class_name}', skipping")
+                        del class_outputs_on_device[class_name]
+                        continue
+                    class_outputs_on_device[class_name]['clip'] = outputs['clip'].to(self.device)
+
         # Progress bar for epochs with compact bar
         epoch_pbar = tqdm(range(self.generator_training_epochs),
-                         desc=f"  Gen {generator_name[:20]}",
-                         leave=True,
-                         bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+                         desc=f"  Gen {generator_name[:20]} R:{self.round}",
+                         leave=False,
+                         unit="e",
+                         bar_format='{l_bar}{bar:10}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]',
+                         position=0)
 
         for epoch in epoch_pbar:
             epoch_loss = 0.0
@@ -2659,28 +3905,13 @@ class clientA2V(Client):
             epoch_sim_loss = 0.0
             epoch_batches = 0
 
-            for class_name, outputs in class_outputs.items():
-                if 'audio_embeddings' not in outputs:
-                    raise(f"    ⚠ Warning: Missing audio embeddings for class '{class_name}', skipping")
+            for class_name, outputs in class_outputs_on_device.items():
+                # All tensors are already on device
+                audio_embs_all = outputs['audio_embeddings']
+                num_samples = outputs['num_samples']
 
-                if self.use_conditioned_vae:
-                    if self.diffusion_type == 'flux':
-                        if 'clip' not in outputs or 't5' not in outputs:
-                            raise(f"    ⚠ Warning: Missing CLIP or T5 embeddings for class '{class_name}', skipping")
-                    clip_embs_all = outputs['clip']               # (N, seq_len, 768 for SD or 2048 for FLUX pooled)
-
-                    # Get T5 embeddings if using FLUX
-                    t5_embs_all = outputs.get('t5', None) if self.diffusion_type == 'flux' else None
-
-                    clip_embs_all = clip_embs_all.to(self.device)
-                    if t5_embs_all is not None:
-                        t5_embs_all = t5_embs_all.to(self.device)
-
-                audio_embs_all = outputs['audio_embeddings']  # (N, seq_len, 768)
-                audio_embs_all = audio_embs_all.to(self.device)
-                
-
-                num_samples = audio_embs_all.shape[0]
+                clip_embs_all = outputs.get('clip', None)
+                t5_embs_all = outputs.get('t5', None)
 
                 # Process each sample individually
                 for i in range(num_samples):
@@ -2706,7 +3937,7 @@ class clientA2V(Client):
                     else:
                         audio_emb_reduced = self._reduce_sequence_adaptive(audio_emb, target_length=self.generator_training_sequence_length)  # (1, seq_len, 768)
 
-                   
+
                     # Apply augmentation if enabled
                     if self.generator_augmentation:
                         noise = torch.randn_like(audio_emb_reduced) * self.generator_augmentation_noise
@@ -2753,6 +3984,23 @@ class clientA2V(Client):
                     epoch_sim_loss += sim_loss.item()
                     epoch_batches += 1
 
+                    # Memory leak fix: explicitly delete intermediate tensors
+                    del loss, recon_loss, kl_loss, sim_loss
+                    del recon_prompts, mu, logvar
+                    del audio_emb, audio_emb_reduced, audio_emb_aug
+                    if self.generator_augmentation:
+                        del noise
+                    if self.use_conditioned_vae:
+                        del clip_emb, clip_emb_reduced
+                        if self.diffusion_type == 'flux' and t5_emb is not None:
+                            del t5_emb, t5_emb_input, t5_emb_reduced
+                        if 'visual_condition' in locals():
+                            del visual_condition
+
+                    # Clear cache every 50 iterations to prevent fragmentation
+                    if epoch_batches % 50 == 0 and self.device.type == 'cuda':
+                        torch.cuda.empty_cache()
+
             if epoch_batches > 0:
                 avg_epoch_loss = epoch_loss / epoch_batches
                 avg_recon_loss = epoch_recon_loss / epoch_batches
@@ -2769,8 +4017,17 @@ class clientA2V(Client):
                     'sim': f'{avg_sim_loss:.4f}'
                 })
 
+            # Memory leak fix: clear GPU cache at the end of each epoch
+            if self.device.type == 'cuda':
+                torch.cuda.empty_cache()
+
         # Close progress bar
         epoch_pbar.close()
+
+        # Memory leak fix: free all class data tensors after training completes
+        for class_name in list(class_outputs_on_device.keys()):
+            del class_outputs_on_device[class_name]
+        del class_outputs_on_device
 
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
         print(f"  ✓ {generator_name} completed - Avg loss: {avg_loss:.4f}\n")
@@ -2836,6 +4093,73 @@ class clientA2V(Client):
 
         print(f"[Client {self.id}] Generated {len(synthetic_samples)} synthetic sample sets{seq_info}")
         return synthetic_samples
+
+    # def convert_audio_embeddings_to_text_embeddings(self, audio_embeddings_dict, use_cls_token_only=None):
+    #     """
+    #     Convert audio embeddings to text embeddings using the trained adapters.
+
+    #     Args:
+    #         audio_embeddings_dict: Dict {class_name: tensor(num_samples, seq_len, 768)}
+    #             Audio embeddings to convert (e.g., from server_synthetic_samples or generated locally)
+    #         use_cls_token_only: If True, use only CLS token. If None, use model's configuration.
+
+    #     Returns:
+    #         Dict with structure:
+    #         {
+    #             class_name: {
+    #                 'clip': tensor(num_samples, clip_dim),
+    #                 't5': tensor(num_samples, t5_dim),
+    #                 'audio_embeddings': tensor(num_samples, seq_len, 768)  # original
+    #             }
+    #         }
+    #     """
+    #     if not hasattr(self, 'adapters') or not self.adapters:
+    #         print(f"[Client {self.id}] No adapters available, cannot convert embeddings")
+    #         return {}
+
+    #     if use_cls_token_only is None:
+    #         use_cls_token_only = getattr(self.model, 'use_cls_token_only', False)
+
+    #     print(f"[Client {self.id}] Converting audio embeddings to text embeddings for {len(audio_embeddings_dict)} classes")
+    #     print(f"[Client {self.id}] Using CLS token only: {use_cls_token_only}")
+
+    #     text_embeddings_dict = {}
+
+    #     for class_name, audio_embs in audio_embeddings_dict.items():
+    #         # audio_embs shape: (num_samples, seq_len, 768)
+    #         if not isinstance(audio_embs, torch.Tensor):
+    #             print(f"[Client {self.id}] Skipping class '{class_name}': not a tensor")
+    #             continue
+
+    #         # Move to device and set dtype
+    #         x = audio_embs.to(self.device, dtype=self.model.torch_dtype)
+
+    #         # Extract CLS token if configured
+    #         if use_cls_token_only:
+    #             x_cls = x[:, 0:1, :]  # Shape: (num_samples, 1, 768)
+    #             x = x_cls
+
+    #         # Convert through adapters
+    #         class_outputs = {
+    #             'audio_embeddings': audio_embs  # Keep original on CPU
+    #         }
+
+    #         with torch.no_grad():
+    #             for adapter_name, adapter in self.adapters.items():
+    #                 # Process through adapter
+    #                 adapter_output = adapter(x)  # Shape: (num_samples, n_latents, hidden_dim) or (num_samples, hidden_dim)
+
+    #                 # Move back to CPU for storage
+    #                 class_outputs[adapter_name] = adapter_output.cpu()
+
+    #         text_embeddings_dict[class_name] = class_outputs
+
+    #         print(f"[Client {self.id}]   ✓ Class '{class_name}': {audio_embs.shape[0]} samples converted")
+    #         print(f"[Client {self.id}]      - clip: {class_outputs['clip'].shape}")
+    #         print(f"[Client {self.id}]      - t5: {class_outputs['t5'].shape}")
+
+    #     print(f"[Client {self.id}] Conversion complete for {len(text_embeddings_dict)} classes\n")
+    #     return text_embeddings_dict
 
     def evaluate_generator_quality(self, real_embeddings, generated_embeddings, metrics=['l2_distance', 'cosine_similarity']):
         """
@@ -3109,8 +4433,51 @@ class clientA2V(Client):
         return results
 
     def set_server(self, server):
-        """Set reference to the server for accessing diffusion model."""
         self.server = server
+
+        if self.server is not None and self.server.global_model is not None:
+            self.zero_shot_model = self.server.global_model.zero_shot_model
+
+        # Copy generator references from server if available
+        # Server always uses prompt_generators (dictionary) now
+        if self.server is not None:
+            # Get shared_generator_in_only_mode flag from server
+            shared_mode = getattr(self.server, 'shared_generator_in_only_mode', False)
+            generator_only_mode = getattr(self.server, 'generator_only_mode', False)
+
+            # Use generators from server if:
+            # 1. Client has use_generator enabled, OR
+            # 2. Server is in shared_generator_in_only_mode (generators are shared across all clients)
+            should_use_server_generators = self.use_generator or (shared_mode and generator_only_mode)
+
+            if should_use_server_generators:
+                if hasattr(self.server, 'prompt_generators') and self.server.prompt_generators:
+                    if shared_mode and generator_only_mode and not self.use_generator:
+                        self.logger.info(f"Client {self.id}: Receiving {len(self.server.prompt_generators)} SHARED generators from server (shared_generator_in_only_mode=True)")
+                    else:
+                        self.logger.info(f"Client {self.id}: Receiving {len(self.server.prompt_generators)} generators from server")
+
+                    self.prompt_generators = self.server.prompt_generators
+
+                    # Copy optimizers if available
+                    # Clients need optimizers to train the generators (shared or not)
+                    if hasattr(self.server, 'generator_optimizers') and self.server.generator_optimizers:
+                        self.generator_optimizers = self.server.generator_optimizers
+
+                    # Copy loss function if available
+                    if hasattr(self.server, 'generator_loss_fn') and self.server.generator_loss_fn is not None:
+                        self.generator_loss_fn = self.server.generator_loss_fn
+
+                    # Update model.generators_dict to match prompt_generators
+                    if hasattr(self, 'model') and self.model is not None:
+                        self.model.generators_dict = self.prompt_generators
+
+                    self.logger.info(f"Client {self.id}: Generator classes available: {sorted(list(self.prompt_generators.keys()))}")
+            if isinstance(self.model, DownstreamSinestesiaAdapters) and self.global_model.ast_model is not None:
+                del self.model.ast_feature_extractor
+                del self.model.ast_model
+                self.model.ast_feature_extractor = self.global_model.ast_feature_extractor
+                self.model.ast_model = self.global_model.ast_model
 
     def generate_images_from_diffusion(self, text_embeddings, base_embeddings=None):
         """
@@ -3207,7 +4574,7 @@ class clientA2V(Client):
         imgs = torch.cat(imgs, dim=0)
         return imgs
 
-    def save_generated_images(self, imgs, embeddings, suffix="", round_num=None):
+    def save_generated_images(self, imgs, embeddings, suffix="", round_num=None, output_image_base_name=None):
         """
         Save generated images to disk.
 
@@ -3216,6 +4583,7 @@ class clientA2V(Client):
             embeddings: Dict containing class_name information
             suffix: Optional suffix for filenames
             round_num: Optional round number (uses server's round if not provided)
+            output_image_base_name: Optional base name for output images (uses server's default if not provided)
 
         Returns:
             Dict mapping image paths to class names
@@ -3226,6 +4594,7 @@ class clientA2V(Client):
 
         images_output_dir = self.server.images_output_dir
         current_round = round_num if round_num is not None else self.server.round
+        base_name = output_image_base_name if output_image_base_name is not None else self.server.output_image_base_name
 
         if not os.path.exists(images_output_dir):
             try:
@@ -3241,7 +4610,7 @@ class clientA2V(Client):
                 class_name = embeddings['class_name']
 
             img_save_path = os.path.join(images_output_dir,
-                                        f"round_{current_round}_node_{self.id}_img_{class_name}_{idx}{suffix}.png")
+                                        f"round_{current_round}_node_{self.id}_{base_name}_{class_name}_{suffix}_{idx}.png")
             saved_images[img_save_path] = class_name
             img = img.squeeze(0)
             converted_img = transforms.ToPILImage()(img.to(torch.float32).cpu())
@@ -3288,7 +4657,50 @@ class clientA2V(Client):
         if deleted_count > 0:
             print(f"Client {self.id}: Cleaned up {deleted_count} temporary images")
 
-    def generate_images(self, split='test', round_num=None):
+    def generate_images_from_audio_embeddings(self, audio_embeddings):
+        """
+        Generate images from provided audio embeddings.
+
+        Args:
+            audio_embeddings: Dict with structure:
+                {
+                    class_name: {
+                        'clip': tensor(num_samples, clip_dim),
+                        't5': tensor(num_samples, t5_dim),
+                        'audio_embeddings': tensor(num_samples, seq_len, 768)  # original
+                    }
+                }
+        Returns:
+            Dict with generated image paths
+        """
+        if self.server is None:
+            logger.error(f"Client {self.id}: Server reference not set. Cannot generate images.")
+            return {}
+
+        print(f"\nClient {self.id}: Generating images from provided audio embeddings using server's diffusion model")
+
+        # Ensure output directory exists
+        images_output_dir = self.server.images_output_dir
+        if not os.path.exists(images_output_dir):
+            try:
+                os.makedirs(images_output_dir)
+            except FileExistsError:
+                pass
+
+        # Convert audio embeddings to text embeddings
+        text_embeddings = self.convert_audio_embeddings_to_text_embeddings(audio_embeddings)
+
+        # Generate images
+        imgs = self.generate_images_from_diffusion(text_embeddings)
+
+        # Save images
+        saved_files = self.save_generated_images(imgs, text_embeddings, suffix='from_audio_embeddings')
+
+        print(f"Client {self.id}: Generated {len(imgs)} images from provided audio embeddings")
+
+        return saved_files
+
+    def generate_images(self, split='test', round_num=None, audio_embeddings=None):
         """
         Generate images for this client using local data splits.
 
@@ -3303,7 +4715,9 @@ class clientA2V(Client):
             logger.error(f"Client {self.id}: Server reference not set. Cannot generate images.")
             return {}
 
-        print(f"\nClient {self.id}: Generating images from {split} split using server's diffusion model")
+
+
+
 
         # Ensure output directory exists
         images_output_dir = self.server.images_output_dir
@@ -3313,10 +4727,45 @@ class clientA2V(Client):
             except FileExistsError:
                 pass
 
-        # Move diffusion model to device if needed
-        if self.server.optimize_memory_usage or round_num <= 1:
-            self.server.global_model.diffusion_model.to(self.server.diffusion_device)
+        if self.use_pretrained_generators:
+            print(f"\nClient {self.id}: Generating images from generated split using server's diffusion model")
+            embeddings_list = {}
+            result = {}
+            for class_name in self.node_data.dataset.active_classes:
+                text_embeddings = None
 
+                if self.server_synthetic_samples is not None and class_name in self.server_synthetic_samples:
+                    audio_embeddings = self.server_synthetic_samples[class_name]
+                    text_embeddings = self.model(None, audio_embedding=audio_embeddings.to(self.device),return_loss=False)
+                    text_embeddings['class_name'] = [class_name] * audio_embeddings.shape[0]
+                    embeddings_list[class_name] = audio_embeddings
+
+                elif self.prompt_generators and class_name in self.prompt_generators:
+                    generator = self.prompt_generators[class_name]
+                    generator.eval()
+                    embedding_num = len(self.node_data.train_dataset)
+                    with torch.no_grad():
+                        audio_embeddings = generator.sample(
+                            num_samples=embedding_num,
+                            device=self.device,
+                            target_sequence_length=None
+                        )
+                        embeddings_list[class_name] = audio_embeddings.cpu()
+                        # Convert audio embeddings to text embeddings
+                        text_embeddings = self.model(None, audio_embedding=audio_embeddings.to(self.device), return_loss=False)
+                        text_embeddings['class_name'] = [class_name] * audio_embeddings.shape[0]
+
+                # Generate images if we have text embeddings for this class
+                if text_embeddings is not None:
+                    imgs = self.generate_images_from_diffusion(text_embeddings)
+                    saved_files = self.save_generated_images(imgs, text_embeddings, suffix='from_pretrained_generators', round_num=round_num)
+                    if 'from_pretrained_generators' not in result:
+                        result['from_pretrained_generators'] = []
+                    result['from_pretrained_generators'].extend(saved_files)
+
+            return result
+
+        print(f"\nClient {self.id}: Generating images from {split} split using server's diffusion model")
         result = {
             'on_train': None,
             'on_test': None,
@@ -3336,15 +4785,15 @@ class clientA2V(Client):
 
             if split_name == 'val':
                 dataset = self.node_data.get_val_dataset()
-                suffix = '_val'
+                suffix = split_name
                 result_key = 'on_val'
             elif split_name == 'test':
                 dataset = self.node_data.get_test_dataset()
-                suffix = '_test'
+                suffix = split_name
                 result_key = 'on_test'
             elif split_name == 'train':
                 dataset = self.node_data.get_train_dataset()
-                suffix = '_train'
+                suffix = split_name
                 result_key = 'on_train'
             else:
                 logger.warning(f"Client {self.id}: Unknown split '{split_name}', skipping")
@@ -3352,8 +4801,6 @@ class clientA2V(Client):
 
             if dataset is not None and len(dataset) > 0:
                 text_embs = dataset.text_embs if hasattr(dataset, 'text_embs') else None
-
-                # Get audio embeddings from the dataset
                 embeddings = self.get_audio_embeddings_from_dataset(dataset)
 
                 imgs = self.generate_images_from_diffusion(embeddings, base_embeddings=text_embs)
@@ -3366,10 +4813,6 @@ class clientA2V(Client):
             else:
                 logger.info(f"Client {self.id}: No {split_name} dataset available or dataset is empty")
 
-        # Move diffusion model back to CPU if optimizing memory
-        if self.server.optimize_memory_usage:
-            self.server.global_model.diffusion_model.to(torch.device('cpu'))
-
         return result
 
     def test_node_metrics_from_images(self, generated_images):
@@ -3377,6 +4820,7 @@ class clientA2V(Client):
         Compute test metrics from generated images.
         This function is copied from serverA2V.test_node_metrics_from_images
         """
+
         test_images = generated_images['on_test'] if 'on_test' in generated_images else {}
         train_images = generated_images['on_train'] if 'on_train' in generated_images else {}
         val_images = generated_images['on_val'] if 'on_val' in generated_images else {}
@@ -3419,7 +4863,7 @@ class clientA2V(Client):
         ground_truth_classes = torch.tensor(ground_truth_classes)
 
         # Use server's global model for zero-shot computation
-        predictions = self.server.global_model.compute_zero_shot(filenames, federation_available_classes)
+        predictions = self.server.global_model.compute_zero_shot(filenames, federation_available_classes).to('cpu')
         labels = torch.tensor(list(candidate_labels.values()))
         metrics = self.server.global_model._compute_classification_metrics(predictions, ground_truth_classes)
 
@@ -3445,9 +4889,6 @@ class clientA2V(Client):
             logger.error(f"Client {self.id}: Server reference not set. Cannot compute metrics.")
             return
 
-        # Move zero-shot model to device
-        self.server.global_model.zero_shot_model.model.to(self.device)
-
         # Compute metrics for this client
         node_metrics = self.test_node_metrics_from_images(generated_images)
 
@@ -3459,9 +4900,39 @@ class clientA2V(Client):
                 wandb_metrics = self.log_metrics(node_metrics, round=round_num if round_num else 0)
                 wandb.log(wandb_metrics)
 
-        # Move zero-shot model back to CPU
-        self.server.global_model.zero_shot_model.model.to("cpu")
+def clear_training_caches(client):
+    # Memory tracking - before clearing
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        mem_before_clear = torch.cuda.memory_allocated(client.device) / (1024**2)
+        logger.debug(f"[MemTrack] Node {client.id} - Before clear_training_caches: {mem_before_clear:.2f} MB")
 
+    # Clear adapter outputs (Memory Leak #1)
+    if hasattr(client, 'training_adapter_outputs_all') and client.training_adapter_outputs_all is not None:
+        del client.training_adapter_outputs_all
+    client.training_adapter_outputs_all = None
+
+    if hasattr(client, 'training_adapter_outputs_mean') and client.training_adapter_outputs_mean is not None:
+        del client.training_adapter_outputs_mean
+    client.training_adapter_outputs_mean = None
+
+    if hasattr(client, 'per_class_embeddings') and client.per_class_embeddings is not None:
+        del client.per_class_embeddings
+    client.per_class_embeddings = None
+
+    # Clear audio embedding store (Memory Leak #2)
+    if hasattr(client, 'audio_embedding_store') and client.audio_embedding_store:
+        del client.audio_embedding_store
+    client.audio_embedding_store = {}
+
+    torch.cuda.empty_cache()
+
+    # Memory tracking - after clearing
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        mem_after_clear = torch.cuda.memory_allocated(client.device) / (1024**2)
+        mem_freed = mem_before_clear - mem_after_clear
+        logger.debug(f"[MemTrack] Node {client.id} - After clear_training_caches: {mem_after_clear:.2f} MB (freed {mem_freed:.2f} MB)")
 
 @torch.no_grad()
 def move_optimizer_state(optimizer, device):

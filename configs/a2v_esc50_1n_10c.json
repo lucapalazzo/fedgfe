@@ -5,20 +5,21 @@
     "device_id": "0",
     "runs": 1,
     "seed": 42,
-    "use_balooning": true,
+    "use_balooning": false,
     "optimize_memory_usage": false
   },
   "federation": {
     "algorithm": "FedA2V",
     "num_clients": 2,
-    "global_rounds": 100,
-    "local_epochs": 10,
+    "global_rounds": 20,
+    "local_epochs": 1,
     "eval_gap": 10,
     "diffusion_type": "flux",
     "model_aggregation": "none",
     "use_saved_audio_embeddings": false
   },
   "feda2v": {
+    "train_adapters": true,
     "generate_nodes_images_frequency": 0,
     "generate_global_images_frequency": 0,
     "generate_low_memomy_footprint": true,
@@ -28,7 +29,7 @@
     "global_model_train_from_generator": false,
     "global_model_train_from_nodes_audio_embeddings": false,
     "global_model_train_epochs": 5,
-    "use_generator": true,
+    "use_generator": false,
     "generator_type": "vae",
     "store_audio_embeddings": false,
     "audio_embedding_file_name": null,
@@ -58,7 +59,7 @@
   "training": {
     "optimizer": "AdamW",
     "learning_rate": 0.001,
-    "batch_size": 32,
+    "batch_size": 1,
     "weight_decay": 0.0001,
     "momentum": 0.9
   },

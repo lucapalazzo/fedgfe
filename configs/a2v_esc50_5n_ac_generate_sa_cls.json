@@ -12,7 +12,7 @@
     "algorithm": "FedA2V",
     "num_clients": 5,
     "global_rounds": 20,
-    "local_epochs": 5,
+    "local_epochs": 100,
     "eval_gap": 1,
     "diffusion_type": "flux",
     "model_aggregation": "none",
@@ -42,7 +42,11 @@
     "generate_from_t5_text_embeddings": false,
     "images_output_dir": "esc50-5n-ac-sa-cls",
     "save_generated_images_splits": ["val", "test", "train"],
-    "generation_split_for_metrics": "train"
+    "generation_split_for_metrics": "train",
+    "nodes_train_metrics_splits": ["train"],
+    "nodes_test_metrics_splits": ["test"],
+    "server_train_metrics_splits": ["train"],
+    "server_test_metrics_splits": ["val"] 
   },
   "nodes": {
     "0": {

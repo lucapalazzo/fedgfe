@@ -21,6 +21,21 @@
             "logToFile": true
         },
         {
+            "name": "Debugger Python: Attach to remote debugpy",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "10.97.9.93",
+                "port": 5679
+            },
+            "pathMappings": [
+                {
+                    "localRoot": "${workspaceFolder}",
+                    "remoteRoot": "${userHome}/fedgfe"
+                }
+            ]
+        },
+        {
             "name": "Debugger Python: File corrente con argomenti",
             "type": "debugpy",
             "request": "launch",
@@ -2388,7 +2403,7 @@
             ],
         },
         {
-            "name": "feda2v VEGAS 3N Config ",
+            "name": "feda2v VEGAS 1N 1C Config ",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/fedgfe",
@@ -2396,10 +2411,10 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "subProcess": true,
-            "args": ["--config", "configs/a2v_3n_class_selection.json",
+            "args": ["--config", "configs/a2v_generator_1n_1c.json",
                 ],
                 "env":{
-                    "CUDA_VISIBLE_DEVICES": "1"
+                    "CUDA_VISIBLE_DEVICES": "2"
                 }
 
         },
@@ -2448,7 +2463,7 @@
             "args": ["--config", "configs/a2v_esc50_3n_1c_generate_avg_test.json",
                 ],
             "env":{
-                "CUDA_VISIBLE_DEVICES": "0"
+                "CUDA_VISIBLE_DEVICES": "1"
             }
         },
         {
@@ -2467,7 +2482,7 @@
             }
         },
         {
-            "name": "feda2v ESC50 6N Standalone",
+            "name": "feda2v ESC50 VEGAS 15N Standalone",
             "type": "debugpy",
             "request": "launch",
             "cwd": "${userHome}/fedgfe",
@@ -2475,10 +2490,10 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "subProcess": true,
-            "args": ["--config", "configs/a2v_6n_esc50_standalone.json",
+            "args": ["--config", "configs/a2v-vegas-10n-1c-esc50-5n-10c-sa.json",
                 ],
             "env":{
-                "CUDA_VISIBLE_DEVICES": "0"
+                "CUDA_VISIBLE_DEVICES": "2"
             }
         },
         {
@@ -2493,7 +2508,7 @@
             "args": ["--config", "configs/a2v_esc50_1n_ac_generate.json",
                 ],
             "env":{
-                "CUDA_VISIBLE_DEVICES": "0"
+                "CUDA_VISIBLE_DEVICES": "1"
             }
 
         },
@@ -2509,7 +2524,7 @@
             "args": ["--config", "configs/a2v_esc50_1n_1c_generate.json",
                 ],
             "env":{
-                "CUDA_VISIBLE_DEVICES": "0"
+                "CUDA_VISIBLE_DEVICES": "1"
             }
 
         },
@@ -2525,7 +2540,7 @@
             "args": ["--config", "configs/a2v_esc50_1n_10c.json",
                 ],
             "env":{
-                "CUDA_VISIBLE_DEVICES": "0"
+                "CUDA_VISIBLE_DEVICES": "2"
             }
 
         },
@@ -2554,10 +2569,10 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "subProcess": true,
-            "args": ["--config", "configs/a2v_esc50_5n_ac_train_generators_perclass.json",
+            "args": ["--config", "configs/a2v_generator_1n_1c.json",
                 ],
             "env":{
-                "CUDA_VISIBLE_DEVICES": "0"
+                "CUDA_VISIBLE_DEVICES": "2"
             }
 
         },
@@ -2570,29 +2585,14 @@
             "console": "integratedTerminal",
             "justMyCode": false,
             "subProcess": true,
-            "args": ["--config", "configs/a2v_esc50_5n_ac_generate_avg.json",
+            "args": ["--config", "configs/a2v_esc50_5n_ac_generate_avg_cls.json",
                 ],
             "env":{
-                "CUDA_VISIBLE_DEVICES": "0"
+                "CUDA_VISIBLE_DEVICES": "1"
             }
 
         },
-        {
-            "name": "feda2v ESC50 Train Generator",
-            "type": "debugpy",
-            "request": "launch",
-            "cwd": "${userHome}/fedgfe",
-            "program": "system/main.py",
-            "console": "integratedTerminal",
-            "justMyCode": false,
-            "subProcess": true,
-            "args": ["--config", "configs/vae_unconditioned_example.json",
-                ],
-            "env":{
-                "CUDA_VISIBLE_DEVICES": "0"
-            }
-
-        },
+        
          {
             "name": "feda2v 1N Config Save AE",
             "type": "debugpy",
@@ -2621,6 +2621,82 @@
                 "env":{
                     "CUDA_VISIBLE_DEVICES": "2"
                 }
+
+        },
+        {
+            "name": "feda2v Standalone Adapter Training - Real Data",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_generator_vegas_10n_5c_200s_real.json"],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "2"
+            }
+
+        },
+        {
+            "name": "feda2v Standalone Training - Generator Training",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_generator_1n_5c.json",
+                ],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "2"
+            }
+
+        },
+        {
+            "name": "feda2v Standalone Training - Synthetic Data (Generator Checkpoint)",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_generator_1n_1c_syntethic_generation_only.json"],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "2"
+            }
+
+        },
+        {
+            "name": "feda2v Standalone Training - Synthetic Data Pretrained Adapters-Generator",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_generator_2n_2c_syntethic.json"],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "2"
+            }
+
+        },
+        {
+            "name": "feda2v Standalone KL Adapters-Generator",
+            "type": "debugpy",
+            "request": "launch",
+            "cwd": "${userHome}/fedgfe",
+            "program": "system/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "args": ["--config", "configs/a2v_vegas_2n_2c_200s_kd.json"],
+            "env":{
+                "CUDA_VISIBLE_DEVICES": "2"
+            }
 
         },
     ]

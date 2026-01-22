@@ -1,0 +1,85 @@
+{
+  "experiment": {
+    "goal": "train",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 3,
+    "global_rounds": 50,
+    "local_epochs": 5,
+    "join_ratio": 1.0,
+    "eval_gap": 5
+  },
+  "model": {
+    "backbone": "a2v",
+    "num_classes": 10
+  },
+  "training": {
+    "optimizer": "Adam",
+    "learning_rate": 0.001,
+    "batch_size": 16
+  },
+  "dataset": {
+    "name": "vegas",
+    "path": "/home/lpala/fedgfe/dataset/Audio/VEGAS"
+  },
+  "feda2v": {
+    "diffusion_type": "sd",
+    "use_text_loss": true,
+    "mode": "train"
+  },
+  "nodes": {
+    "0": {
+      "dataset": "vegas",
+      "node_split_id": 0,
+      "num_nodes": 3,
+      "node_split_seed": 42,
+      "selected_classes": ["dog", "baby_cry", "chainsaw"],
+      "task_type": "audio2visual",
+      "comment": "Node 0 - Uses num_nodes=3 to split data equally among 3 nodes"
+    },
+    "1": {
+      "dataset": "vegas",
+      "node_split_id": 1,
+      "num_nodes": 3,
+      "node_split_seed": 42,
+      "selected_classes": ["dog", "baby_cry", "chainsaw"],
+      "task_type": "audio2visual",
+      "comment": "Node 1 - Gets different portion of the same classes"
+    },
+    "2": {
+      "dataset": "vegas",
+      "node_split_id": 2,
+      "num_nodes": 3,
+      "node_split_seed": 42,
+      "selected_classes": ["dog", "baby_cry", "chainsaw"],
+      "task_type": "audio2visual",
+      "comment": "Node 2 - Gets remaining portion of the same classes"
+    }
+  },
+  "comments": {
+    "node_splitting_modes": [
+      "Mode 1: num_nodes - Divides all samples equally among N nodes",
+      "Mode 2: samples_per_node - Each node gets exactly K samples per class",
+      "Both modes maintain class balance and are reproducible with node_split_seed"
+    ],
+    "example_mode_1": {
+      "description": "Equal distribution among nodes",
+      "node_split_id": 0,
+      "num_nodes": 5,
+      "node_split_seed": 42,
+      "result": "Each node gets 1/5 of samples from each class"
+    },
+    "example_mode_2": {
+      "description": "Fixed samples per node per class",
+      "node_split_id": 0,
+      "samples_per_node": 10,
+      "node_split_seed": 42,
+      "result": "Each node gets exactly 10 samples per class"
+    }
+  }
+}

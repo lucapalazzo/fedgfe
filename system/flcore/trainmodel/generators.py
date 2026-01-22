@@ -85,7 +85,7 @@ def compute_novelty_loss(fake_prompts: torch.Tensor,
     
 
 class VAEGenerator(nn.Module):
-    def __init__(self, input_dim, hidden_dim=512, latent_dim=256, sequence_length=4, use_learned_upsampling=False):
+    def __init__(self, input_dim, hidden_dim=512, latent_dim=256, sequence_length=4, use_learned_upsampling=False, device = 'cpu'):
         super(VAEGenerator, self).__init__()
 
         self.latent_dim = latent_dim
@@ -93,6 +93,7 @@ class VAEGenerator(nn.Module):
         self.output_dim = input_dim  # (768)
         self.total_output_dim = sequence_length * input_dim  # sequence_length * 768
         self.use_learned_upsampling = use_learned_upsampling
+        self.device = device
 
         # Encoder
         self.encoder = nn.Sequential(
@@ -103,7 +104,7 @@ class VAEGenerator(nn.Module):
             nn.ReLU(),
             nn.Dropout(p=0.2),
             nn.Linear(hidden_dim, latent_dim * 2)
-        )
+        ).to(device)
 
         # Decoder
         self.decoder = nn.Sequential(
@@ -114,7 +115,10 @@ class VAEGenerator(nn.Module):
             nn.ReLU(),
             nn.Dropout(p=0.2),
             nn.Linear(hidden_dim, self.total_output_dim)
-        )
+        ).to(device)
+
+        # Initialize weights with small values to prevent explosion
+        self._initialize_weights()
 
         # Optional: Learned upsampling network (more sophisticated than linear interpolation)
         if use_learned_upsampling:
@@ -124,14 +128,44 @@ class VAEGenerator(nn.Module):
                 nn.Conv1d(hidden_dim, hidden_dim, kernel_size=3, padding=1),
                 nn.ReLU(),
                 nn.Conv1d(hidden_dim, input_dim, kernel_size=3, padding=1)
-            )
+            ).to(device)
         else:
             self.upsampler = None
+
+    def to(self, device):
+        super(VAEGenerator, self).to(device)
+        if self.upsampler is not None:
+            self.upsampler.to(device)
+        self.device = device
+        return self
     
     def reparameterize(self, mu, logvar):
+        # Clamp logvar to prevent explosion - use tighter bounds
+        logvar = torch.clamp(logvar, min=-5, max=2)
+        mu = torch.clamp(mu, min=-5, max=5)
+
+        # Compute std with additional safety
+        # With logvar max=2, std max = exp(1) ≈ 2.718
         std = torch.exp(0.5 * logvar)
+
+        # Safety check - if std becomes too large or contains NaN, use fallback
+        if torch.isnan(std).any() or torch.isinf(std).any() or (std > 10).any():
+            print("Warning: Unstable std in reparameterize, using safer fallback")
+            std = torch.clamp(std, min=1e-6, max=3.0)
+            std = torch.nan_to_num(std, nan=1.0, posinf=3.0, neginf=1e-6)
+
         eps = torch.randn_like(std)
-        return mu + eps * std
+        z = mu + eps * std
+
+        # Final safety check on output
+        if torch.isnan(z).any() or torch.isinf(z).any():
+            print("Warning: NaN/Inf in reparameterize output, clamping")
+            z = torch.nan_to_num(z, nan=0.0, posinf=5.0, neginf=-5.0)
+
+        # Clamp output to reasonable range
+        z = torch.clamp(z, min=-5, max=5)
+
+        return z
     
     def encode(self, x):
         batch_size = x.size(0)
@@ -148,14 +182,35 @@ class VAEGenerator(nn.Module):
     
     def forward(self, x):
         batch_size = x.size(0)
+
+        # Input validation
+        if torch.isnan(x).any() or torch.isinf(x).any():
+            print("Warning: NaN/Inf in VAE input, cleaning")
+            x = torch.nan_to_num(x, nan=0.0, posinf=1e6, neginf=-1e6)
+
         x_flat = x.view(batch_size, -1)
 
+        # Encoder
         q = self.encoder(x_flat)
+
+        # Check encoder output
+        if torch.isnan(q).any() or torch.isinf(q).any():
+            print("Warning: NaN/Inf in encoder output")
+            q = torch.nan_to_num(q, nan=0.0, posinf=1e6, neginf=-1e6)
+
         mu, logvar = q[:, :q.size(1)//2], q[:, q.size(1)//2:]
 
+        # Reparameterize (includes internal safety checks)
         z = self.reparameterize(mu, logvar)
 
+        # Decoder
         decoded_flat = self.decoder(z)
+
+        # Check decoder output
+        if torch.isnan(decoded_flat).any() or torch.isinf(decoded_flat).any():
+            print("Warning: NaN/Inf in decoder output")
+            decoded_flat = torch.nan_to_num(decoded_flat, nan=0.0, posinf=1e6, neginf=-1e6)
+
         decoded = decoded_flat.view(batch_size, self.sequence_length, self.output_dim)
 
         return decoded, mu, logvar
@@ -208,7 +263,17 @@ class VAEGenerator(nn.Module):
                 decoded = upsampled.transpose(1, 2)  # [batch, target_seq_len, output_dim]
 
         return decoded
-    
+
+    def _initialize_weights(self):
+        """Initialize weights with small values to prevent numerical explosion."""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                # Xavier/Glorot initialization with reasonable gain
+                # Changed from 0.01 to 0.1 - 0.01 was too small and caused instability
+                nn.init.xavier_normal_(m.weight, gain=0.1)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
 class VAELoss(nn.Module):
     def __init__(self, total_epochs=100, beta_warmup_ratio=0.5):
         """
@@ -225,30 +290,75 @@ class VAELoss(nn.Module):
         self.beta_warmup_epochs = max(1, int(total_epochs * beta_warmup_ratio))
 
     def forward(self, recon_x, x, mu, logvar, epoch):
-        """
-        MSE + KL Divergence + Similarity.
+        # Input validation - check for NaN/Inf in inputs
+        if torch.isnan(recon_x).any() or torch.isinf(recon_x).any():
+            print("Warning: NaN/Inf detected in recon_x input to loss function")
+            recon_x = torch.nan_to_num(recon_x, nan=0.0, posinf=1e6, neginf=-1e6)
 
-        The beta parameter for KL divergence is scheduled to reach 1.0 at
-        beta_warmup_epochs to allow the model to first learn good reconstructions
-        before enforcing a strong prior on the latent space.
-        """
-        # Reconstruction loss (MSE)
+        if torch.isnan(x).any() or torch.isinf(x).any():
+            print("Warning: NaN/Inf detected in x input to loss function")
+            x = torch.nan_to_num(x, nan=0.0, posinf=1e6, neginf=-1e6)
+
+        # DON'T clamp mu/logvar here - it breaks gradients!
+        # Clamping is done in reparameterize() during forward pass
+        # Here we compute KL loss with the actual values to allow gradients to flow
+
+        # Reconstruction loss (MSE) with safety check
         recon_loss = self.mse_loss(recon_x, x)
+        if torch.isnan(recon_loss) or torch.isinf(recon_loss):
+            print("Warning: NaN/Inf in reconstruction loss, using fallback")
+            recon_loss = torch.tensor(1.0, device=recon_x.device)
 
-        # KL divergence with adaptive beta scheduling
-        kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / x.size(0)
+        # KL divergence with improved numerical stability
+        # KL = -0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+        # Compute per-dimension KL and then average (more stable than sum)
 
-        # Beta reaches 1.0 at beta_warmup_epochs (default: 50% of total epochs)
-        beta = min(1.0, (epoch + 1) / self.beta_warmup_epochs)
+        # Clamp logvar ONLY for the exp() computation to prevent numerical overflow
+        # but keep gradients flowing through the original logvar
+        logvar_safe = torch.clamp(logvar, min=-10, max=10)  # Only for exp()
 
-        # Similarity loss (cosine similarity)
-        # Flatten to (batch, -1) for correct cosine similarity computation
+        kl_per_dim = -0.5 * (1 + logvar - mu.pow(2) - logvar_safe.exp())  # (B, latent_dim)
+        kl_loss = kl_per_dim.mean()  # Mean over batch AND dimensions
+
+        # Only check for NaN/Inf (don't hard clamp - let gradients flow)
+        if torch.isnan(kl_loss) or torch.isinf(kl_loss):
+            print("Warning: NaN/Inf in KL loss, using fallback")
+            kl_loss = torch.tensor(0.0, device=recon_x.device, requires_grad=True)
+
+        # Beta scheduling - balanced to prevent both posterior collapse and KL explosion
+        # Start very small and gradually increase
+        beta_max = 0.01  # Increased to give KL more influence
+        beta = min(beta_max, beta_max * (epoch + 1) / self.beta_warmup_epochs)
+
+        # No free bits - already using mean instead of sum makes KL values small enough
+
+        # Similarity loss (cosine similarity) with safety checks
         recon_flat = recon_x.view(recon_x.size(0), -1)
         x_flat = x.view(x.size(0), -1)
-        cos_sim = nn.functional.cosine_similarity(recon_flat, x_flat, dim=-1).mean()
+
+        # Add small epsilon to prevent division by zero in cosine similarity
+        recon_flat_norm = torch.nn.functional.normalize(recon_flat + 1e-8, p=2, dim=-1)
+        x_flat_norm = torch.nn.functional.normalize(x_flat + 1e-8, p=2, dim=-1)
+        cos_sim = (recon_flat_norm * x_flat_norm).sum(dim=-1).mean()
+        cos_sim = torch.clamp(cos_sim, min=-1.0, max=1.0)  # Ensure valid range
         similarity_loss = 1 - cos_sim
 
-        return recon_loss + beta * kl_loss + 0.1 * similarity_loss, recon_loss, kl_loss, similarity_loss
+        if torch.isnan(similarity_loss) or torch.isinf(similarity_loss):
+            print("Warning: NaN/Inf in similarity loss, using fallback")
+            similarity_loss = torch.tensor(1.0, device=recon_x.device)
+
+        # Adaptive similarity weight: starts at 0.1, decays to 0.01
+        sim_weight = max(0.01, 0.1 * (1 - epoch / self.total_epochs))
+
+        # Combine losses
+        total_loss = recon_loss + beta * kl_loss + sim_weight * similarity_loss
+
+        # Final safety check
+        if torch.isnan(total_loss) or torch.isinf(total_loss):
+            print(f"Warning: NaN/Inf in total loss! recon={recon_loss.item():.4f}, kl={kl_loss.item():.4f}, sim={similarity_loss.item():.4f}")
+            total_loss = recon_loss  # Fallback to just reconstruction loss
+
+        return total_loss, recon_loss, kl_loss, similarity_loss
     
 class ConditionedVAEGenerator(nn.Module):
     def __init__(self, input_dim=512, hidden_dim=512, latent_dim=256, visual_dim=768, sequence_length=4):

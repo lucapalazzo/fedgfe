@@ -1,0 +1,142 @@
+{
+  "_comment_main": "=================================================================================",
+  "_comment_mode": "EXAMPLE: Using Pretrained Generators WITHOUT AST Model",
+  "_comment_desc": "This configuration demonstrates how to use pretrained VAE generators to create",
+  "_comment_desc2": "synthetic audio embeddings directly, WITHOUT initializing the AST model.",
+  "_comment_desc3": "This saves memory and speeds up training when you already have trained generators.",
+  "_comment_line": "=================================================================================",
+
+  "experiment": {
+    "name": "federated_a2v_pretrained_generators_no_ast",
+    "description": "Use pretrained VAE generators for synthetic data generation - AST NOT loaded",
+    "use_balooning": true,
+    "optimize_memory_usage": true
+  },
+
+  "federation": {
+    "algorithm": "FedA2V",
+    "diffusion_type": "flux",
+    "num_clients": 3,
+    "global_rounds": 50,
+    "local_epochs": 3,
+    "eval_gap": 5,
+    "model_aggregation": "per_class_average",
+    "use_saved_audio_embeddings": false
+  },
+
+  "training": {
+    "learning_rate": 0.001,
+    "optimizer": "AdamW",
+    "batch_size": 16,
+    "weight_decay": 0.0001
+  },
+
+  "feda2v": {
+    "_comment_critical": "========== CRITICAL SETTINGS FOR NO-AST MODE ==========",
+
+    "_comment_generator_mode": "=== GENERATOR CONFIGURATION ===",
+    "use_generator": true,
+    "generator_type": "vae",
+    "generator_training_mode": false,
+    "generator_only_mode": false,
+    "use_pretrained_generators": true,
+
+    "_comment_important": "IMPORTANT: When use_pretrained_generators=true, AST model will NOT be loaded!",
+    "_comment_important2": "This saves ~2GB of GPU memory and speeds up initialization.",
+    "_comment_important3": "Make sure you have trained generators available before using this mode!",
+
+    "_comment_granularity": "=== GENERATOR GRANULARITY ===",
+    "_comment_granularity_note": "This MUST match the granularity used during generator training!",
+    "_comment_granularity_options": "Options: 'unified' (one for all), 'per_class' (one per class), 'per_group' (custom groups)",
+    "generator_granularity": "unified",
+    "generator_class_groups": null,
+
+    "_comment_checkpoint": "=== CHECKPOINT SETTINGS ===",
+    "_comment_checkpoint_note": "Specify where to load pretrained generators from",
+    "generator_checkpoint_dir": "checkpoints/generators",
+    "generator_checkpoint_base_name": "vae_unified",
+    "generator_load_checkpoint": true,
+    "generator_save_checkpoint": false,
+
+    "_comment_synthetic": "=== SYNTHETIC DATA GENERATION ===",
+    "_comment_synthetic_note": "How many synthetic samples to generate per class",
+    "synthetic_samples_per_class": 10,
+
+    "_comment_adapter": "=== ADAPTER SETTINGS ===",
+    "_comment_adapter_note": "Adapters are trained on synthetic embeddings from generators",
+    "adapter_aggregation_mode": "avg",
+    "global_model_train": true,
+    "global_model_train_epochs": 5,
+    "global_model_train_from_nodes_adapters": true,
+
+    "t5_adapter_learning_rate": 0.001,
+    "clip_adapter_learning_rate": 0.001,
+    "t5_adapter_weight_decay": 0.0001,
+    "clip_adapter_weight_decay": 0.0001,
+    "adapters_learning_rate": 0.001,
+    "adapters_weight_decay": 0.0001,
+
+    "adapters_learning_rate_schedule": false,
+    "t5_adapter_learning_rate_schedule": false,
+    "clip_adapter_learning_rate_schedule": true,
+
+    "_comment_generation": "=== IMAGE GENERATION ===",
+    "generate_nodes_images_frequency": 10,
+    "generate_global_images_frequency": 10,
+    "generate_low_memomy_footprint": true,
+    "generate_global_images_average_text_embeddings": true,
+    "images_output_dir": "output_images_pretrained_generators",
+    "generate_from_clip_text_embeddings": false,
+    "generate_from_t5_text_embeddings": false,
+
+    "store_audio_embeddings": false,
+    "audio_embedding_file_name": null
+  },
+
+  "nodes": {
+    "0": {
+      "dataset": "ESC50",
+      "selected_classes": ["dog", "rooster", "pig", "cow", "frog"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4],
+      "diffusion_type": "flux"
+    },
+    "1": {
+      "dataset": "ESC50",
+      "selected_classes": ["rain", "sea_waves", "crackling_fire", "crickets", "chirping_birds"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4],
+      "diffusion_type": "flux"
+    },
+    "2": {
+      "dataset": "ESC50",
+      "selected_classes": ["helicopter", "chainsaw", "siren", "car_horn", "engine"],
+      "train_folds": [0, 1, 2, 3],
+      "test_folds": [4],
+      "diffusion_type": "flux"
+    }
+  },
+
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+
+  "dataset": {
+    "name": "ESC50",
+    "path": "./data"
+  },
+
+  "wandb": {
+    "disabled": false
+  },
+
+  "_comment_footer": "=================================================================================",
+  "_comment_usage": "USAGE:",
+  "_comment_usage1": "1. First train generators using generator_training_mode=true config",
+  "_comment_usage2": "2. Save generator checkpoints",
+  "_comment_usage3": "3. Use this config with use_pretrained_generators=true",
+  "_comment_usage4": "4. AST will NOT be loaded, saving memory and time!",
+  "_comment_footer2": "================================================================================="
+}

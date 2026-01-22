@@ -63,7 +63,12 @@ class Client(object):
                     transforms.Resize([self.dataset_image_size, self.dataset_image_size]),
                 ])
 
-        self.node_data = NodeData(args, self.id, transform=self.transform, dataset=dataset, **kwargs)
+        # Get collate_fn from dataset if available
+        collate_fn = None
+        if dataset is not None and hasattr(dataset, 'get_collate_fn'):
+            collate_fn = dataset.get_collate_fn()
+
+        self.node_data = NodeData(args, self.id, transform=self.transform, dataset=dataset, collate_fn=collate_fn, **kwargs)
 
         self.num_classes = args.num_classes
         self.train_samples = train_samples

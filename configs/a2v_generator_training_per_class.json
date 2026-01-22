@@ -22,19 +22,16 @@
     "weight_decay": 0.0001
   },
   "feda2v": {
-    "_comment_mode": "=== GENERATOR-ONLY TRAINING MODE (PER-CLASS) ===",
     "use_generator": true,
     "generator_type": "vae",
     "generator_training_mode": true,
     "generator_only_mode": true,
     "use_pretrained_generators": false,
 
-    "_comment_granularity": "=== PER-CLASS GRANULARITY ===",
     "_comment_granularity_note": "One generator per class - Best quality but higher memory usage",
     "generator_granularity": "per_class",
     "generator_class_groups": null,
 
-    "_comment_checkpoint": "=== CHECKPOINT SETTINGS ===",
     "generator_checkpoint_dir": "checkpoints/generators_per_class",
     "generator_checkpoint_base_name": "vae_perclass",
     "generator_save_checkpoint": true,
@@ -46,6 +43,7 @@
     "generator_augmentation": true,
     "generator_augmentation_noise": 0.1,
     "generator_validation_frequency": 5,
+    "generator_training_sequence_length": 1214,
 
     "_comment_adapter": "=== ADAPTER SETTINGS (Skipped in generator-only mode) ===",
     "adapter_aggregation_mode": "avg",

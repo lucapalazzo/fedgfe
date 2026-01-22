@@ -23,6 +23,7 @@
   },
   "feda2v": {
     "_comment_mode": "=== GENERATOR TRAINING MODE ===",
+    "train_adapters": false,
     "use_generator": true,
     "generator_type": "vae",
     "generator_training_mode": true,

@@ -43,8 +43,10 @@
     "images_output_dir": "esc50-5n-ac-sa",
     "save_generated_images_splits": ["val", "test", "train"],
     "generation_split_for_metrics": "train",
-    "test_metrics_splits": ["val", "test"],
-    "train_metrics_splits": ["train", "val", "test"]
+    "nodes_test_metrics_splits": ["val", "test"],
+    "nodes_train_metrics_splits": ["train", "val", "test"],
+    "server_test_metrics_splits": ["val", "test"],
+    "server_train_metrics_splits": ["train"]
   },
   "nodes": {
     "0": {

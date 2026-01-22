@@ -231,10 +231,37 @@ class ConfigLoader:
             'adapter_aggregation_method': 'none',
             'text_losses_summed': False,
             'compute_global_mean_from_class_means': False,
-            'save_generated_images_splits': [],
-            'generation_split_for_metrics': "train",
-            "test_metrics_splits": ["val", "test"],
-            "train_metrics_splits": ["train"]
+            'save_generated_images_splits': ['test', 'val'],
+            'output_image_base_name': 'img',
+            'generation_split_for_metrics': ['test', 'val'],
+            'nodes_test_metrics_splits': ["val", "test"],
+            'nodes_train_metrics_splits': ["train"],
+            'server_test_metrics_splits': ["val", "test"],
+            'server_train_metrics_splits': ["train"],
+            # Adapter checkpoint settings
+            'adapter_checkpoint_dir': 'checkpoints/adapters',
+            'adapter_checkpoint_base_name': 'adapter',
+            'adapter_save_checkpoint': False,
+            'adapter_load_checkpoint': False,
+            'adapter_checkpoint_frequency': 5,
+            'adapter_checkpoint_per_type': True,
+            # Generator settings
+            'use_generator': False,
+            'generator_type': 'vae',
+            'generator_training_mode': False,
+            'generator_only_mode': False,
+            'use_pretrained_generators': False,
+            'generator_checkpoint_dir': 'checkpoints/generators',
+            'generator_checkpoint_base_name': 'generator',
+            'generator_save_checkpoint': False,
+            'generator_load_checkpoint': False,
+            'generator_checkpoint_frequency': 5,
+            'generator_granularity': 'unified',
+            'generator_class_groups': None,
+            'synthetic_samples_per_class': 'auto',
+            'reset_generator_on_class_change': True,
+            'shared_generator_in_only_mode': True
+
         },
         'wandb': {
             'disabled': False
@@ -246,6 +273,7 @@ class ConfigLoader:
             'task_type': 'classification',
             'selected_classes': None,
             'excluded_classes': None,
+            'num_samples': None,
             'class_labels': None,
             'class_remapping': None,
             'limit_samples': None,
@@ -253,7 +281,12 @@ class ConfigLoader:
             # ESC-50 specific parameters
             'use_folds': False,
             'train_folds': [0, 1, 2, 3],
-            'test_folds': [4]
+            'test_folds': [4],
+            # Node splitting parameters for federated learning
+            'node_split_id': None,  # ID of this node's data split (0-indexed)
+            'num_nodes': None,      # Total number of nodes (for equal distribution)
+            'samples_per_node': None,  # Fixed number of samples per node per class
+            'node_split_seed': 42   # Random seed for reproducible node splits
         }
     }
 
@@ -724,6 +757,14 @@ class ConfigLoader:
 
         # Checkpoint settings
         self._safe_set_attr(args, defaults, 'checkpoint_name', feda2v_config, 'checkpoint_name')
+
+        # Adapter checkpoint settings
+        self._safe_set_attr(args, defaults, 'adapter_checkpoint_dir', feda2v_config, 'adapter_checkpoint_dir')
+        self._safe_set_attr(args, defaults, 'adapter_checkpoint_base_name', feda2v_config, 'adapter_checkpoint_base_name')
+        self._safe_set_attr(args, defaults, 'adapter_save_checkpoint', feda2v_config, 'adapter_save_checkpoint')
+        self._safe_set_attr(args, defaults, 'adapter_load_checkpoint', feda2v_config, 'adapter_load_checkpoint')
+        self._safe_set_attr(args, defaults, 'adapter_checkpoint_frequency', feda2v_config, 'adapter_checkpoint_frequency')
+        self._safe_set_attr(args, defaults, 'adapter_checkpoint_per_type', feda2v_config, 'adapter_checkpoint_per_type')
 
         # WandB settings for A2V
         self._safe_set_attr(args, defaults, 'project', feda2v_config, 'project')

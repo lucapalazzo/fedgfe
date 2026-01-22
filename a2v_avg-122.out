@@ -1,0 +1,389 @@
+Wed Jan 21 03:01:06 PM UTC 2026
+_CudaDeviceProperties(name='NVIDIA H100 80GB HBM3', major=9, minor=0, total_memory=81089MB, multi_processor_count=132, uuid=1eeb6a7d-acce-e170-a127-51b5967e81ed, L2_cache_size=50MB)
+0 0
+
+Applied default for experiment.goal: test
+Applied default for experiment.device: cuda
+Applied default for experiment.device_id: 0
+Applied default for experiment.runs: 1
+Applied default for experiment.seed: -1
+Applied default for experiment.optimize_memory: False
+Applied default for experiment.debug: False
+Applied default for federation.join_ratio: 1.0
+Applied default for federation.generate_images_frequency: 0
+Applied default for model.num_classes: 10
+Applied default for model.embedding_size: 768
+Applied default for model.patch_size: 16
+Applied default for training.momentum: 0.9
+Applied default for training.learning_rate_schedule: False
+Applied default for dataset.image_size: -1
+Applied default for dataset.transform: False
+Applied default for dataset.partition: pat
+Applied default for dataset.dir_alpha: 0.1
+Applied default for dataset.balance: False
+Applied default for rewind.epochs: 0
+Applied default for rewind.ratio: 0.0
+Applied default for rewind.interval: 0
+Applied default for rewind.strategy: none
+Applied default for fedgfe.nodes_datasets: cifar10
+Applied default for fedgfe.nodes_downstream_tasks: none
+Applied default for fedgfe.nodes_pretext_tasks: 
+Applied default for fedgfe.nodes_training_sequence: both
+Applied default for fedgfe.cls_token_only: False
+Applied default for fedgfe.limit_samples_number: 0
+Applied default for feda2v.diffusion_type: sd
+Applied default for feda2v.use_act_loss: False
+Applied default for feda2v.use_text_loss: True
+Applied default for feda2v.use_image_loss: False
+Applied default for feda2v.audio_model_name: MIT/ast-finetuned-audioset-10-10-0.4593
+Applied default for feda2v.image_model_name: google/vit-base-patch16-224-in21k
+Applied default for feda2v.img_pipe_name: runwayml/stable-diffusion-v1-5
+Applied default for feda2v.img_lcm_lora_id: latent-consistency/lcm-lora-sdv1-5
+Applied default for feda2v.audio_pipe_name: cvssp/audioldm-l-full
+Applied default for feda2v.steps: 1000
+Applied default for feda2v.mode: train_nodata
+Applied default for feda2v.ablation_type: only_t5
+Applied default for feda2v.controllability_type: volume
+Applied default for feda2v.target_img_path: data/img
+Applied default for feda2v.img_out_path: exp/img
+Applied default for feda2v.audio_out_path: exp/audio
+Applied default for feda2v.class_to_activate: 8
+Applied default for feda2v.single_class: False
+Applied default for feda2v.checkpoint_name: best_model
+Applied default for feda2v.project: sinestesia
+Applied default for feda2v.entity: ctlab-team
+Applied default for feda2v.wandb_mode: offline
+Applied default for feda2v.global_model_train_from_generator: False
+Applied default for feda2v.global_model_train_from_nodes_audio_embeddings: False
+Applied default for feda2v.global_model_train_inputs: none
+Applied default for feda2v.adapter_aggregation_method: none
+Applied default for feda2v.text_losses_summed: False
+Applied default for feda2v.compute_global_mean_from_class_means: False
+Applied default for feda2v.generation_split_for_metrics: ['test', 'val']
+Applied default for feda2v.synthetic_samples_per_class: auto
+Applied default for feda2v.reset_generator_on_class_change: True
+Applied default for feda2v.shared_generator_in_only_mode: True
+Applied default for nodes.0.dataset_split: all
+Applied default for nodes.0.pretext_tasks: []
+Applied default for nodes.0.task_type: classification
+Applied default for nodes.0.balance_classes: False
+Applied default for nodes.0.use_folds: False
+Applied default for nodes.0.train_folds: [0, 1, 2, 3]
+Applied default for nodes.0.test_folds: [4]
+Applied default for nodes.1.dataset_split: all
+Applied default for nodes.1.pretext_tasks: []
+Applied default for nodes.1.task_type: classification
+Applied default for nodes.1.balance_classes: False
+Applied default for nodes.1.use_folds: False
+Applied default for nodes.1.train_folds: [0, 1, 2, 3]
+Applied default for nodes.1.test_folds: [4]
+Warning: Could not map class label 'dog' to numeric index
+Node 0: Selected classes ['dog'] -> []
+Warning: Could not map class label 'chainsaw' to numeric index
+Node 1: Selected classes ['chainsaw'] -> []
+Set num_clients: 2
+Successfully loaded configuration from: configs/a2v_vegas_2n_2c_200s_kd.json
+Using nodes_tasks from config file (already processed)
+==================================================
+Algorithm: FedA2V
+Local batch size: 8
+Local epochs: 20
+Local learing rate: 0.001
+Local learing rate schedule: False
+Total number of clients: 2
+Clients join in each round: 1.0
+Clients randomly join: False
+Client drop rate: 0.0
+Client select regarding time: False
+Running times: 1
+Dataset: VEGAS
+Number of classes: 10
+Backbone: a2v
+Using device: cuda
+Using DP: False
+Auto break: False
+Global rounds: 10
+DLG attack: False
+Total number of new clients: 0
+Fine tuning epoches on new clients: 0
+A2V G model sd
+
+============= Running time: 0th =============
+Creating server and clients ...
+None
+Enabling wandb to progect:  FedA2V
+Finished creating server and clients.
+2026-01-21 15:01:19,207 - utils.ballooning - INFO - Initialized GPUMemoryBalloon for GPU 0
+2026-01-21 15:01:19,481 - utils.ballooning - INFO - GPU 0: Total memory: 81089 MB, Free before: 80563 MB, Target reserve: 0 MB
+2026-01-21 15:01:19,482 - utils.ballooning - INFO - GPU 0: Successfully allocated 0 MB. Free memory: 80563 MB -> 80563 MB
+2026-01-21 15:01:20,961 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - Initializing AST model: MIT/ast-finetuned-audioset-10-10-0.4593
+2026-01-21 15:01:21,621 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - AST model initialized successfully
+Started diffusion model flux
+2026-01-21 15:01:26,421 - flcore.servers.serverA2V - INFO - Generator checkpoint loading deferred until after client creation
+Creating 0 Audio2Visual node from nodes_tasks configuration:, using dataset VEGAS and labels ['dog']
+2026-01-21 15:01:26,434 - datautils.dataset_vegas - INFO - Auto-creating train/val/test splits (split=None)
+2026-01-21 15:01:26,434 - datautils.dataset_vegas - INFO - Creating train split...
+2026-01-21 15:01:26,640 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 200 samples (requested: 200)
+2026-01-21 15:01:26,640 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:26,830 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 200 samples (requested: 200)
+2026-01-21 15:01:26,831 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:26,834 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 160 samples, classes: ['dog'], split: train
+2026-01-21 15:01:26,834 - datautils.dataset_vegas - INFO - Creating validation split...
+2026-01-21 15:01:27,029 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 200 samples (requested: 200)
+2026-01-21 15:01:27,030 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:27,215 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 200 samples (requested: 200)
+2026-01-21 15:01:27,216 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:27,219 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 20 samples, classes: ['dog'], split: val
+2026-01-21 15:01:27,219 - datautils.dataset_vegas - INFO - Creating test split...
+2026-01-21 15:01:27,422 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 200 samples (requested: 200)
+2026-01-21 15:01:27,422 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:27,610 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 200 samples (requested: 200)
+2026-01-21 15:01:27,611 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:27,613 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 20 samples, classes: ['dog'], split: test
+2026-01-21 15:01:27,613 - datautils.dataset_vegas - INFO - Auto-split created: train=160, val=20, test=20
+2026-01-21 15:01:27,796 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 200 samples (requested: 200)
+2026-01-21 15:01:27,797 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:27,981 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 200 samples (requested: 200)
+2026-01-21 15:01:27,981 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:27,982 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 200 samples, classes: ['dog'], split: None
+Stratified split: train=160, val=20, test=20
+Trying to set schdulers but no optimizer for client  0
+2026-01-21 15:01:30,480 - flcore.clients.clientA2V - INFO - Node 0: Using global use_cls_token_only=False
+2026-01-21 15:01:31,496 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+2026-01-21 15:01:31,497 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - SKIPPING AST INITIALIZATION - Using pretrained generators mode or disabled by constructor
+2026-01-21 15:01:31,498 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+Stratified split: train=160, val=20, test=20
+[Client 0] Auto-calculated synthetic_samples_per_class = 160 (total samples: 160, classes: 1)
+Creating 1 Audio2Visual node from nodes_tasks configuration:, using dataset VEGAS and labels ['chainsaw']
+2026-01-21 15:01:36,213 - datautils.dataset_vegas - INFO - Auto-creating train/val/test splits (split=None)
+2026-01-21 15:01:36,213 - datautils.dataset_vegas - INFO - Creating train split...
+2026-01-21 15:01:36,345 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 200 samples (requested: 200)
+2026-01-21 15:01:36,345 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:36,469 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 200 samples (requested: 200)
+2026-01-21 15:01:36,469 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:36,472 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 160 samples, classes: ['chainsaw'], split: train
+2026-01-21 15:01:36,473 - datautils.dataset_vegas - INFO - Creating validation split...
+2026-01-21 15:01:36,604 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 200 samples (requested: 200)
+2026-01-21 15:01:36,605 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:36,727 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 200 samples (requested: 200)
+2026-01-21 15:01:36,728 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:36,731 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 20 samples, classes: ['chainsaw'], split: val
+2026-01-21 15:01:36,731 - datautils.dataset_vegas - INFO - Creating test split...
+2026-01-21 15:01:36,864 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 200 samples (requested: 200)
+2026-01-21 15:01:36,864 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:36,986 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 200 samples (requested: 200)
+2026-01-21 15:01:36,987 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:36,989 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 20 samples, classes: ['chainsaw'], split: test
+2026-01-21 15:01:36,989 - datautils.dataset_vegas - INFO - Auto-split created: train=160, val=20, test=20
+2026-01-21 15:01:37,109 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 200 samples (requested: 200)
+2026-01-21 15:01:37,109 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:37,229 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 200 samples (requested: 200)
+2026-01-21 15:01:37,230 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 200
+2026-01-21 15:01:37,231 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 200 samples, classes: ['chainsaw'], split: None
+Stratified split: train=160, val=20, test=20
+Trying to set schdulers but no optimizer for client  1
+2026-01-21 15:01:39,676 - flcore.clients.clientA2V - INFO - Node 1: Using global use_cls_token_only=False
+2026-01-21 15:01:40,728 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+2026-01-21 15:01:40,729 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - SKIPPING AST INITIALIZATION - Using pretrained generators mode or disabled by constructor
+2026-01-21 15:01:40,729 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+Stratified split: train=160, val=20, test=20
+[Client 1] Auto-calculated synthetic_samples_per_class = 160 (total samples: 160, classes: 1)
+Created server test dataset with 40 samples from 2 nodes
+2026-01-21 15:01:45,438 - flcore.servers.serverA2V - INFO - [Server] Auto-calculating synthetic_samples_per_class for each node and class
+2026-01-21 15:01:45,438 - flcore.servers.serverA2V - INFO - [Server] Node 0: 160 synthetic samples/class (total samples: 160, classes: 1)
+2026-01-21 15:01:45,438 - flcore.servers.serverA2V - INFO - [Server] Node 1: 160 synthetic samples/class (total samples: 160, classes: 1)
+2026-01-21 15:01:45,438 - flcore.servers.serverA2V - INFO - [Server] Average synthetic_samples_per_class = 160
+2026-01-21 15:01:45,438 - flcore.servers.serverA2V - INFO - Loading generator checkpoints now that federation classes are available **TEMPORARY DISABLED**
+2026-01-21 15:01:45,439 - flcore.servers.serverA2V - WARNING - No generator checkpoints found in checkpoints/generators/vegas-20n-10c-200s-real
+2026-01-21 15:01:45,439 - flcore.servers.serverA2V - WARNING - Could not load generator checkpoint, initializing from scratch
+2026-01-21 15:01:45,439 - flcore.servers.serverA2V - INFO - Initializing vae generator on server (conditioned=None)
+2026-01-21 15:02:15,692 - flcore.servers.serverA2V - INFO - Unconditioned VAE generator initialized
+2026-01-21 15:02:15,693 - flcore.servers.serverA2V - INFO - 
+[Server] Generating synthetic samples for all nodes after generator loading
+2026-01-21 15:02:15,694 - flcore.servers.serverA2V - WARNING - [Server] No generators available, cannot generate synthetic samples
+2026-01-21 15:02:15,694 - flcore.servers.serverA2V - WARNING - [Server] No synthetic samples to distribute
+
+*** Client 0 dataset VEGAS
+2026-01-21 15:02:15,694 - flcore.servers.serverA2V - WARNING - Skipping dataset details for VEGASDataset to avoid long logs.
+
+*** Client 1 dataset VEGAS
+2026-01-21 15:02:15,694 - flcore.servers.serverA2V - WARNING - Skipping dataset details for VEGASDataset to avoid long logs.
+2026-01-21 15:02:15,695 - flcore.servers.serverA2V - INFO - Finished creating Audio2Visual server and clients.
+
+-------------Round number: 1-------------
+
+Evaluate Audio2Visual models
+[Server] Skipping test_metrics: adapters not being trained (train_adapters=False)
+[Server] Skipping train_metrics: adapters not being trained (train_adapters=False)
+2026-01-21 15:02:15,990 - flcore.servers.serverA2V - WARNING - === Round 1 starting hook temporally disabled ===
+2026-01-21 15:02:16,260 - flcore.servers.serverA2V - INFO - Sending global adapters to node 0
+2026-01-21 15:02:17,471 - flcore.servers.serverA2V - INFO - Sending global adapters to node 1
+Creating dataloader for train dataset for client 0 with 160 samples
+Creating dataloader for test dataset for client 0 with 20 samples
+Creating optimizer for node 0 with model optimizer AdamW and learning rate 0.001
+Creating learning rate scheduler for node 0
+Node 0: No optimizer initialized
+Node 0 training Audio2Visual model for 20 epochs
+Node 0 - Computing mean adapter outputs per class from training data
+Node 0 - Stored outputs for 0 classes, 0 adapters, 0 total samples
+
+====================================================================================================
+[Node 0] ⚠️  MEMORY GROWTH DETECTED - Round 1
+====================================================================================================
+
+📊 MEMORY SUMMARY:
+  Start:  Allocated=2.97 GB, Reserved=3.11 GB (3.9%)
+  End:    Allocated=5.79 GB, Reserved=7.32 GB (9.2%)
+  Growth: Allocated=+2.816 GB, Reserved=+4.209 GB
+
+📈 PER-EPOCH BREAKDOWN:
+Epoch    Allocated (GB)       Reserved (GB)        Δ Alloc         Δ Reserved      Avg Loss    
+-------- -------------------- -------------------- --------------- --------------- ------------
+1          5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.8722
+2          5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.2511
+3          5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0613
+4          5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0157
+5          5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0113
+6          5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0101
+7          5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0094
+8          5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0090
+9          5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0088
+10         5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0086
+11         5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0085
+12         5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0085
+13         5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0084
+14         5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0084
+15         5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0084
+16         5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0084
+17         5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0084
+18         5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0084
+19         5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0084
+20         5.79 GB            7.32 GB          +2.816 GB     +4.209 GB     0.0084
+
+  🔴 Max growth at Epoch 1: +4.209 GB reserved
+====================================================================================================
+
+2026-01-21 15:05:06,980 - flcore.servers.serverA2V - INFO - Saving adapter checkpoint for node 0 at round 1
+[Client 0] Saved clip_adapter to vegas-2n-2c-200s-kd_node0_clip_adapter_round_1_class_dog.pt
+[Client 0] Saved clip_projection to vegas-2n-2c-200s-kd_node0_clip_projection_round_1_class_dog.pt
+[Client 0] Saved t5_adapter to vegas-2n-2c-200s-kd_node0_t5_adapter_round_1_class_dog.pt
+[Client 0] Saved t5_projection to vegas-2n-2c-200s-kd_node0_t5_projection_round_1_class_dog.pt
+
+Generating images for Node 0 using Audio2Visual model.
+Generating images for split: val
+Node 0 - Processing 3 batches from dataset...
+  Progress: 3/3 batches processed, 20 total samples
+Node 0 - ✓ Retrieved 20 audio embeddings from dataset
+Node 0 - Embedding shapes: clip: torch.Size([20, 768]), t5: torch.Size([20, 17, 4096])
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_0.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_1.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_2.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_3.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_4.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_5.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_6.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_7.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_8.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_9.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_10.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_11.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_12.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_13.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_14.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_15.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_16.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_17.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_18.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_0_20le_5gr_kd_dog_val_19.png
+✓ Cleaned up memory after val split
+Creating dataloader for train dataset for client 1 with 160 samples
+Creating dataloader for test dataset for client 1 with 20 samples
+Creating optimizer for node 1 with model optimizer AdamW and learning rate 0.001
+Creating learning rate scheduler for node 1
+Node 1: No optimizer initialized
+Node 1 training Audio2Visual model for 20 epochs
+Node 1 - Computing mean adapter outputs per class from training data
+Node 1 - Stored outputs for 0 classes, 0 adapters, 0 total samples
+
+====================================================================================================
+[Node 1] ⚠️  MEMORY GROWTH DETECTED - Round 1
+====================================================================================================
+
+📊 MEMORY SUMMARY:
+  Start:  Allocated=2.47 GB, Reserved=2.56 GB (3.2%)
+  End:    Allocated=5.22 GB, Reserved=6.81 GB (8.6%)
+  Growth: Allocated=+2.755 GB, Reserved=+4.258 GB
+
+📈 PER-EPOCH BREAKDOWN:
+Epoch    Allocated (GB)       Reserved (GB)        Δ Alloc         Δ Reserved      Avg Loss    
+-------- -------------------- -------------------- --------------- --------------- ------------
+1          5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.8737
+2          5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.2561
+3          5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0629
+4          5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0167
+5          5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0126
+6          5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0113
+7          5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0106
+8          5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0102
+9          5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0099
+10         5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0097
+11         5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0096
+12         5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0096
+13         5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0095
+14         5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0095
+15         5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0095
+16         5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0095
+17         5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0095
+18         5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0095
+19         5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0094
+20         5.22 GB            6.81 GB          +2.755 GB     +4.258 GB     0.0094
+
+  🔴 Max growth at Epoch 1: +4.258 GB reserved
+====================================================================================================
+
+2026-01-21 15:09:02,727 - flcore.servers.serverA2V - INFO - Saving adapter checkpoint for node 1 at round 1
+[Client 1] Saved clip_adapter to vegas-2n-2c-200s-kd_node1_clip_adapter_round_1_class_chainsaw.pt
+[Client 1] Saved clip_projection to vegas-2n-2c-200s-kd_node1_clip_projection_round_1_class_chainsaw.pt
+[Client 1] Saved t5_adapter to vegas-2n-2c-200s-kd_node1_t5_adapter_round_1_class_chainsaw.pt
+[Client 1] Saved t5_projection to vegas-2n-2c-200s-kd_node1_t5_projection_round_1_class_chainsaw.pt
+
+Generating images for Node 1 using Audio2Visual model.
+Generating images for split: val
+Node 1 - Processing 3 batches from dataset...
+  Progress: 3/3 batches processed, 20 total samples
+Node 1 - ✓ Retrieved 20 audio embeddings from dataset
+Node 1 - Embedding shapes: clip: torch.Size([20, 768]), t5: torch.Size([20, 17, 4096])
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_0.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_1.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_2.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_3.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_4.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_5.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_6.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_7.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_8.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_9.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_10.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_11.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_12.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_13.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_14.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_15.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_16.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_17.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_18.png
+Saved generated image to output_images/vegas-2n-2c-200s-kd/round_1_node_1_20le_5gr_kd_chainsaw_val_19.png
+✓ Cleaned up memory after val split
+[]
+--------------------------------------------------Round 1 time:  482.3721022605896
+2026-01-21 15:10:18,363 - flcore.servers.serverA2V - INFO - [KD Aggregation] Starting Knowledge Distillation adapter aggregation
+2026-01-21 15:10:18,364 - flcore.servers.serverA2V - ERROR - [KD Aggregation] No generators available, cannot perform KD aggregation
+2026-01-21 15:10:18,364 - utils.ballooning - INFO - GPU 0: No memory to release
+Node 0 metrics: train on train text_loss 0.0042
+Client 0: Generating images from split 'val' for metrics computation
+
+Client 0: Generating images from generated split using server's diffusion model
+[1;34mwandb[0m: 
+[1;34mwandb[0m: 🚀 View run [33msolar-paper-1331[0m at: [34mhttps://wandb.ai/ngslung/FedA2V/runs/gy05m74f[0m
+[1;34mwandb[0m: Find logs at: [1;35mwandb/run-20260121_150117-gy05m74f/logs[0m
+Wed Jan 21 03:11:41 PM UTC 2026

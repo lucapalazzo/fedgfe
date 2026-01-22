@@ -12,7 +12,7 @@ import wandb
 class NodeData():
     def __init__(self, args, node_id = -1, dataset_split_id = -1, transform=None, target_transform=None,
                  custom_train_dataset=None, custom_test_dataset=None, custom_val_dataset=None,
-                 dataset=None, split_ratio=0.8, val_ratio=0.1, stratify=True, **kwargs):
+                 dataset=None, split_ratio=0.8, val_ratio=0.1, stratify=True, collate_fn=None, **kwargs):
         self.id = node_id
         self.split_id = dataset_split_id
         self.args = args
@@ -34,6 +34,7 @@ class NodeData():
         self.labels_percent = None
         self.transform = transform
         self.target_transform = target_transform
+        self.collate_fn = collate_fn
 
         # Split configuration
         self.split_ratio = split_ratio
@@ -84,6 +85,10 @@ class NodeData():
         """Split dataset into train/val/test with optional stratification."""
         if self.dataset is None:
             return
+
+        # Get collate_fn from dataset if not already set
+        if self.collate_fn is None and hasattr(self.dataset, 'get_collate_fn'):
+            self.collate_fn = self.dataset.get_collate_fn()
 
         dataset_size = len(self.dataset)
 
@@ -260,37 +265,33 @@ class NodeData():
             self.id, self.split_id, self.dataset_name, self.train_samples, self.val_samples, self.test_samples )
 
     def to(self, device):
+        """
+        Set the target device for this NodeData.
+
+        IMPORTANT: This method does NOT move bulk data to GPU.
+        - For Dataset objects (train_dataset, etc.): we call their .to() method which
+          should only set device preference, not move data
+        - For preloaded data (train_data, etc.): we keep it on CPU to prevent OOM
+
+        Data is moved to GPU batch-by-batch by the DataLoader during training.
+        """
         self.device = device
-        if self.train_dataset != None:
+
+        # Propagate device to Dataset objects (modern approach)
+        # These should only set device preference, not move data
+        if self.train_dataset is not None and hasattr(self.train_dataset, 'to'):
             self.train_dataset.to(device)
-        if self.val_dataset != None:
+        if self.val_dataset is not None and hasattr(self.val_dataset, 'to'):
             self.val_dataset.to(device)
-        if self.test_dataset != None:
+        if self.test_dataset is not None and hasattr(self.test_dataset, 'to'):
             self.test_dataset.to(device)
-        if self.train_data != None:
-            if type(self.train_data) == dict:
-                for k,v in self.train_data.items():
-                    if type(v) == torch.Tensor:
-                        self.train_data[k] = v.to(device)
-            else:
-                for i in range(len(self.train_data)):
-                    self.train_data[i] = (self.train_data[i][0].to(device), self.train_data[i][1].to(device))
-        if self.val_data != None:
-            if type(self.val_data) == dict:
-                for k,v in self.val_data.items():
-                    if type(v) == torch.Tensor:
-                        self.val_data[k] = v.to(device)
-            else:
-                for i in range(len(self.val_data)):
-                    self.val_data[i] = (self.val_data[i][0].to(device), self.val_data[i][1].to(device))
-        if self.test_data != None:
-            if type(self.test_data) == dict:
-                for k,v in self.test_data.items():
-                    if type(v) == torch.Tensor:
-                        self.test_data[k] = v.to(device)
-            else:
-                for i in range(len(self.test_data)):
-                    self.test_data[i] = (self.test_data[i][0].to(device), self.test_data[i][1].to(device))
+
+        # MEMORY LEAK FIX: Do NOT move train_data/val_data/test_data to GPU!
+        # These are legacy preloaded tensors that should stay on CPU.
+        # Only batches from dataloader should be moved to GPU during training.
+        # The original code (lines 275-304) was causing massive GPU memory leaks
+        # by loading entire datasets into GPU memory.
+
         return self
     
     def classification_labels_count(self):
@@ -349,13 +350,25 @@ class NodeData():
         # Try to use FLSplittedDataset if applicable
         if self.use_fl_splitted and self.train_dataset is None:
             if self._create_fl_splitted_datasets():
-                self.train_dataloader = DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
+                self.train_dataloader = DataLoader(
+                    self.train_dataset,
+                    batch_size,
+                    drop_last=False,
+                    shuffle=True,
+                    collate_fn=self.collate_fn
+                )
                 return self.train_dataloader
 
         # If using a custom dataset (like VEGASDataset), directly create dataloader
         if self.train_dataset is not None:
             print(f"Creating dataloader for train dataset for client {self.id} with {len(self.train_dataset)} samples")
-            self.train_dataloader = DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
+            self.train_dataloader = DataLoader(
+                self.train_dataset,
+                batch_size,
+                drop_last=False,
+                shuffle=True,
+                collate_fn=self.collate_fn
+            )
             return self.train_dataloader
 
         # Original implementation for npz files
@@ -380,9 +393,21 @@ class NodeData():
             if self.train_dataset == None:
                 self.train_dataset = FLNodeDataset(self.train_data, transform=self.transform, target_transform=self.target_transform)
             if self.train_dataloader == None:
-                self.train_dataloader = DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
+                self.train_dataloader = DataLoader(
+                    self.train_dataset,
+                    batch_size,
+                    drop_last=False,
+                    shuffle=True,
+                    collate_fn=self.collate_fn
+                )
             elif self.train_dataloader.batch_size != batch_size:
-                self.train_dataloader = DataLoader(self.train_dataset, batch_size, drop_last=False, shuffle=True)
+                self.train_dataloader = DataLoader(
+                    self.train_dataset,
+                    batch_size,
+                    drop_last=False,
+                    shuffle=True,
+                    collate_fn=self.collate_fn
+                )
 
         return self.train_dataloader
 
@@ -395,7 +420,13 @@ class NodeData():
         # If using a custom dataset (like VEGASDataset), directly create dataloader
         if self.val_dataset is not None:
             print(f"Creating dataloader for val dataset for client {self.id} with {len(self.val_dataset)} samples")
-            self.val_dataloader = DataLoader(self.val_dataset, batch_size, drop_last=False, shuffle=False)
+            self.val_dataloader = DataLoader(
+                self.val_dataset,
+                batch_size,
+                drop_last=False,
+                shuffle=False,
+                collate_fn=self.collate_fn
+            )
             return self.val_dataloader
 
         # If no validation dataset exists, return None
@@ -410,13 +441,25 @@ class NodeData():
         # Try to use FLSplittedDataset if applicable (test dataset might be created along with train)
         if self.use_fl_splitted and self.test_dataset is None:
             if self._create_fl_splitted_datasets():
-                self.test_dataloader = DataLoader(self.test_dataset, batch_size, drop_last=False, shuffle=False)
+                self.test_dataloader = DataLoader(
+                    self.test_dataset,
+                    batch_size,
+                    drop_last=False,
+                    shuffle=False,
+                    collate_fn=self.collate_fn
+                )
                 return self.test_dataloader
 
         # If using a custom dataset (like VEGASDataset), directly create dataloader
         if self.test_dataset is not None:
             print(f"Creating dataloader for test dataset for client {self.id} with {len(self.test_dataset)} samples")
-            self.test_dataloader = DataLoader(self.test_dataset, batch_size, drop_last=False, shuffle=False)
+            self.test_dataloader = DataLoader(
+                self.test_dataset,
+                batch_size,
+                drop_last=False,
+                shuffle=False,
+                collate_fn=self.collate_fn
+            )
             return self.test_dataloader
 
         # Original implementation for npz files
@@ -440,9 +483,21 @@ class NodeData():
             self.test_dataset = FLNodeDataset(self.test_data, transform=self.transform, target_transform=self.target_transform)
 
         if self.test_dataloader == None:
-            self.test_dataloader = DataLoader(self.test_dataset, batch_size, drop_last=False, shuffle=True)
+            self.test_dataloader = DataLoader(
+                self.test_dataset,
+                batch_size,
+                drop_last=False,
+                shuffle=True,
+                collate_fn=self.collate_fn
+            )
         elif self.test_dataloader.batch_size != batch_size:
-            self.test_dataloader = DataLoader(self.test_dataset, batch_size, drop_last=False, shuffle=True)
+            self.test_dataloader = DataLoader(
+                self.test_dataset,
+                batch_size,
+                drop_last=False,
+                shuffle=True,
+                collate_fn=self.collate_fn
+            )
         return self.test_dataloader
 
     def get_train_dataset(self, dataset_limit=0):
@@ -848,7 +903,7 @@ class NodeData():
 
     @staticmethod
     def create_merged_dataloader(node_data_list, split_type='train', batch_size=32,
-                                 shuffle=True, num_workers=0, drop_last=False, **kwargs):
+                                 shuffle=True, num_workers=0, drop_last=False, collate_fn=None, **kwargs):
         """
         Create a DataLoader from merged datasets of multiple NodeData instances.
 
@@ -859,6 +914,7 @@ class NodeData():
             shuffle: Whether to shuffle the data
             num_workers: Number of workers for data loading
             drop_last: Whether to drop the last incomplete batch
+            collate_fn: Optional custom collate function
             **kwargs: Additional arguments to pass to DataLoader
 
         Returns:
@@ -884,12 +940,17 @@ class NodeData():
             return_dataset=True
         )
 
+        # Use collate_fn from first node if not provided
+        if collate_fn is None and len(node_data_list) > 0:
+            collate_fn = node_data_list[0].collate_fn
+
         dataloader = DataLoader(
             merged_dataset,
             batch_size=batch_size,
             shuffle=shuffle,
             num_workers=num_workers,
             drop_last=drop_last,
+            collate_fn=collate_fn,
             **kwargs
         )
 
@@ -937,7 +998,7 @@ class NodeData():
 
     @staticmethod
     def create_mixed_split_dataloader(node_data_list, split_configs, batch_size=32,
-                                     shuffle=True, num_workers=0, drop_last=False, **kwargs):
+                                     shuffle=True, num_workers=0, drop_last=False, collate_fn=None, **kwargs):
         """
         Create a DataLoader from mixed splits of multiple NodeData instances.
         Allows combining different splits from different nodes.
@@ -953,6 +1014,7 @@ class NodeData():
             shuffle: Whether to shuffle the data
             num_workers: Number of workers for data loading
             drop_last: Whether to drop the last incomplete batch
+            collate_fn: Optional custom collate function
             **kwargs: Additional arguments to pass to DataLoader
 
         Returns:
@@ -992,12 +1054,17 @@ class NodeData():
 
         merged_dataset = ConcatDataset(datasets)
 
+        # Use collate_fn from first node if not provided
+        if collate_fn is None and len(node_data_list) > 0:
+            collate_fn = node_data_list[0].collate_fn
+
         dataloader = DataLoader(
             merged_dataset,
             batch_size=batch_size,
             shuffle=shuffle,
             num_workers=num_workers,
             drop_last=drop_last,
+            collate_fn=collate_fn,
             **kwargs
         )
 

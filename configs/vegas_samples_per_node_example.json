@@ -1,0 +1,96 @@
+{
+  "experiment": {
+    "goal": "train",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 5,
+    "global_rounds": 50,
+    "local_epochs": 5,
+    "join_ratio": 1.0,
+    "eval_gap": 5
+  },
+  "model": {
+    "backbone": "a2v",
+    "num_classes": 10
+  },
+  "training": {
+    "optimizer": "Adam",
+    "learning_rate": 0.001,
+    "batch_size": 16
+  },
+  "dataset": {
+    "name": "vegas",
+    "path": "/home/lpala/fedgfe/dataset/Audio/VEGAS"
+  },
+  "feda2v": {
+    "diffusion_type": "sd",
+    "use_text_loss": true,
+    "mode": "train"
+  },
+  "nodes": {
+    "0": {
+      "dataset": "vegas",
+      "node_split_id": 0,
+      "samples_per_node": 20,
+      "node_split_seed": 42,
+      "selected_classes": ["dog", "baby_cry", "chainsaw", "drum", "fireworks"],
+      "task_type": "audio2visual",
+      "comment": "Node 0 - Gets first 20 samples per class"
+    },
+    "1": {
+      "dataset": "vegas",
+      "node_split_id": 1,
+      "samples_per_node": 20,
+      "node_split_seed": 42,
+      "selected_classes": ["dog", "baby_cry", "chainsaw", "drum", "fireworks"],
+      "task_type": "audio2visual",
+      "comment": "Node 1 - Gets next 20 samples per class"
+    },
+    "2": {
+      "dataset": "vegas",
+      "node_split_id": 2,
+      "samples_per_node": 20,
+      "node_split_seed": 42,
+      "selected_classes": ["dog", "baby_cry", "chainsaw", "drum", "fireworks"],
+      "task_type": "audio2visual",
+      "comment": "Node 2 - Gets next 20 samples per class"
+    },
+    "3": {
+      "dataset": "vegas",
+      "node_split_id": 3,
+      "samples_per_node": 20,
+      "node_split_seed": 42,
+      "selected_classes": ["helicopter", "printer", "rail_transport", "snoring", "water_flowing"],
+      "task_type": "audio2visual",
+      "comment": "Node 3 - Different classes, first 20 samples per class"
+    },
+    "4": {
+      "dataset": "vegas",
+      "node_split_id": 4,
+      "samples_per_node": 20,
+      "node_split_seed": 42,
+      "selected_classes": ["helicopter", "printer", "rail_transport", "snoring", "water_flowing"],
+      "task_type": "audio2visual",
+      "comment": "Node 4 - Different classes, next 20 samples per class"
+    }
+  },
+  "comments": {
+    "mode": "samples_per_node",
+    "description": "Each node gets exactly 20 samples per class",
+    "advantages": [
+      "Fixed dataset size per node",
+      "Easy to control memory usage",
+      "Useful when nodes have different computational resources"
+    ],
+    "notes": [
+      "node_split_id determines which portion of samples each node gets",
+      "All nodes with same node_split_seed will have reproducible splits",
+      "Can mix different classes across nodes for heterogeneous FL scenarios"
+    ]
+  }
+}

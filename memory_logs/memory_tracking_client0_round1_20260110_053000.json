@@ -1,0 +1,1175 @@
+{
+  "round": 1,
+  "client_id": 0,
+  "timestamp": "2026-01-10T05:30:00.023276",
+  "classes": [
+    {
+      "class_name": "train",
+      "class_index": 1,
+      "loss": 306.3981934898719,
+      "memory_before": {
+        "allocated_gb": 3.9614858627319336,
+        "reserved_gb": 4.66796875,
+        "percent_used": 5.894730351541123
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      }
+    },
+    {
+      "class_name": "engine",
+      "class_index": 2,
+      "loss": 275.3148083854318,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "sneezing",
+      "class_index": 3,
+      "loss": 199.36454526970553,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "coughing",
+      "class_index": 4,
+      "loss": 222.77891913254942,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "helicopter",
+      "class_index": 5,
+      "loss": 178.3870596122667,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "fireworks",
+      "class_index": 6,
+      "loss": 191.4992448224724,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "mouse_click",
+      "class_index": 7,
+      "loss": 127.08723438242073,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "rooster",
+      "class_index": 8,
+      "loss": 197.81437899696445,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "drinking_sipping",
+      "class_index": 9,
+      "loss": 228.67084492665515,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "chirping_birds",
+      "class_index": 10,
+      "loss": 192.81125003027918,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "sheep",
+      "class_index": 11,
+      "loss": 212.9129558368996,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "brushing_teeth",
+      "class_index": 12,
+      "loss": 140.12294576341654,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "toilet_flush",
+      "class_index": 13,
+      "loss": 140.1155189702063,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "pouring_water",
+      "class_index": 14,
+      "loss": 118.79541895890233,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "wind",
+      "class_index": 15,
+      "loss": 137.70032110094274,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "crow",
+      "class_index": 16,
+      "loss": 106.45868649172792,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "frog",
+      "class_index": 17,
+      "loss": 160.51930600349596,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "clock_alarm",
+      "class_index": 18,
+      "loss": 146.32980377800754,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "vacuum_cleaner",
+      "class_index": 19,
+      "loss": 183.58259132546195,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "breathing",
+      "class_index": 20,
+      "loss": 234.09026171205196,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "sea_waves",
+      "class_index": 21,
+      "loss": 447.97984416682283,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "glass_breaking",
+      "class_index": 22,
+      "loss": 139.09926282706851,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "can_opening",
+      "class_index": 23,
+      "loss": 267.43789782536044,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "cat",
+      "class_index": 24,
+      "loss": 84.62337962502241,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "water_drops",
+      "class_index": 25,
+      "loss": 213.683891985148,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "thunderstorm",
+      "class_index": 26,
+      "loss": 198.18675693691523,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "cow",
+      "class_index": 27,
+      "loss": 113.34013814231751,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "keyboard_typing",
+      "class_index": 28,
+      "loss": 89.25890606399636,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "clock_tick",
+      "class_index": 29,
+      "loss": 110.27138255932174,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "laughing",
+      "class_index": 30,
+      "loss": 71.50229615477478,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "insects",
+      "class_index": 31,
+      "loss": 134.75583493281158,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "chainsaw",
+      "class_index": 32,
+      "loss": 161.1335744497404,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "airplane",
+      "class_index": 33,
+      "loss": 195.82709711245457,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "car_horn",
+      "class_index": 34,
+      "loss": 128.92433343006667,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "hen",
+      "class_index": 35,
+      "loss": 147.41961122897266,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "crying_baby",
+      "class_index": 36,
+      "loss": 292.2600295610204,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "church_bells",
+      "class_index": 37,
+      "loss": 44.27184869451817,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "siren",
+      "class_index": 38,
+      "loss": 212.22924988990997,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "dog",
+      "class_index": 39,
+      "loss": 190.8814529756605,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "clapping",
+      "class_index": 40,
+      "loss": 173.6623551717177,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "rain",
+      "class_index": 41,
+      "loss": 248.15069939804798,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "crickets",
+      "class_index": 42,
+      "loss": 248.52087223485862,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "footsteps",
+      "class_index": 43,
+      "loss": 67.45474575096371,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "washing_machine",
+      "class_index": 44,
+      "loss": 59.665777024090346,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "pig",
+      "class_index": 45,
+      "loss": 217.80851261693232,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "door_wood_knock",
+      "class_index": 46,
+      "loss": 211.04895582465804,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "door_wood_creaks",
+      "class_index": 47,
+      "loss": 86.00013179239635,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "hand_saw",
+      "class_index": 48,
+      "loss": 112.93107587536427,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "snoring",
+      "class_index": 49,
+      "loss": 29.58679999829081,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    },
+    {
+      "class_name": "crackling_fire",
+      "class_index": 50,
+      "loss": 129.18678949562462,
+      "memory_before": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "memory_after": {
+        "allocated_gb": 2.1591100692749023,
+        "reserved_gb": 2.263671875,
+        "percent_used": 2.8585742583414904
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.8023757934570312,
+        "reserved_gb": -2.404296875
+      },
+      "delta_from_previous": {
+        "allocated_gb": 0.0,
+        "reserved_gb": 0.0
+      }
+    }
+  ],
+  "summary": {
+    "total_classes": 50,
+    "memory_start": {
+      "allocated_gb": 3.9614858627319336,
+      "reserved_gb": 4.66796875,
+      "percent_used": 5.894730351541123
+    },
+    "memory_end": {
+      "allocated_gb": 2.1591100692749023,
+      "reserved_gb": 2.263671875,
+      "percent_used": 2.8585742583414904
+    },
+    "total_growth": {
+      "allocated_gb": -1.8023757934570312,
+      "reserved_gb": -2.404296875
+    },
+    "avg_loss": 170.55715585469156
+  }
+}

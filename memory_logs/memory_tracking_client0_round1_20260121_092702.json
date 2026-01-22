@@ -1,0 +1,48 @@
+{
+  "round": 1,
+  "client_id": 0,
+  "timestamp": "2026-01-21T09:27:02.671455",
+  "classes": [
+    {
+      "class_name": "dog",
+      "class_index": 1,
+      "loss": 33.34851629051864,
+      "memory_before": {
+        "allocated_gb": 3.9167633056640625,
+        "reserved_gb": 5.376953125,
+        "percent_used": 6.790038768950926
+      },
+      "memory_after": {
+        "allocated_gb": 2.7104339599609375,
+        "reserved_gb": 2.841796875,
+        "percent_used": 3.5886329127582997
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.206329345703125,
+        "reserved_gb": -2.53515625
+      },
+      "delta_from_previous": {
+        "allocated_gb": -1.206329345703125,
+        "reserved_gb": -2.53515625
+      }
+    }
+  ],
+  "summary": {
+    "total_classes": 1,
+    "memory_start": {
+      "allocated_gb": 3.9167633056640625,
+      "reserved_gb": 5.376953125,
+      "percent_used": 6.790038768950926
+    },
+    "memory_end": {
+      "allocated_gb": 2.7104339599609375,
+      "reserved_gb": 2.841796875,
+      "percent_used": 3.5886329127582997
+    },
+    "total_growth": {
+      "allocated_gb": -1.206329345703125,
+      "reserved_gb": -2.53515625
+    },
+    "avg_loss": 33.34851629051864
+  }
+}

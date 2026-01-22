@@ -1,0 +1,11 @@
+#!/bin/bash
+#SBATCH --job-name=my_training_job
+#SBATCH --partition=gpu-train
+#SBATCH --qos=train
+#SBATCH --gres=gpu:1
+#SBATCH --output=%x-%j.out
+#SBATCH --error=%x-%j.err
+
+cd $HOME/fedgfe
+conda run -n flvit debugpy --listen 0.0.0.0:5678 system/main.py --config configs/a2v_vegas_2n_2c_200s_avg.json
+

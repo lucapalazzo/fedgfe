@@ -28,6 +28,24 @@ import numpy as np
 import torchvision
 import logging
 
+# Remote debugging support with debugpy
+# Set environment variable DEBUG_PORT to enable (e.g., DEBUG_PORT=5678)
+DEBUG_PORT = os.environ.get('DEBUG_PORT', None)
+if DEBUG_PORT:
+    try:
+        import debugpy
+        port = int(DEBUG_PORT)
+        debugpy.listen(("0.0.0.0", port))
+        print(f"⚙️  Debugger listening on port {port}...")
+        print(f"   Connect from VS Code using 'Python: Attach' configuration")
+        # Uncomment the line below to wait for debugger before continuing
+        # debugpy.wait_for_client()
+        # print("✓ Debugger attached!")
+    except ImportError:
+        print(f"⚠️  DEBUG_PORT set but debugpy not installed. Install with: pip install debugpy")
+    except Exception as e:
+        print(f"⚠️  Failed to start debugger: {e}")
+
 logger = logging.getLogger(__name__)
 import timm
 from timm.models.vision_transformer import VisionTransformer as timmVisionTransformer

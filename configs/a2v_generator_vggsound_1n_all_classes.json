@@ -1,0 +1,146 @@
+{
+  "experiment": {
+    "name": "federated_a2v_generator_training_vggsound_all_classes",
+    "description": "Training VAE generators for all 50 VGGSound classes on a single node",
+    "use_balooning": false,
+    "optimize_memory_usage": true
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "diffusion_type": "flux",
+    "num_clients": 1,
+    "global_rounds": 1,
+    "local_epochs": 10,
+    "eval_gap": 100,
+    "model_aggregation": "none",
+    "use_saved_audio_embeddings": false
+  },
+  "training": {
+    "learning_rate": 0.001,
+    "optimizer": "AdamW",
+    "batch_size": 8,
+    "weight_decay": 0.0001
+  },
+  "feda2v": {
+    "use_generator": true,
+    "generator_type": "vae",
+    "generator_training_mode": true,
+    "generator_only_mode": true,
+    "use_pretrained_generators": false,
+
+    "_comment_granularity_note": "One generator per class - All 50 VGGSound classes",
+    "generator_granularity": "per_class",
+    "generator_class_groups": null,
+
+    "generator_checkpoint_dir": "checkpoints/generators/vae_vggsound_1n_all_classes",
+    "generator_checkpoint_base_name": "vae_perclass",
+    "generator_save_checkpoint": true,
+    "generator_load_checkpoint": false,
+    "generator_checkpoint_frequency": 5,
+
+    "_comment_training": "=== GENERATOR TRAINING SETTINGS ===",
+    "generator_training_epochs": 100,
+    "generator_augmentation": true,
+    "generator_augmentation_noise": 0.1,
+    "generator_validation_frequency": 5,
+    "generator_training_sequence_length": 1214,
+
+    "_comment_adapter": "=== ADAPTER SETTINGS (Skipped in generator-only mode) ===",
+    "adapter_aggregation_mode": "none",
+    "global_model_train": false,
+    "global_model_train_epochs": 0,
+    "global_model_train_from_nodes_adapters": false,
+
+    "t5_adapter_learning_rate": 0.001,
+    "clip_adapter_learning_rate": 0.001,
+    "t5_adapter_weight_decay": 0.0001,
+    "clip_adapter_weight_decay": 0.0001,
+    "adapters_learning_rate": 0.001,
+    "adapters_weight_decay": 0.0001,
+
+    "adapters_learning_rate_schedule": false,
+    "t5_adapter_learning_rate_schedule": false,
+    "clip_adapter_learning_rate_schedule": true,
+
+    "_comment_generation": "=== IMAGE GENERATION (disabled in training mode) ===",
+    "generate_nodes_images_frequency": 0,
+    "generate_global_images_frequency": 0,
+    "generate_low_memomy_footprint": true,
+    "images_output_dir": "output_images",
+    "generate_from_clip_text_embeddings": false,
+    "generate_from_t5_text_embeddings": false,
+
+    "store_audio_embeddings": false,
+    "audio_embedding_file_name": null
+  },
+  "nodes": {
+    "0": {
+      "dataset": "VGGSound",
+      "selected_classes": [
+        "airplane flyby",
+        "ambulance siren",
+        "baby crying",
+        "baby laughter",
+        "baltimore oriole calling",
+        "car engine idling",
+        "car engine knocking",
+        "cat purring",
+        "chainsawing trees",
+        "church bell ringing",
+        "cow lowing",
+        "dog barking",
+        "driving snowmobile",
+        "elk bugling",
+        "fire truck siren",
+        "gibbon howling",
+        "hail",
+        "hedge trimmer running",
+        "ice cream truck, ice cream van",
+        "lawn mowing",
+        "orchestra",
+        "owl hooting",
+        "people cheering",
+        "people crowd",
+        "people marching",
+        "playing bassoon",
+        "playing drum kit",
+        "playing harp",
+        "playing harpsichord",
+        "playing snare drum",
+        "playing timbales",
+        "printer printing",
+        "railroad car, train wagon",
+        "scuba diving",
+        "sea waves",
+        "sheep bleating",
+        "singing choir",
+        "skiing",
+        "slot machine",
+        "snake hissing",
+        "stream burbling",
+        "tractor digging",
+        "train horning",
+        "train wheels squealing",
+        "train whistling",
+        "underwater bubbling",
+        "volcano explosion",
+        "waterfall burbling",
+        "wood thrush calling",
+        "woodpecker pecking tree"
+      ],
+      "diffusion_type": "flux"
+    }
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+  "dataset": {
+    "name": "VGGSound",
+    "path": "./data"
+  },
+  "wandb": {
+    "disabled": false
+  }
+}

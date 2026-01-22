@@ -31,7 +31,7 @@ def create_federated_vegas_node(args, node_id, selected_classes=None):
         selected_classes=selected_classes,
         split='train',
         split_ratio=0.8,
-        node_id=node_id,  # Ensures consistent splitting across nodes
+        node_split_id=node_id,  # Ensures consistent data splitting across nodes
         enable_cache=True,
         audio_sample_rate=16000,
         audio_duration=10.0,
@@ -43,7 +43,7 @@ def create_federated_vegas_node(args, node_id, selected_classes=None):
         selected_classes=selected_classes,
         split='test',
         split_ratio=0.8,
-        node_id=node_id,  # Same node_id for consistent split
+        node_split_id=node_id,  # Same node_split_id for consistent split
         enable_cache=True,
         audio_sample_rate=16000,
         audio_duration=10.0,
@@ -53,7 +53,7 @@ def create_federated_vegas_node(args, node_id, selected_classes=None):
     # Create NodeData with custom datasets
     node_data = NodeData(
         args=args,
-        node_id=node_id,
+        node_split_id=node_id,
         custom_train_dataset=train_dataset,
         custom_test_dataset=test_dataset
     )
@@ -89,7 +89,7 @@ def example_federated_setup():
     for config in node_configs:
         node = create_federated_vegas_node(
             args=args,
-            node_id=config['id'],
+            node_split_id=config['id'],
             selected_classes=config['classes']
         )
         nodes.append(node)
@@ -153,19 +153,19 @@ def example_integration_with_client():
     train_dataset = VEGASDataset(
         selected_classes=node_config['selected_classes'],
         split='train',
-        node_id=0
+        node_split_id=0
     )
 
     test_dataset = VEGASDataset(
         selected_classes=node_config['selected_classes'],
         split='test',
-        node_id=0
+        node_split_id=0
     )
 
     # Create NodeData with VEGAS datasets
     node_data = NodeData(
         args=args,
-        node_id=0,
+        node_split_id=0,
         custom_train_dataset=train_dataset,
         custom_test_dataset=test_dataset
     )

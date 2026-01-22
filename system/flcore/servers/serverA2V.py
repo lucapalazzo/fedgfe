@@ -26,6 +26,7 @@ import time
 from itertools import cycle
 
 import torch
+import torch.nn as nn
 from torchvision import transforms
 
 from flcore.routing.scoredrouting import ScoredRouting
@@ -34,6 +35,9 @@ from flcore.routing.staticrouting import StaticRouting
 from flcore.trainmodel.downstreamsinestesiaadapters import DownstreamSinestesiaAdapters
 from flcore.trainmodel.downstreamsinestesia import DownstreamSinestesia
 from flcore.trainmodel.Audio2Visual_NoData.src.models.sinestesia import SinestesiaWithClassifier
+from datautils.node_dataset import NodeData
+from torch.utils.data import ConcatDataset
+from flcore.trainmodel.generators import ConditionedVAEGenerator, VAEGenerator
 
 from torchinfo import summary
 
@@ -41,6 +45,7 @@ from utils.node_metric import NodeMetric
 from utils.ballooning import GPUMemoryBalloon
 from datautils.dataset_vegas import VEGASDataset
 from datautils.dataset_esc50 import ESC50Dataset
+from datautils.dataset_vggsound import VGGSoundDataset
 
 import logging, sys
 
@@ -101,10 +106,16 @@ class FedA2V(FedRewind):
 
         # Image generation splits configuration
         self.save_generated_images_splits = getattr(self.config.feda2v, 'save_generated_images_splits', ['val', 'test'])
-        self.generation_split_for_metrics = getattr(self.config.feda2v, 'generation_split_for_metrics', 'train')
+        self.output_image_base_name = getattr(self.config.feda2v, 'output_image_base_name', 'img')
+        self.generation_split_for_metrics = getattr(self.config.feda2v, 'generation_split_for_metrics', ['train'])
 
-        self.test_metrics_splits = getattr(self.config.feda2v, 'test_metrics_splits', ['val', 'test'])
-        self.train_metrics_splits = getattr(self.config.feda2v, 'train_metrics_splits', ['train'])
+        # Nodes metrics splits
+        self.nodes_test_metrics_splits = getattr(self.config.feda2v, 'nodes_test_metrics_splits', ['val', 'test'])
+        self.nodes_train_metrics_splits = getattr(self.config.feda2v, 'nodes_train_metrics_splits', ['train'])
+
+        # Server metrics splits
+        self.server_test_metrics_splits = getattr(self.config.feda2v, 'server_test_metrics_splits', ['val', 'test'])
+        self.server_train_metrics_splits = getattr(self.config.feda2v, 'server_train_metrics_splits', ['train'])
 
         self.adapter_aggregation_mode = self.config.feda2v.adapter_aggregation_mode
         self.global_model_train_from_nodes_adapters = self.config.feda2v.global_model_train_from_nodes_adapters
@@ -114,10 +125,20 @@ class FedA2V(FedRewind):
         self.compute_global_mean_from_class_means = getattr(self.config.feda2v, 'compute_global_mean_from_class_means', True)
 
         # Generator configuration
+        self.generators = {}
         self.generator_type = getattr(self.config.feda2v, 'generator_type', 'vae')
         self.use_generator = getattr(self.config.feda2v, 'use_generator', False)
+        self.generator_only_mode = getattr(self.config.feda2v, 'generator_only_mode', False)
         self.use_conditioned_vae = getattr(self.config.feda2v, 'use_conditioned_vae', True)
         self.generator_training_mode = getattr(self.config.feda2v, 'generator_training_mode', False)
+        self.shared_generator_in_only_mode = getattr(self.config.feda2v, 'shared_generator_in_only_mode', True)
+
+        self.generator_training_sequence_length = getattr(self.config.feda2v,'generator_training_sequence_length', 4)
+        self.generator_output_sequence_length = getattr(self.config.feda2v,'generator_output_sequence_length', None)
+
+        # Training mode configuration
+        # train_adapters: whether to train adapters (if False, only generator training)
+        self.train_adapters = getattr(self.config.feda2v, 'train_adapters', True)
         self.prompt_generator = None
         self.prompt_generator_clip = None
         self.prompt_generator_t5 = None
@@ -147,8 +168,16 @@ class FedA2V(FedRewind):
         self.generator_training_epochs = getattr(self.config.feda2v, 'generator_training_epochs', 5)
         self.generator_augmentation = getattr(self.config.feda2v, 'generator_augmentation', True)
         self.generator_augmentation_noise = getattr(self.config.feda2v, 'generator_augmentation_noise', 0.1)
-        self.synthetic_samples_per_class = getattr(self.config.feda2v, 'synthetic_samples_per_class', 5)
+        self.synthetic_samples_per_class = getattr(self.config.feda2v, 'synthetic_samples_per_class', 'auto')
         self.generator_validation_frequency = getattr(self.config.feda2v, 'generator_validation_frequency', 5)
+
+        # Adapter checkpoint configuration
+        self.adapter_checkpoint_dir = getattr(self.config.feda2v, 'adapter_checkpoint_dir', 'checkpoints/adapters')
+        self.adapter_checkpoint_base_name = getattr(self.config.feda2v, 'adapter_checkpoint_base_name', 'adapter')
+        self.adapter_save_checkpoint = getattr(self.config.feda2v, 'adapter_save_checkpoint', False)
+        self.adapter_load_checkpoint = getattr(self.config.feda2v, 'adapter_load_checkpoint', False)
+        self.adapter_checkpoint_frequency = getattr(self.config.feda2v, 'adapter_checkpoint_frequency', 5)
+        self.adapter_checkpoint_per_type = getattr(self.config.feda2v, 'adapter_checkpoint_per_type', True)
 
         # Create Encoders models Audio2Visual model
         self.create_global_model(args)
@@ -190,11 +219,14 @@ class FedA2V(FedRewind):
         # Select slow clients and create clients
         self.set_clients(clientA2V)
 
-        self.generate_global_images_average_text_embeddings_from_nodes()
-
         for client in self.clients:
             print(f"\n*** Client {client.id} dataset {client.dataset}")
+            if isinstance(client.node_data.dataset, VEGASDataset):
+                logger.warn ( "Skipping dataset details for VEGASDataset to avoid long logs." )
+                continue
             client.node_data.stats_dump()
+            if hasattr(client, "server_synthetic_samples"):
+                print(f"  Server synthetic samples available for classes: {list(client.server_synthetic_samples.keys())}")
 
         if self.no_wandb == False:
             self.define_metrics()
@@ -216,11 +248,13 @@ class FedA2V(FedRewind):
         self.statistics_dataframe = None
 
     def test_node_metrics_from_images ( self, node, generated_images ):
-        test_images = generated_images['on_test'] if 'on_test' in generated_images else {}
-        train_images = generated_images['on_train'] if 'on_train' in generated_images else {}
+        images = {}
+        images |= generated_images['test'] if 'test' in generated_images else {}
+        images |= generated_images['train'] if 'train' in generated_images else {}
+        images |= generated_images['val'] if 'val' in generated_images else {}
 
-        found_classes = list(test_images.values())
-        filenames = list(test_images.keys())
+        found_classes = list(images.values())
+        filenames = list(images.keys())
         # found_classes.append(list(train_images.values()))
 
         candidate_labels = {}
@@ -243,18 +277,40 @@ class FedA2V(FedRewind):
 
         # candidate_labels = [f'This is a photo of {label}.' for label in classes]
 
-        predictions = self.global_model.compute_zero_shot( filenames, federation_available_classes )
-        labels = torch.tensor(list(candidate_labels.values()))
-        metrics = self.global_model._compute_classification_metrics (predictions, ground_truth_classes)
+        node_splits_metrics = {}
+        for split,generated_filenames in generated_images.items():
 
-        node_metrics = NodeMetric(phase=NodeMetric.Phase.TEST, task_count=1)
-        node_metrics.define_metrics(self.global_model.defined_test_metrics, task_count=1)
-        for metric in node_metrics.defined_metrics:
-            node_metrics[0][metric] = metrics[metric]
-        node_metrics['samples'] = len(generated_images)
-        node_metrics['steps'] = 1
-        print ( node_metrics )
-        return node_metrics
+            found_classes = list(generated_filenames.values())
+            ground_truth_classes = []
+
+            for ground_truth_class in found_classes:
+                ground_truth_classes.append(federation_available_classes[ground_truth_class])
+            ground_truth_classes = torch.tensor(ground_truth_classes, device=self.global_model.zero_shot_model.device) 
+
+            print ( f"Generated images for split {split}: {len(generated_images[split])} samples." )
+            filenames = list(generated_filenames.keys())
+            predictions = self.global_model.compute_zero_shot( filenames, federation_available_classes )
+            labels = torch.tensor(list(candidate_labels.values()))
+            metrics = self.global_model._compute_classification_metrics (predictions, ground_truth_classes)
+
+            node_metrics = NodeMetric(phase=NodeMetric.Phase.TEST, task_count=1)
+            node_metrics.define_metrics(self.global_model.defined_test_metrics, task_count=1)
+            for metric in node_metrics.defined_metrics:
+                node_metrics[0][metric] = metrics[metric]
+            node_metrics['samples'] = len(generated_images)
+            node_metrics['steps'] = 1
+            node_metrics.phase = NodeMetric.Phase.TEST
+            # if split == 'test':
+            #     node_metrics.phase = NodeMetric.Phase.TEST
+            # elif split == 'train':
+            #     node_metrics.phase = NodeMetric.Phase.TRAIN
+            # elif split == 'val':
+            #     node_metrics.phase = NodeMetric.Phase.VALIDATE
+
+            node_splits_metrics[split] = node_metrics
+
+            print ( node_metrics )
+        return node_splits_metrics
 
     def test_metrics_from_images ( self ):
         images_path = '/home/lpala/fedgfe/esc50-6n-global-train'
@@ -288,47 +344,85 @@ class FedA2V(FedRewind):
         # Get use_cls_token_only configuration from feda2v config
         use_cls_token_only = getattr(self.config.feda2v, 'use_cls_token_only', False) if hasattr(self, 'config') and self.config else False
 
+        # Get use_pretrained_generators flag - if True, AST will NOT be initialized
+        use_pretrained_generators = getattr(self.config.feda2v, 'use_pretrained_generators', False) if hasattr(self, 'config') and self.config else False
+
         self.global_model = DownstreamSinestesiaAdapters(
             args,
             diffusion_type=self.diffusion_type,
-            use_cls_token_only=use_cls_token_only
+            use_cls_token_only=use_cls_token_only,
         )
-        for param in self.global_model.audio2image_model.ast_model.parameters():
-            param.requires_grad = False
+
+        # Freeze AST model parameters only if AST was initialized
+        if self.global_model.ast_model is not None:
+            for param in self.global_model.ast_model.parameters():
+                param.requires_grad = False
 
         self.encoder_audio = None
         self.encoder_image = None
         self.encoder_text = None
+
+        # NOTE: audio_embeddings_dataset_cache is handled by the client, not by the model
 
         if self.diffusion_type == 'flux':
             img_pipe_name = 'MIT/ast-finetuned-audioset-10-10-0.4593'
         elif self.diffusion_type == 'sd':
             img_pipe_name = 'runwayml/stable-diffusion-v1-5'
 
-        if self.generate_global_images_frequency  or self.generate_nodes_images_frequency:
+
+        generation_splits = self.server_test_metrics_splits + self.server_train_metrics_splits + self.save_generated_images_splits
+
+        generation_splits = list(set(generation_splits))
+        generation_splits_len = len(generation_splits)
+        # Only initialize diffusion model if NOT in generator_only_mode
+        # In generator_only_mode, we only train generators and don't need diffusion for image generation
+        if not self.generator_only_mode and (self.generate_global_images_frequency or self.generate_nodes_images_frequency or generation_splits_len):
             self.global_model.enable_diffusion = True
             self.global_model.image_generation_frequency = self.generate_global_images_frequency
             self.global_model.generate_low_memomy_footprint = self.generate_low_memomy_footprint
             self.global_model.start_diffusion( low_memory_footprint = self.global_model.generate_low_memomy_footprint)
-
 
         self.global_adapters = self.global_model.adapters
         self.global_adapters_modules = self.global_model.adapters_modules
 
         self.global_optimizers = self.create_global_model_optimizers()
 
-        # Initialize generators if enabled
+        # Initialize generators if enabled (but don't load checkpoints yet - will be done after clients are created)
         if self.use_generator:
-            self.initialize_generators()
+            # Only initialize fresh generators if NOT loading from checkpoint
+            # Checkpoint loading will happen after clients are created and federation classes are collected
+            if not self.generator_load_checkpoint:
+                self.initialize_generators()
+            else:
+                logger.info("Generator checkpoint loading deferred until after client creation")
 
-            # Load generator checkpoint if configured
-            if self.generator_load_checkpoint:
-                logger.info("Loading generator checkpoint from configuration")
-                success = self.load_generator_checkpoint()
-                if success:
-                    logger.info("Successfully loaded generator checkpoint")
-                else:
-                    logger.warning("Could not load generator checkpoint, starting from scratch")
+        # Assign generators to global_model
+        self.global_model.generators_dict = self.prompt_generators if hasattr(self, 'prompt_generators') else None
+
+        # If shared_generator_in_only_mode is active, also set prompt_generator references in global_model
+        # so that clients can access them directly
+        if self.shared_generator_in_only_mode and self.generator_only_mode:
+            if hasattr(self, 'prompt_generator') and self.prompt_generator is not None:
+                self.global_model.prompt_generator = self.prompt_generator
+                logger.info("Set unified prompt_generator in global_model for shared access")
+            if hasattr(self, 'prompt_generator_clip') and self.prompt_generator_clip is not None:
+                self.global_model.prompt_generator_clip = self.prompt_generator_clip
+                logger.info("Set prompt_generator_clip in global_model for shared access")
+            if hasattr(self, 'prompt_generator_t5') and self.prompt_generator_t5 is not None:
+                self.global_model.prompt_generator_t5 = self.prompt_generator_t5
+                logger.info("Set prompt_generator_t5 in global_model for shared access")
+            if hasattr(self, 'generator_optimizer') and self.generator_optimizer is not None:
+                self.global_model.generator_optimizer = self.generator_optimizer
+                logger.info("Set generator_optimizer in global_model for shared access")
+
+        # Load adapter checkpoint if configured
+        if self.adapter_load_checkpoint:
+            logger.info("Loading adapter checkpoint from configuration")
+            success = self.load_adapter_checkpoint()
+            if success:
+                logger.info("Successfully loaded adapter checkpoint")
+            else:
+                logger.warning("Could not load adapter checkpoint, starting from scratch")
 
         return self.global_model, self.generator_model
     
@@ -349,34 +443,43 @@ class FedA2V(FedRewind):
             if self.use_conditioned_vae:
                 # VAE for conditioned prompt generation
                 self.prompt_generator = ConditionedVAEGenerator(
-                    input_dim=512,      # Audio embeddings dimension from AST
+                    input_dim=768,      # Audio embeddings dimension from AST
                     visual_dim=768,     # CLIP embeddings dimension
                     hidden_dim=512,
                     latent_dim=256,
-                    sequence_length=4
-                ).to(self.device)
+                    sequence_length=self.generator_training_sequence_length
+                )
                 logger.info("Conditioned VAE generator initialized")
             else:
                 # VAE for unconditioned prompt generation
                 self.prompt_generator = VAEGenerator(
-                    input_dim=512,      # Audio embeddings dimension from AST
-                    hidden_dim=512,
+                    input_dim=768,      # Audio embeddings dimension from AST
+                    hidden_dim=1024,
                     latent_dim=256,
-                    sequence_length=4
-                ).to(self.device)
+                    sequence_length=self.generator_training_sequence_length
+                )
                 logger.info("Unconditioned VAE generator initialized")
 
             # Initialize loss with adaptive beta scheduling based on configured training epochs
+            # Beta warmup ratio of 0.5 allows beta to reach 1.0 at 50% of training
             self.generator_loss_fn = VAELoss(
                 total_epochs=self.generator_training_epochs,
-                beta_warmup_ratio=0.5  # Beta reaches 1.0 at 50% of total epochs
+                beta_warmup_ratio=0.5  # Beta reaches 1.0 at 50% of total epochs (10 epochs if total=20)
             )
 
-            # Optimizer for VAE
+            # Optimizer for VAE with balanced learning rate
+            # Increased from 0.01x to 0.1x for better convergence
             self.generator_optimizer = torch.optim.AdamW(
                 self.prompt_generator.parameters(),
-                lr=self.config.training.learning_rate * 0.1  # Lower LR for generator
+                lr=self.config.training.learning_rate * 0.1,  # 10x faster than before for better convergence
+                weight_decay=1e-4  # Strong weight decay to prevent explosion
             )
+
+            # IMPORTANT: Also store in generator_optimizers dict with key 'unified'
+            # This ensures consistent access pattern for both unified and per_class granularities
+            if not hasattr(self, 'generator_optimizers'):
+                self.generator_optimizers = {}
+            self.generator_optimizers['unified'] = self.generator_optimizer
 
         elif self.generator_type == 'gan':
             # GAN generators for CLIP and T5
@@ -416,6 +519,12 @@ class FedA2V(FedRewind):
 
             self.generator_optimizer = torch.optim.AdamW(gen_params, lr=1e-4)
             self.discriminator_optimizer = torch.optim.AdamW(disc_params, lr=1e-4)
+
+            # IMPORTANT: Also store in generator_optimizers dict with key 'unified'
+            # This ensures consistent access pattern for both unified and per_class granularities
+            if not hasattr(self, 'generator_optimizers'):
+                self.generator_optimizers = {}
+            self.generator_optimizers['unified'] = self.generator_optimizer
 
             logger.info("GAN generators and discriminators initialized")
 
@@ -464,15 +573,28 @@ class FedA2V(FedRewind):
 
         while node_index < client_count:
             node = self.clients[node_index]
-            self.client_round_starting_hook(node)
+            # if not self.generator_only_mode:
+            #     self._move_to_gpu(self.diffusion_device, models=['diffusion', 'zeroshot'])
+            #     node._move_to_gpu(node.device)
+            #     self.client_round_starting_hook(node)
+            #     self._move_to_cpu( models=['diffusion', 'zeroshot'] )
             node.device = self.device
             node.round = round
             node.thread = None
             node.federation_size = len(self.clients)
-            node.train()
+            node._move_to_gpu(node.device)
+            if not self.adapter_load_checkpoint:
+                node.train()
 
-            self.client_round_ending_hook(node)
+            if not self.generator_only_mode:
+                self.client_round_ending_hook(node)
+
+            if self.generate_images_frequency > 0 and self.round % self.generate_images_frequency == 0:
+                self._move_to_gpu(self.diffusion_device, models=['diffusion', 'zeroshot'])
+                self.generate_images(node)
+                self._move_to_cpu( models=['diffusion', 'zeroshot'] )
             node_index += 1
+            node._move_to_cpu()
 
     def train(self):
         """Main training loop for Audio2Visual federated learning."""
@@ -486,7 +608,7 @@ class FedA2V(FedRewind):
             print("="*80 + "\n")
 
         if self.global_model != None:
-            self.global_model.to(self.device)
+            self.global_model = self.global_model.to(self.device)
 
         for i in range(1, self.global_rounds + 1):
             self.round = i
@@ -497,10 +619,13 @@ class FedA2V(FedRewind):
             s_t = time.time()
             self.selected_clients = self.clients
 
-            if i % self.eval_gap == 0:
+            if self.eval_gap > 0 and self.round % self.eval_gap == 0:
                 print(f"\n-------------Round number: {i}-------------")
                 print("\nEvaluate Audio2Visual models")
                 self.evaluate()
+
+
+            self.round_starting_hook()
 
             # Skip sending models/adapters in generator-only training mode
             if not self.generator_training_mode:
@@ -518,7 +643,7 @@ class FedA2V(FedRewind):
             print(self.uploaded_ids)
 
             self.Budget.append(time.time() - s_t)
-            print('-' * 50 + "Round time: ", self.Budget[-1])
+            print('-' * 50 + f"Round {self.round} time: ", self.Budget[-1])
 
             if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], top_cnt=self.top_cnt):
                 break
@@ -540,21 +665,67 @@ class FedA2V(FedRewind):
         self.evaluate()
         wandb.finish()
 
+    def node_metrics_log( self, node, suffix="", train_splits = [], test_splits = [] ):
+        node_metrics = self.node_metrics(node, train_splits=train_splits, test_splits=test_splits)
+        # round_train_metrics = node_metrics['train']['train'] if 'train' in node_metrics['train'] else None
+        # round_test_metrics = node_metrics['test']['val'] if 'val' in node_metrics['test'] else None
+        # round_test_metrics_on_train = node_metrics['test']['train'] if 'train' in node_metrics['test'] else None
+
+        if not self.no_wandb:
+            wandb_metrics = {}
+
+            for metric_type, metric_splits in node_metrics.items():
+                for split, metric in metric_splits.items():
+                    wandb_metrics.update(node.log_metrics( metric, round = self.round, suffix=f"_on_{split}{suffix}"))
+
+            for wandb_metric in wandb_metrics:
+                metrics = {wandb_metric: wandb_metrics[wandb_metric], "round": self.round}
+                self.data_log(metrics)
+
+         # Display only text_loss or accuracy if present
+        display_metrics = []
+        for metric_name in ['text_loss', 'accuracy']:
+            for metric_type, metric_splits in node_metrics.items():
+                for split, metrics in metric_splits.items():
+                    if metric_name in metrics:
+                        display_metrics.append(f"{metric_type} on {split} {metric_name} {metrics[metric_name]['mean']:.4f}")
+
+        if display_metrics:
+            print(F"Node {node.id} metrics: " + ", ".join(display_metrics))
+
+    def round_starting_hook(self):
+        # FIXME
+        logger.warning(f"=== Round {self.round} starting hook temporally disabled ===")
+        return
+
+        if self.eval_gap > 0 and self.round % self.eval_gap != 0:
+            return
+        
+        self.baloon.deflate_if_inflated()
+        self._move_to_gpu(self.diffusion_device, models=['diffusion', 'zeroshot'])
+        for node in self.clients:
+            node._move_to_gpu(node.device)
+            self.node_metrics_log(node, suffix="_pre", train_splits = self.nodes_train_metrics_splits )
+            node._move_to_cpu()
+
+        self._move_to_cpu( models=['diffusion', 'zeroshot'] )
+        
+
     def round_ending_hook(self):
 
         self.baloon.deflate_if_inflated()
         generated_images = {}
         if self.generate_nodes_images_frequency > 0 and self.round % self.generate_nodes_images_frequency == 0:
-            if self.optimize_memory_usage or self.round == 1:
-                self.global_model.diffusion_model.to(self.diffusion_device)
-            
-            for node in self.clients:
-                node._move_to_cpu()
-                generated_images[node.id] = self.generate_images(node)
+            self._move_to_gpu(self.diffusion_device, models=['diffusion', 'zeroshot'])
 
-            if self.optimize_memory_usage:
-                self.global_model.diffusion_model.to(torch.device('cpu'))
-            
+            for node in self.clients:
+                node._move_to_gpu(node.device)
+                self.node_metrics_log(node, suffix="_post", train_splits = self.nodes_train_metrics_splits)
+                self.node_metrics_log(node,  test_splits = self.nodes_test_metrics_splits)
+                generated_images[node.id] = self.generate_images(node)
+                node._move_to_cpu()
+
+
         use_pretrained_generators = getattr(self.config.feda2v, 'use_pretrained_generators', False)
         if use_pretrained_generators and hasattr(self, 'client_synthetic_samples') and len(self.client_synthetic_samples) > 0:
             self.aggregate_synthetic_samples()
@@ -566,6 +737,11 @@ class FedA2V(FedRewind):
                 loss = self.global_model_train_from_nodes_text_embeddings()
                 self._move_to_cpu()
                 print(f"\nGlobal Audio2Visual model trained from nodes embeddings with loss {loss:.4f}")
+
+                # Save global adapter checkpoint after training from embeddings
+                if self.adapter_save_checkpoint and self.round % self.adapter_checkpoint_frequency == 0:
+                    logger.info(f"Saving global adapter checkpoint at round {self.round}")
+                    self.save_adapter_checkpoint(round_num=self.round)
 
             if self.global_model_train_from_generator:
                 self.train_generator_from_class_prompts()
@@ -608,6 +784,11 @@ class FedA2V(FedRewind):
                         logger.info(f"Saving generator checkpoint at round {self.round}")
                         self.save_generator_checkpoint(round_num=self.round)
 
+                    # Save global adapter checkpoint after training from nodes adapters
+                    if self.adapter_save_checkpoint and self.round % self.adapter_checkpoint_frequency == 0:
+                        logger.info(f"Saving global adapter checkpoint at round {self.round}")
+                        self.save_adapter_checkpoint(round_num=self.round)
+
                 else:
                     # Fallback for single value return
                     print(f"\nGlobal model trained with loss {result:.4f}")
@@ -618,11 +799,23 @@ class FedA2V(FedRewind):
 
         if self.generate_global_images_frequency > 0 and self.round % self.generate_global_images_frequency == 0:
             generated_images['server'] = {}
-            generated_images['server']['on_test']= self.generate_global_images_with_aggregated_adapters()
+            # Generate server images for all configured server splits
+            for split_name in self.server_test_metrics_splits:
+                split_images = self.generate_global_images_with_aggregated_adapters(split=split_name)
+                if split_images is not None:
+                    generated_images['server'][split_name] = split_images
 
         if self.optimize_memory_usage and self.global_model != None and self.global_model.diffusion_model != None:
                 self.global_model.diffusion_model.to(torch.device('cpu'))
+
         self.federation_test_metric(generated_images)
+
+        models_to_move = []
+        if not self.generator_only_mode:
+            models_to_move.append('diffusion')
+            models_to_move.append('zeroshot')   
+
+        self._move_to_cpu( models=models_to_move )
 
     def federation_test_metric ( self, generated_images):
 
@@ -640,16 +833,19 @@ class FedA2V(FedRewind):
             print ( f"Node {node_id}\n{node_metrics}" )
 
             if not self.no_wandb:
-                wandb_metrics = node.log_metrics(node_metrics, round=self.round)
-                wandb.log(wandb_metrics)
+                for split, metric in node_metrics.items():
+                    wandb_metrics = node.log_metrics(metric, round=self.round)
+                    wandb.log(wandb_metrics)
 
         if 'server' in generated_images:
             server_metrics = self.test_node_metrics_from_images(None, generated_images['server'])    
             print ( f"Server\n{server_metrics}" )
 
             if not self.no_wandb:
-                wandb_metrics = self.log_metrics(server_metrics, round=self.round)
-                wandb.log(wandb_metrics)
+                for split, metric in server_metrics.items():
+                    wandb_metrics = self.log_metrics(metric, round=self.round, suffix=f'_on_{split}')
+                    wandb.log(wandb_metrics)
+
 
     def generate_global_images_average_text_embeddings_from_nodes(self):
         nodes_classes_text_embeddings = {}
@@ -666,7 +862,7 @@ class FedA2V(FedRewind):
         return
     
     def global_model_train_from_nodes_text_embeddings(self):
-        self.global_model.to(self.device)
+        self.global_model = self.global_model.to(self.device)
 
         loss = 0.0
         nodes_class_losses = {}
@@ -712,7 +908,7 @@ class FedA2V(FedRewind):
         """
         Train generator using adapter outputs from clients, then fine-tune global adapters.
         """
-        self.global_model.to(self.device)
+        self.global_model = self.global_model.to(self.device)
 
         # Step 1: Collect adapter outputs per class from all clients
         all_class_prompts = defaultdict(list)  # {class_name: [prompt_tensors from all clients]}
@@ -823,11 +1019,19 @@ class FedA2V(FedRewind):
                         epoch
                     )
 
+                    # Check for NaN in loss before backward
+                    if torch.isnan(total_vae_loss) or torch.isinf(total_vae_loss):
+                        logger.error(f"NaN/Inf detected in loss at epoch {epoch}, batch {epoch_batches}")
+                        logger.error(f"  recon_loss: {recon_loss.item()}, kl_loss: {kl_loss.item()}, sim_loss: {sim_loss.item()}")
+                        logger.error(f"  mu stats: min={mu.min().item():.4f}, max={mu.max().item():.4f}, mean={mu.mean().item():.4f}")
+                        logger.error(f"  logvar stats: min={logvar.min().item():.4f}, max={logvar.max().item():.4f}, mean={logvar.mean().item():.4f}")
+                        continue  # Skip this batch
+
                     # Backward and optimize
                     total_vae_loss.backward()
 
-                    # Gradient clipping for stability
-                    torch.nn.utils.clip_grad_norm_(self.prompt_generator.parameters(), max_norm=1.0)
+                    # Gradient clipping for stability (increased from 1.0 to 5.0)
+                    torch.nn.utils.clip_grad_norm_(self.prompt_generator.parameters(), max_norm=5.0)
 
                     self.generator_optimizer.step()
 
@@ -1040,14 +1244,62 @@ class FedA2V(FedRewind):
         return imgs
 
     def save_audio_embeddings(self, file_name="audio_embeddings.pt"):
-        """Save audio embeddings from clients to a file."""
+        """Save audio embeddings from clients to a file and AST cache."""
         all_audio_embeddings = {}
 
         for client in self.clients:
             if hasattr(client, 'audio_embedding_store') and client.audio_embedding_store is not None:
                 all_audio_embeddings.update(client.audio_embedding_store)
 
-        torch.save(all_audio_embeddings, file_name)
+        # Save to legacy .pt file for backward compatibility
+        if len(all_audio_embeddings) > 0:
+            torch.save(all_audio_embeddings, file_name)
+            logger.info(f"Saved {len(all_audio_embeddings)} audio embeddings to legacy file: {file_name}")
+
+            # Also save to AST cache for VEGAS datasets
+            for client in self.clients:
+                if client.dataset == "VEGAS":
+                    # Get the dataset (handle both direct and Subset)
+                    if isinstance(client.node_data.train_dataset, torch.utils.data.Subset):
+                        dataset = client.node_data.train_dataset.dataset
+                    else:
+                        dataset = client.node_data.train_dataset
+
+                    # Save to AST cache if it's a VEGASDataset with cache enabled
+                    if isinstance(dataset, VEGASDataset) and dataset.enable_ast_cache:
+                        # AST cache configuration - must match extraction parameters
+                        ast_sample_rate = 16000
+                        ast_duration = 5.0
+                        ast_model_name = "ast-finetuned"
+
+                        logger.info(f"Saving audio embeddings to AST cache for client {client.id}...")
+
+                        # Filter embeddings for this client's classes
+                        client_embeddings = {}
+                        for emb_key, emb_value in all_audio_embeddings.items():
+                            # Check if this embedding belongs to client's classes
+                            if ':' in emb_key:
+                                _, class_name = emb_key.split(':', 1)
+                                if class_name.lower() in [c.lower() for c in dataset.active_classes.keys()]:
+                                    client_embeddings[emb_key] = emb_value
+
+                        if len(client_embeddings) > 0:
+                            success = dataset.save_ast_embeddings_to_cache(
+                                embeddings=client_embeddings,
+                                sample_rate=ast_sample_rate,
+                                duration=ast_duration,
+                                model_name=ast_model_name
+                            )
+
+                            if success:
+                                logger.info(f"✓ Saved {len(client_embeddings)} embeddings to AST cache for client {client.id}")
+                            else:
+                                logger.warning(f"Failed to save AST cache for client {client.id}")
+
+                        # Only save once per unique dataset configuration
+                        break
+        else:
+            logger.warning("No audio embeddings to save")
         
     def save_checkpoint(self):
         """Save Audio2Visual model checkpoint."""
@@ -1075,13 +1327,18 @@ class FedA2V(FedRewind):
     def save_generator_checkpoint(self, round_num=None):
         """
         Save generator model checkpoint with comprehensive metadata.
+        Supports both unified and multiple generators (per_class/per_group).
 
         Args:
             round_num: Optional round number to include in checkpoint filename
         """
         import datetime
 
-        if not self.use_generator or self.prompt_generator is None:
+        # Check if we have generators to save
+        has_unified_generator = hasattr(self, 'prompt_generator') and self.prompt_generator is not None
+        has_multiple_generators = hasattr(self, 'prompt_generators') and self.prompt_generators
+
+        if not self.use_generator or (not has_unified_generator and not has_multiple_generators):
             logger.warning("Generator not initialized, cannot save checkpoint")
             return
 
@@ -1164,20 +1421,45 @@ class FedA2V(FedRewind):
             'global_model_train_from_nodes_adapters': getattr(self.config.feda2v, 'global_model_train_from_nodes_adapters', None),
         }
 
-        if self.generator_type == 'vae':
+        # Save generator state based on whether we have unified or multiple generators
+        if has_multiple_generators:
+            # Save multiple generators (per_class or per_group)
+            prompt_generators_state = {}
+            generator_optimizers_state = {}
+            generator_keys_list = list(self.prompt_generators.keys())
+
+            for gen_key, generator in self.prompt_generators.items():
+                prompt_generators_state[gen_key] = generator.state_dict()
+                if hasattr(self, 'generator_optimizers') and gen_key in self.generator_optimizers:
+                    generator_optimizers_state[gen_key] = self.generator_optimizers[gen_key].state_dict()
+
             checkpoint.update({
-                'generator_state_dict': self.prompt_generator.state_dict(),
-                'optimizer_state_dict': self.generator_optimizer.state_dict() if self.generator_optimizer else None,
+                'prompt_generators': prompt_generators_state,
+                'generator_optimizers': generator_optimizers_state if generator_optimizers_state else None,
+                'use_conditioned_vae': getattr(self, 'use_conditioned_vae', False),
+                'sequence_length': getattr(self, 'generator_training_sequence_length', 4),
+                'generator_keys': generator_keys_list,  # List of all generator keys (classes/groups)
+                'num_generators': len(prompt_generators_state),
             })
-        elif self.generator_type == 'gan':
-            checkpoint.update({
-                'generator_clip_state_dict': self.prompt_generator_clip.state_dict() if self.prompt_generator_clip else None,
-                'generator_t5_state_dict': self.prompt_generator_t5.state_dict() if self.prompt_generator_t5 else None,
-                'discriminator_clip_state_dict': self.discriminator_clip.state_dict() if self.discriminator_clip else None,
-                'discriminator_t5_state_dict': self.discriminator_t5.state_dict() if self.discriminator_t5 else None,
-                'generator_optimizer_state_dict': self.generator_optimizer.state_dict() if self.generator_optimizer else None,
-                'discriminator_optimizer_state_dict': self.discriminator_optimizer.state_dict() if hasattr(self, 'discriminator_optimizer') and self.discriminator_optimizer else None,
-            })
+            logger.info(f"Saved {len(prompt_generators_state)} generators to checkpoint")
+            logger.info(f"Generator keys: {sorted(generator_keys_list)}")
+
+        elif has_unified_generator:
+            # Save single unified generator
+            if self.generator_type == 'vae':
+                checkpoint.update({
+                    'generator_state_dict': self.prompt_generator.state_dict(),
+                    'optimizer_state_dict': self.generator_optimizer.state_dict() if self.generator_optimizer else None,
+                })
+            elif self.generator_type == 'gan':
+                checkpoint.update({
+                    'generator_clip_state_dict': self.prompt_generator_clip.state_dict() if self.prompt_generator_clip else None,
+                    'generator_t5_state_dict': self.prompt_generator_t5.state_dict() if self.prompt_generator_t5 else None,
+                    'discriminator_clip_state_dict': self.discriminator_clip.state_dict() if self.discriminator_clip else None,
+                    'discriminator_t5_state_dict': self.discriminator_t5.state_dict() if self.discriminator_t5 else None,
+                    'generator_optimizer_state_dict': self.generator_optimizer.state_dict() if self.generator_optimizer else None,
+                    'discriminator_optimizer_state_dict': self.discriminator_optimizer.state_dict() if hasattr(self, 'discriminator_optimizer') and self.discriminator_optimizer else None,
+                })
 
         # Save checkpoint
         torch.save(checkpoint, checkpoint_path)
@@ -1202,20 +1484,76 @@ class FedA2V(FedRewind):
         if not self.generator_load_checkpoint:
             return False
 
-        # Use provided path or build from flexible naming system
+        # Use provided path or search for checkpoints automatically
         if checkpoint_path is None:
-            checkpoint_path = os.path.join(
-                self.generator_checkpoint_dir,
-                f'{self.generator_checkpoint_base_name}.pt'
-            )
+            # Search for checkpoint files matching the pattern
+            import glob
 
-        if not os.path.exists(checkpoint_path):
+            # First, try to find checkpoints with round numbers
+            pattern_with_round = os.path.join(
+                self.generator_checkpoint_dir,
+                f'{self.generator_checkpoint_base_name}*_round_*.pt'
+            )
+            checkpoint_files = glob.glob(pattern_with_round)
+
+            if checkpoint_files:
+                # Extract round numbers and find the latest
+                rounds = []
+                for f in checkpoint_files:
+                    # Extract round number from filename
+                    import re
+                    match = re.search(r'_round_(\d+)\.pt$', f)
+                    if match:
+                        rounds.append(int(match.group(1)))
+
+                if rounds:
+                    latest_round = max(rounds)
+                    logger.info(f"Found checkpoints up to round {latest_round}")
+
+                    # Build pattern for latest round
+                    pattern_latest_round = os.path.join(
+                        self.generator_checkpoint_dir,
+                        f'{self.generator_checkpoint_base_name}*_round_{latest_round}.pt'
+                    )
+                    checkpoint_files_latest = glob.glob(pattern_latest_round)
+
+                    if len(checkpoint_files_latest) == 1:
+                        # Single checkpoint file (unified generator)
+                        checkpoint_path = checkpoint_files_latest[0]
+                        logger.info(f"Loading unified generator from round {latest_round}")
+                    else:
+                        # Multiple checkpoint files (per_class or per_group)
+                        logger.info(f"Found {len(checkpoint_files_latest)} checkpoint files for round {latest_round}")
+                        return self._load_multiple_generator_checkpoints(checkpoint_files_latest, strict_validation, warn_only)
+                else:
+                    logger.warning("No valid round numbers found in checkpoint filenames")
+                    return False
+            else:
+                # Try without round number
+                pattern_no_round = os.path.join(
+                    self.generator_checkpoint_dir,
+                    f'{self.generator_checkpoint_base_name}*.pt'
+                )
+                checkpoint_files = glob.glob(pattern_no_round)
+
+                if not checkpoint_files:
+                    logger.warning(f"No generator checkpoints found in {self.generator_checkpoint_dir}")
+                    return False
+                elif len(checkpoint_files) == 1:
+                    checkpoint_path = checkpoint_files[0]
+                    logger.info(f"Loading generator from {checkpoint_path}")
+                else:
+                    # Multiple files without round numbers
+                    logger.info(f"Found {len(checkpoint_files)} checkpoint files")
+                    return self._load_multiple_generator_checkpoints(checkpoint_files, strict_validation, warn_only)
+
+        if checkpoint_path and not os.path.exists(checkpoint_path):
             logger.warning(f"Generator checkpoint not found at {checkpoint_path}")
             return False
 
         try:
-            # Load checkpoint
-            checkpoint = torch.load(checkpoint_path, map_location=self.device)
+            # Load checkpoint to CPU (generators run on CPU for memory efficiency)
+            checkpoint = torch.load(checkpoint_path, map_location='cpu')
 
             # Display checkpoint metadata
             logger.info(f"\n{'='*60}")
@@ -1278,59 +1616,895 @@ class FedA2V(FedRewind):
 
             logger.info(f"{'='*60}\n")
 
-            # Initialize generators if not already done
-            if self.prompt_generator is None:
-                logger.info("Initializing generator from checkpoint")
-                self.initialize_generators()
+            # Check if checkpoint contains multiple generators (per_class or per_group)
+            has_multiple_generators = 'prompt_generators' in checkpoint
 
-            # Load state dictionaries
-            if self.generator_type == 'vae':
-                if 'generator_state_dict' in checkpoint:
-                    self.prompt_generator.load_state_dict(checkpoint['generator_state_dict'])
-                    logger.info("Loaded VAE generator state")
+            if has_multiple_generators:
+                # Initialize prompt_generators dictionary if not already present
+                if not hasattr(self, 'prompt_generators'):
+                    self.prompt_generators = {}
+                if not hasattr(self, 'generator_optimizers'):
+                    self.generator_optimizers = {}
 
-                if 'optimizer_state_dict' in checkpoint and checkpoint['optimizer_state_dict'] is not None:
-                    if self.generator_optimizer is None:
-                        # Re-create optimizer if needed
-                        self.generator_optimizer = torch.optim.AdamW(
-                            self.prompt_generator.parameters(),
+                # Load multiple generators from checkpoint
+                logger.info(f"Loading {len(checkpoint['prompt_generators'])} generators from checkpoint")
+
+                for gen_key, gen_state_dict in checkpoint['prompt_generators'].items():
+                    # Create generator instance based on type
+                    if self.generator_type == 'vae':
+                        from flcore.trainmodel.generators import ConditionedVAEGenerator, VAEGenerator
+
+                        # Determine visual_dim from checkpoint or use default
+                        visual_dim = checkpoint.get('visual_dim', 768)
+
+                        if checkpoint.get('use_conditioned_vae', False):
+                            generator = ConditionedVAEGenerator(
+                                input_dim=768,
+                                visual_dim=visual_dim,
+                                hidden_dim=512,
+                                latent_dim=256,
+                                sequence_length=checkpoint.get('sequence_length', 4)
+                            )
+                        else:
+                            generator = VAEGenerator(
+                                input_dim=768,
+                                hidden_dim=1024,
+                                latent_dim=256,
+                                sequence_length=checkpoint.get('sequence_length', 4)
+                            )
+
+                        # Keep generator in CPU
+                        generator = generator.to('cpu')
+                        generator.load_state_dict(gen_state_dict)
+                        self.prompt_generators[gen_key] = generator
+                        logger.info(f"Loaded VAE generator for '{gen_key}'")
+
+                        # Load optimizer for this generator if available
+                        if 'generator_optimizers' in checkpoint and gen_key in checkpoint['generator_optimizers']:
+                            optimizer = torch.optim.AdamW(
+                                generator.parameters(),
+                                lr=self.config.training.learning_rate * 0.1
+                            )
+                            optimizer.load_state_dict(checkpoint['generator_optimizers'][gen_key])
+                            self.generator_optimizers[gen_key] = optimizer
+                            logger.info(f"Loaded optimizer for generator '{gen_key}'")
+
+                # Initialize loss function if not already done
+                if not hasattr(self, 'generator_loss_fn') or self.generator_loss_fn is None:
+                    from flcore.trainmodel.generators import VAELoss
+                    self.generator_loss_fn = VAELoss(
+                        total_epochs=self.generator_training_epochs,
+                        beta_warmup_ratio=0.5
+                    )
+
+            else:
+                # Single unified generator - convert to dictionary format
+                # Initialize prompt_generators dictionary if not already present
+                if not hasattr(self, 'prompt_generators'):
+                    self.prompt_generators = {}
+                if not hasattr(self, 'generator_optimizers'):
+                    self.generator_optimizers = {}
+
+                # Load state dictionaries
+                if self.generator_type == 'vae':
+                    if 'generator_state_dict' in checkpoint:
+                        from flcore.trainmodel.generators import ConditionedVAEGenerator, VAEGenerator
+
+                        # Determine parameters from checkpoint or config
+                        visual_dim = checkpoint.get('visual_dim', 768)
+                        use_conditioned = checkpoint.get('use_conditioned_vae', getattr(self, 'use_conditioned_vae', False))
+                        sequence_length = checkpoint.get('sequence_length', getattr(self, 'generator_training_sequence_length', 4))
+
+                        # Create generator instance
+                        if use_conditioned:
+                            generator = ConditionedVAEGenerator(
+                                input_dim=768,
+                                visual_dim=visual_dim,
+                                hidden_dim=512,
+                                latent_dim=256,
+                                sequence_length=sequence_length
+                            )
+                        else:
+                            generator = VAEGenerator(
+                                input_dim=768,
+                                hidden_dim=1024,
+                                latent_dim=256,
+                                sequence_length=sequence_length
+                            )
+
+                        # Keep in CPU
+                        generator = generator.to('cpu')
+                        generator.load_state_dict(checkpoint['generator_state_dict'])
+
+                        # Get classes from checkpoint metadata
+                        generator_classes = checkpoint.get('generator_classes', None)
+                        selected_classes = checkpoint.get('selected_classes', None)
+                        generator_key = checkpoint.get('generator_key', 'unified')
+
+                        # Determine which classes to register
+                        classes_to_serve = []
+                        if generator_classes:
+                            classes_to_serve = generator_classes
+                        elif selected_classes:
+                            classes_to_serve = selected_classes
+                        else:
+                            # No class info - use a generic key
+                            classes_to_serve = [generator_key]
+
+                        logger.info(f"Loaded unified VAE generator serving {len(classes_to_serve)} classes: {classes_to_serve}")
+
+                        # Register generator for each class it serves (only if class is active)
+                        for class_key in classes_to_serve:
+                            # Check if this class is in active classes
+                            if hasattr(self, 'federation_active_classes') and self.federation_active_classes:
+                                if class_key not in self.federation_active_classes:
+                                    logger.info(f"  ✗ Skipping registration for class '{class_key}' (not in active classes)")
+                                    continue
+
+                            self.prompt_generators[class_key] = generator
+                            logger.info(f"  → Registered generator for class '{class_key}'")
+
+                    if self.generator_training_mode and 'optimizer_state_dict' in checkpoint and checkpoint['optimizer_state_dict'] is not None:
+                        generator_key = checkpoint.get('generator_key', 'unified')
+                        optimizer = torch.optim.AdamW(
+                            generator.parameters(),
                             lr=self.config.training.learning_rate * 0.1
                         )
-                    self.generator_optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                    logger.info("Loaded VAE optimizer state")
+                        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                        self.generator_optimizers[generator_key] = optimizer
 
-            elif self.generator_type == 'gan':
-                if 'generator_clip_state_dict' in checkpoint and self.prompt_generator_clip is not None:
-                    self.prompt_generator_clip.load_state_dict(checkpoint['generator_clip_state_dict'])
-                    logger.info("Loaded GAN CLIP generator state")
+                        # Also set legacy reference if this is the unified generator
+                        if generator_key == 'unified':
+                            self.generator_optimizer = optimizer
 
-                if 'generator_t5_state_dict' in checkpoint and self.prompt_generator_t5 is not None:
-                    self.prompt_generator_t5.load_state_dict(checkpoint['generator_t5_state_dict'])
-                    logger.info("Loaded GAN T5 generator state")
+                        logger.info(f"  → Loaded optimizer for '{generator_key}'")
 
-                if 'discriminator_clip_state_dict' in checkpoint and self.discriminator_clip is not None:
-                    self.discriminator_clip.load_state_dict(checkpoint['discriminator_clip_state_dict'])
-                    logger.info("Loaded GAN CLIP discriminator state")
+                elif self.generator_type == 'gan':
+                    if 'generator_clip_state_dict' in checkpoint and self.prompt_generator_clip is not None:
+                        self.prompt_generator_clip.load_state_dict(checkpoint['generator_clip_state_dict'])
+                        logger.info("Loaded GAN CLIP generator state")
 
-                if 'discriminator_t5_state_dict' in checkpoint and self.discriminator_t5 is not None:
-                    self.discriminator_t5.load_state_dict(checkpoint['discriminator_t5_state_dict'])
-                    logger.info("Loaded GAN T5 discriminator state")
+                    if 'generator_t5_state_dict' in checkpoint and self.prompt_generator_t5 is not None:
+                        self.prompt_generator_t5.load_state_dict(checkpoint['generator_t5_state_dict'])
+                        logger.info("Loaded GAN T5 generator state")
 
-                if 'generator_optimizer_state_dict' in checkpoint and checkpoint['generator_optimizer_state_dict'] is not None:
-                    if self.generator_optimizer is not None:
-                        self.generator_optimizer.load_state_dict(checkpoint['generator_optimizer_state_dict'])
-                        logger.info("Loaded GAN generator optimizer state")
+                    if 'discriminator_clip_state_dict' in checkpoint and self.discriminator_clip is not None:
+                        self.discriminator_clip.load_state_dict(checkpoint['discriminator_clip_state_dict'])
+                        logger.info("Loaded GAN CLIP discriminator state")
 
-                if 'discriminator_optimizer_state_dict' in checkpoint and checkpoint['discriminator_optimizer_state_dict'] is not None:
-                    if hasattr(self, 'discriminator_optimizer') and self.discriminator_optimizer is not None:
-                        self.discriminator_optimizer.load_state_dict(checkpoint['discriminator_optimizer_state_dict'])
-                        logger.info("Loaded GAN discriminator optimizer state")
+                    if 'discriminator_t5_state_dict' in checkpoint and self.discriminator_t5 is not None:
+                        self.discriminator_t5.load_state_dict(checkpoint['discriminator_t5_state_dict'])
+                        logger.info("Loaded GAN T5 discriminator state")
+
+                    if 'generator_optimizer_state_dict' in checkpoint and checkpoint['generator_optimizer_state_dict'] is not None:
+                        if self.generator_optimizer is not None:
+                            self.generator_optimizer.load_state_dict(checkpoint['generator_optimizer_state_dict'])
+
+                            # Also store in generator_optimizers dict with key 'unified'
+                            if not hasattr(self, 'generator_optimizers'):
+                                self.generator_optimizers = {}
+                            self.generator_optimizers['unified'] = self.generator_optimizer
+
+                            logger.info("Loaded GAN generator optimizer state")
+
+                    if 'discriminator_optimizer_state_dict' in checkpoint and checkpoint['discriminator_optimizer_state_dict'] is not None:
+                        if hasattr(self, 'discriminator_optimizer') and self.discriminator_optimizer is not None:
+                            self.discriminator_optimizer.load_state_dict(checkpoint['discriminator_optimizer_state_dict'])
+                            logger.info("Loaded GAN discriminator optimizer state")
+
+            # Freeze generators if training is not enabled
+            if hasattr(self, 'prompt_generators') and self.prompt_generators:
+                if self.generator_training_mode:
+                    logger.info("Generator training is disabled - freezing all generators")
+                    for class_key, generator in self.prompt_generators.items():
+                        for param in generator.parameters():
+                            param.requires_grad = False
+                        logger.info(f"  → Frozen generator for class '{class_key}'")
 
             logger.info(f"Successfully loaded generator checkpoint from round {checkpoint.get('round', 'unknown')}")
             return True
 
         except Exception as e:
             logger.error(f"Error loading generator checkpoint: {e}")
+            return False
+
+    def _load_multiple_generator_checkpoints(self, checkpoint_files, strict_validation=True, warn_only=False):
+        """
+        Load multiple generator checkpoints (per_class or per_group granularity).
+
+        Args:
+            checkpoint_files: List of checkpoint file paths
+            strict_validation: If True, reject checkpoint on critical metadata mismatch
+            warn_only: If True, only print warnings without rejecting checkpoint
+
+        Returns:
+            bool: True if all checkpoints loaded successfully, False otherwise
+        """
+        import re
+
+        logger.info(f"Found {len(checkpoint_files)} generator checkpoint files")
+
+        # Filter checkpoint files to only load generators for classes in federation_active_classes
+        if hasattr(self, 'federation_active_classes') and self.federation_active_classes:
+            # Get list of active class names (keys from the dictionary)
+            active_class_names = list(self.federation_active_classes.keys())
+            logger.info(f"Filtering checkpoints for {len(active_class_names)} active classes: {active_class_names}")
+
+            filtered_files = []
+            for checkpoint_file in checkpoint_files:
+                filename = os.path.basename(checkpoint_file)
+                # Try to extract class name from filename
+                class_match = re.search(r'_class_(.+?)(?:_round_\d+)?\.pt$', filename)
+                if class_match:
+                    class_name = class_match.group(1)
+                    if class_name in active_class_names:
+                        filtered_files.append(checkpoint_file)
+                        logger.info(f"  ✓ Including checkpoint for class '{class_name}'")
+                    else:
+                        logger.info(f"  ✗ Skipping checkpoint for class '{class_name}' (not in active classes)")
+                else:
+                    # If we can't extract class name, include it (might be a group or unified generator)
+                    filtered_files.append(checkpoint_file)
+                    logger.info(f"  ? Including checkpoint {filename} (cannot determine class)")
+
+            checkpoint_files = filtered_files
+            logger.info(f"After filtering: {len(checkpoint_files)} checkpoint files to load")
+
+        if not checkpoint_files:
+            logger.warning("No checkpoint files to load after filtering")
+            return False
+
+        logger.info(f"Loading {len(checkpoint_files)} generator checkpoints")
+
+        # Initialize dictionaries for multiple generators
+        if not hasattr(self, 'prompt_generators'):
+            self.prompt_generators = {}
+        if not hasattr(self, 'generator_optimizers'):
+            self.generator_optimizers = {}
+
+        loaded_count = 0
+        failed_count = 0
+
+        for checkpoint_file in checkpoint_files:
+            try:
+                # Extract generator key from filename
+                # Pattern: {base_name}_node{id}_class_{class_name}_round_{round}.pt
+                # or: {base_name}_node{id}_group_{group_name}_round_{round}.pt
+                filename = os.path.basename(checkpoint_file)
+
+                # Try to extract class or group name from filename
+                # Patterns supported:
+                # - {base_name}_node{id}_class_{class_name}_round_{round}.pt
+                # - {base_name}_node{id}_class_{class_name}.pt
+                # - {base_name}_node{id}_group_{group_name}_round_{round}.pt
+                # - {base_name}_node{id}_group_{group_name}.pt
+                gen_key = None
+                granularity_type = None
+
+                # Try class pattern first (matches everything after "_class_" until "_round_" or ".pt")
+                class_match = re.search(r'_class_(.+?)(?:_round_\d+)?\.pt$', filename)
+                if class_match:
+                    # gen_key = class_match.group(1).replace('_', ' ')
+                    gen_key = class_match.group(1)
+                    granularity_type = 'class'
+                else:
+                    # Try group pattern
+                    group_match = re.search(r'_group_([^_\.]+?)(?:_round_\d+)?\.pt$', filename)
+                    if group_match:
+                        gen_key = group_match.group(1)
+                        granularity_type = 'group'
+
+                if gen_key:
+                    logger.info(f"Loading generator for {granularity_type} '{gen_key}' from {filename}")
+                else:
+                    logger.warning(f"Could not extract generator key from filename: {filename}")
+                    logger.warning(f"Expected pattern: *_class_{{name}}_round_{{N}}.pt or *_group_{{name}}_round_{{N}}.pt")
+                    continue
+
+                # Load checkpoint
+                checkpoint = torch.load(checkpoint_file, map_location='cpu')
+
+                # Verify/extract generator key from checkpoint metadata
+                # Priority: metadata > filename
+                metadata_gen_key = checkpoint.get('generator_key', None)
+                generator_classes = checkpoint.get('generator_classes', None)  # Classes handled by THIS generator
+                selected_classes = checkpoint.get('selected_classes', None)    # All classes of the node
+                granularity = checkpoint.get('generator_granularity', None)
+                class_name = checkpoint.get('class_name', None)
+                group_name = checkpoint.get('group_name', None)
+
+                # Determine generator key based on granularity and metadata
+                final_gen_key = gen_key  # Start with filename-based key
+
+                if metadata_gen_key:
+                    # Explicit generator_key in metadata (most reliable)
+                    final_gen_key = metadata_gen_key
+                    logger.info(f"  Using generator_key from metadata: '{metadata_gen_key}'")
+                elif granularity == 'per_class' and class_name:
+                    # Per-class granularity: use class_name field
+                    final_gen_key = class_name
+                    logger.info(f"  Using class_name from metadata (per_class): '{class_name}'")
+                elif granularity == 'per_group' and group_name:
+                    # Per-group granularity: use group_name field
+                    final_gen_key = group_name
+                    logger.info(f"  Using group_name from metadata (per_group): '{group_name}'")
+                elif generator_classes and len(generator_classes) == 1:
+                    # Single class in generator_classes - use it as key
+                    final_gen_key = generator_classes[0]
+                    logger.info(f"  Using single class from generator_classes: '{final_gen_key}'")
+                elif gen_key:
+                    # Fallback to filename-based key
+                    logger.info(f"  Using generator key from filename: '{gen_key}'")
+                else:
+                    logger.warning(f"Could not determine generator key from metadata or filename")
+                    logger.warning(f"Metadata: generator_key={metadata_gen_key}, class_name={class_name}, group_name={group_name}, generator_classes={generator_classes}")
+                    failed_count += 1
+                    continue
+
+                # Update gen_key with final decision
+                gen_key = final_gen_key
+
+                # Display checkpoint metadata
+                logger.info(f"  - Type: {checkpoint.get('checkpoint_type', 'N/A')}")
+                logger.info(f"  - Round: {checkpoint.get('round', 'N/A')}")
+                logger.info(f"  - Generator type: {checkpoint.get('generator_type', 'N/A')}")
+                logger.info(f"  - Granularity: {granularity if granularity else 'N/A'}")
+                if granularity == 'per_class':
+                    logger.info(f"  - Class name: {class_name}")
+                elif granularity == 'per_group':
+                    logger.info(f"  - Group name: {group_name}")
+                    logger.info(f"  - Generator classes: {generator_classes}")
+                logger.info(f"  - Node classes: {selected_classes if selected_classes else 'N/A'}")
+
+                # Validation
+                validation_errors = []
+
+                # Validate generator type (critical)
+                if 'generator_type' in checkpoint:
+                    if checkpoint['generator_type'] != self.generator_type:
+                        msg = f"Generator type mismatch: checkpoint={checkpoint['generator_type']}, current={self.generator_type}"
+                        validation_errors.append(msg)
+
+                if validation_errors and strict_validation and not warn_only:
+                    logger.error(f"Checkpoint validation failed for {gen_key}: {validation_errors}")
+                    failed_count += 1
+                    continue
+
+                # Create generator instance based on type
+                if self.generator_type == 'vae':
+
+                    # Get parameters from checkpoint
+                    visual_dim = checkpoint.get('visual_dim', 768)
+                    use_conditioned = checkpoint.get('use_conditioned_vae', False)
+                    sequence_length = checkpoint.get('sequence_length', 1214)
+
+                    if use_conditioned:
+                        generator = ConditionedVAEGenerator(
+                            input_dim=768,
+                            visual_dim=visual_dim,
+                            hidden_dim=512,
+                            latent_dim=256,
+                            sequence_length=sequence_length
+                        )
+                    else:
+                        generator = VAEGenerator(
+                            input_dim=768,
+                            hidden_dim=1024,
+                            latent_dim=256,
+                            sequence_length=sequence_length
+                        )
+
+                    # Keep in CPU
+                    generator = generator.to('cpu')
+
+                    # Load state dict
+                    if 'generator_state_dict' in checkpoint:
+                        generator.load_state_dict(checkpoint['generator_state_dict'])
+
+                        # Determine which classes this generator should serve
+                        # If generator_classes is specified, create a reference for EACH class
+                        # Otherwise, use only the gen_key
+                        classes_to_serve = []
+
+                        if generator_classes and len(generator_classes) > 0:
+                            # This generator serves multiple classes (e.g., per_group)
+                            # Create a reference for each class
+                            classes_to_serve = generator_classes
+                            logger.info(f"✓ Loaded VAE generator for key '{gen_key}' serving {len(generator_classes)} classes: {generator_classes}")
+                        else:
+                            # This generator serves a single class (e.g., per_class)
+                            classes_to_serve = [gen_key]
+                            logger.info(f"✓ Loaded VAE generator for '{gen_key}'")
+
+                        # Register generator for each class it serves (only if class is active)
+                        for class_key in classes_to_serve:
+                            # Check if this class is in active classes
+                            if hasattr(self, 'federation_active_classes') and self.federation_active_classes:
+                                if class_key not in self.federation_active_classes:
+                                    logger.info(f"  ✗ Skipping registration for class '{class_key}' (not in active classes)")
+                                    continue
+
+                            self.prompt_generators[class_key] = generator
+                            logger.info(f"  → Registered generator for class '{class_key}'")
+
+                        # Load optimizer if available (store under the primary gen_key)
+                        if 'optimizer_state_dict' in checkpoint and checkpoint['optimizer_state_dict'] is not None:
+                            optimizer = torch.optim.AdamW(
+                                generator.parameters(),
+                                lr=self.config.training.learning_rate * 0.1
+                            )
+                            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                            self.generator_optimizers[gen_key] = optimizer
+                            logger.info(f"  → Loaded optimizer for '{gen_key}'")
+
+                        loaded_count += 1
+                    else:
+                        logger.warning(f"No generator_state_dict found in checkpoint for {gen_key}")
+                        failed_count += 1
+
+                elif self.generator_type == 'gan':
+                    logger.warning("Multiple GAN generators not yet supported in server")
+                    failed_count += 1
+
+            except Exception as e:
+                logger.error(f"Error loading checkpoint {checkpoint_file}: {e}")
+                failed_count += 1
+
+        # Initialize loss function if not already done
+        if not hasattr(self, 'generator_loss_fn') or self.generator_loss_fn is None:
+            from flcore.trainmodel.generators import VAELoss
+            self.generator_loss_fn = VAELoss(
+                total_epochs=self.generator_training_epochs,
+                beta_warmup_ratio=0.5
+            )
+
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Generator checkpoint loading summary:")
+        logger.info(f"  - Checkpoint files loaded: {loaded_count}")
+        logger.info(f"  - Failed: {failed_count}")
+
+        if self.prompt_generators:
+            # Count unique generator instances
+            unique_generators = len(set(id(gen) for gen in self.prompt_generators.values()))
+            logger.info(f"  - Unique generator instances: {unique_generators}")
+            logger.info(f"  - Total class keys served: {len(self.prompt_generators)}")
+            logger.info(f"  - Classes with generators: {sorted(list(self.prompt_generators.keys()))}")
+
+            # Freeze generators if training is not enabled
+            generator_training_enabled = getattr(self, 'generator_training_mode', False) or getattr(self, 'generator_only_mode', False)
+            if not generator_training_enabled:
+                logger.info(f"\nGenerator training is disabled - freezing all generators")
+                # Track unique generators to avoid freezing the same instance multiple times
+                frozen_generators = set()
+                for class_key, generator in self.prompt_generators.items():
+                    gen_id = id(generator)
+                    if gen_id not in frozen_generators:
+                        for param in generator.parameters():
+                            param.requires_grad = False
+                        frozen_generators.add(gen_id)
+                logger.info(f"  → Frozen {len(frozen_generators)} unique generator instances")
+        else:
+            logger.info(f"  - No generators available")
+
+        logger.info(f"{'='*60}\n")
+
+        return loaded_count > 0
+
+    def save_adapter_checkpoint(self, round_num=None):
+        """
+        Save adapter checkpoint(s) for the global model with comprehensive metadata.
+        Saves clip_adapter, t5_adapter, clip_projection, and t5_projection from the global Audio2Image model.
+
+        Args:
+            round_num: Optional round number to include in checkpoint filename
+
+        Returns:
+            list: List of saved checkpoint paths
+        """
+        import os
+        import datetime
+
+        if not self.adapter_save_checkpoint:
+            return []
+
+        if self.global_model is None:
+            logger.warning("Global model not initialized, cannot save adapter checkpoint")
+            return []
+
+        # Create checkpoint directory if it doesn't exist
+        os.makedirs(self.adapter_checkpoint_dir, exist_ok=True)
+
+        saved_paths = []
+
+        # Get the global audio2image model
+        global_audio2image = self.global_model.get_audio2image_model() if hasattr(self.global_model, 'get_audio2image_model') else None
+
+        if global_audio2image is None:
+            logger.warning("Cannot get global audio2image model, cannot save adapter checkpoint")
+            return []
+
+        if self.adapter_checkpoint_per_type:
+            # Save each adapter type separately
+            adapter_types = []
+
+            if hasattr(global_audio2image, 'clip_adapter') and global_audio2image.clip_adapter is not None:
+                adapter_types.append(('clip_adapter', global_audio2image.clip_adapter))
+
+            if hasattr(global_audio2image, 't5_adapter') and global_audio2image.t5_adapter is not None:
+                adapter_types.append(('t5_adapter', global_audio2image.t5_adapter))
+
+            if hasattr(global_audio2image, 'clip_projection') and global_audio2image.clip_projection is not None:
+                adapter_types.append(('clip_projection', global_audio2image.clip_projection))
+
+            if hasattr(global_audio2image, 't5_projection') and global_audio2image.t5_projection is not None:
+                adapter_types.append(('t5_projection', global_audio2image.t5_projection))
+
+            for adapter_name, adapter in adapter_types:
+                if round_num is not None:
+                    checkpoint_path = os.path.join(
+                        self.adapter_checkpoint_dir,
+                        f'{self.adapter_checkpoint_base_name}_server_{adapter_name}_round_{round_num}.pt'
+                    )
+                else:
+                    checkpoint_path = os.path.join(
+                        self.adapter_checkpoint_dir,
+                        f'{self.adapter_checkpoint_base_name}_server_{adapter_name}.pt'
+                    )
+
+                saved_paths.append(self._save_single_adapter_checkpoint(
+                    checkpoint_path, round_num, adapter_name, adapter
+                ))
+        else:
+            # Save all adapters in a single checkpoint
+            if round_num is not None:
+                checkpoint_path = os.path.join(
+                    self.adapter_checkpoint_dir,
+                    f'{self.adapter_checkpoint_base_name}_server_round_{round_num}.pt'
+                )
+            else:
+                checkpoint_path = os.path.join(
+                    self.adapter_checkpoint_dir,
+                    f'{self.adapter_checkpoint_base_name}_server.pt'
+                )
+
+            saved_paths.append(self._save_single_adapter_checkpoint(
+                checkpoint_path, round_num, 'all', global_audio2image
+            ))
+
+        return saved_paths
+
+    def _save_single_adapter_checkpoint(self, checkpoint_path, round_num, adapter_name, adapter_or_model):
+        """
+        Save a single adapter checkpoint with metadata.
+
+        Args:
+            checkpoint_path: Path where to save the checkpoint
+            round_num: Training round number
+            adapter_name: Name of the adapter ('clip_adapter', 't5_adapter', 'clip_projection', 't5_projection', or 'all')
+            adapter_or_model: Adapter instance or global audio2image model
+
+        Returns:
+            str: Path where checkpoint was saved
+        """
+        import datetime
+
+        # Prepare comprehensive checkpoint metadata
+        checkpoint = {
+            # Server identification
+            'server': True,
+            'round': round_num if round_num is not None else 0,
+            'timestamp': datetime.datetime.now().isoformat(),
+            'adapter_name': adapter_name,
+        }
+
+        # Save adapter state(s)
+        if adapter_name == 'all':
+            # Save all adapters in one checkpoint from the global model
+            if hasattr(adapter_or_model, 'clip_adapter') and adapter_or_model.clip_adapter is not None:
+                checkpoint['clip_adapter_state_dict'] = adapter_or_model.clip_adapter.state_dict()
+
+            if hasattr(adapter_or_model, 't5_adapter') and adapter_or_model.t5_adapter is not None:
+                checkpoint['t5_adapter_state_dict'] = adapter_or_model.t5_adapter.state_dict()
+
+            if hasattr(adapter_or_model, 'clip_projection') and adapter_or_model.clip_projection is not None:
+                checkpoint['clip_projection_state_dict'] = adapter_or_model.clip_projection.state_dict()
+
+            if hasattr(adapter_or_model, 't5_projection') and adapter_or_model.t5_projection is not None:
+                checkpoint['t5_projection_state_dict'] = adapter_or_model.t5_projection.state_dict()
+        else:
+            # Save specific adapter
+            if adapter_or_model is not None:
+                checkpoint['adapter_state_dict'] = adapter_or_model.state_dict()
+
+        # Save checkpoint
+        torch.save(checkpoint, checkpoint_path)
+
+        # Create concise log message
+        if adapter_name == 'all':
+            print(f"[Server] Saved all adapters to {os.path.basename(checkpoint_path)}")
+        else:
+            print(f"[Server] Saved {adapter_name} to {os.path.basename(checkpoint_path)}")
+
+        return checkpoint_path
+
+    def load_adapter_checkpoint(self, checkpoint_path=None, strict_validation=True, warn_only=False):
+        """
+        Load adapter checkpoint(s) for the global model with metadata validation.
+
+        Args:
+            checkpoint_path: Optional path to checkpoint file (for single file mode)
+            strict_validation: If True, reject checkpoint on metadata mismatch
+            warn_only: If True, only print warnings without rejecting checkpoint
+
+        Returns:
+            bool: True if all checkpoints loaded successfully, False otherwise
+        """
+        import os
+        import glob
+
+        if not self.adapter_load_checkpoint:
+            return False
+
+        if self.global_model is None:
+            logger.warning("Global model not initialized, cannot load adapter checkpoint")
+            return False
+
+        success = True
+
+        if self.adapter_checkpoint_per_type:
+            # Load each adapter type separately
+            adapter_types = ['clip_adapter', 't5_adapter', 'clip_projection', 't5_projection']
+
+            # First, discover all available adapter sets (by node)
+            # Pattern: {base_name}_node{X}_{adapter_type}*.pt
+            node_adapter_sets = {}  # {node_id: {adapter_type: [checkpoint_files]}}
+
+            for adapter_name in adapter_types:
+                # Search for any node's checkpoint (not just server)
+                pattern = os.path.join(
+                    self.adapter_checkpoint_dir,
+                    f'{self.adapter_checkpoint_base_name}_node*_{adapter_name}*.pt'
+                )
+
+                checkpoint_files = glob.glob(pattern)
+
+                # Group by node_id
+                for checkpoint_file in checkpoint_files:
+                    # Extract node_id from filename: base_name_node{X}_{adapter_name}_...
+                    filename = os.path.basename(checkpoint_file)
+                    parts = filename.split('_')
+
+                    # Find the part that starts with 'node'
+                    node_id = None
+                    for part in parts:
+                        if part.startswith('node'):
+                            node_id = part.replace('node', '')
+                            break
+
+                    if node_id is None:
+                        continue
+
+                    if node_id not in node_adapter_sets:
+                        node_adapter_sets[node_id] = {}
+
+                    if adapter_name not in node_adapter_sets[node_id]:
+                        node_adapter_sets[node_id][adapter_name] = []
+
+                    node_adapter_sets[node_id][adapter_name].append(checkpoint_file)
+
+            # Check if we have complete sets (all 4 adapter types)
+            complete_sets = {}
+            for node_id, adapters in node_adapter_sets.items():
+                if len(adapters) == len(adapter_types):
+                    # All adapter types present for this node
+                    complete_sets[node_id] = adapters
+
+            if not complete_sets:
+                print(f"[Server] ⚠ No complete adapter checkpoint set found")
+                print(f"[Server] ⚠ Available partial sets: {list(node_adapter_sets.keys())}")
+                return False
+
+            # Verify we have exactly one complete set
+            if len(complete_sets) > 1:
+                print(f"[Server] ⚠ WARNING: Found {len(complete_sets)} complete adapter sets from nodes: {list(complete_sets.keys())}")
+                print(f"[Server] ⚠ Will use round-robin distribution to clients")
+                # Store all sets for round-robin distribution
+                self._multiple_adapter_sets = complete_sets
+            else:
+                print(f"[Server] ✓ Found exactly one complete adapter set from node {list(complete_sets.keys())[0]}")
+                self._multiple_adapter_sets = None
+
+            # Load the first complete set into global model (if using single set)
+            if len(complete_sets) == 1:
+                node_id = list(complete_sets.keys())[0]
+                for adapter_name in adapter_types:
+                    # Use the most recent checkpoint for this adapter type
+                    checkpoint_files = sorted(complete_sets[node_id][adapter_name])
+                    checkpoint_file = checkpoint_files[-1]
+
+                    print(f"[Server] Loading {adapter_name} from node {node_id}: {os.path.basename(checkpoint_file)}")
+
+                    loaded = self._load_single_adapter_checkpoint(
+                        checkpoint_file, strict_validation, warn_only, adapter_name, self.global_model
+                    )
+
+                    if not loaded:
+                        success = False
+            else:
+                # Multiple sets: will be distributed round-robin in set_clients
+                print(f"[Server] Skipping global model adapter loading (will distribute to clients in round-robin)")
+                success = True
+        else:
+            # Load all adapters from a single checkpoint
+            if checkpoint_path is None:
+                # Auto-detect checkpoint file (search for node checkpoints)
+                pattern = os.path.join(
+                    self.adapter_checkpoint_dir,
+                    f'{self.adapter_checkpoint_base_name}_node*.pt'
+                )
+
+                checkpoint_files = sorted(glob.glob(pattern))
+
+                if not checkpoint_files:
+                    print(f"[Server] ⚠ No adapter checkpoint found")
+                    return False
+
+                if len(checkpoint_files) > 1:
+                    print(f"[Server] ⚠ WARNING: Found {len(checkpoint_files)} adapter checkpoint files")
+                    print(f"[Server] ⚠ Using the most recent: {os.path.basename(checkpoint_files[-1])}")
+
+                checkpoint_path = checkpoint_files[-1]
+
+            success = self._load_single_adapter_checkpoint(
+                checkpoint_path, strict_validation, warn_only, 'all', self.global_model
+            )
+
+        return success
+
+    def _load_single_adapter_checkpoint(self, checkpoint_path, strict_validation=True, warn_only=False, adapter_name='all', global_audio2image=None):
+        """
+        Load a single adapter checkpoint with validation.
+
+        Args:
+            checkpoint_path: Path to checkpoint file
+            strict_validation: If True, reject checkpoint on metadata mismatch
+            warn_only: If True, only print warnings without rejecting checkpoint
+            adapter_name: Name of adapter to load ('clip_adapter', 't5_adapter', etc., or 'all')
+            global_audio2image: Global audio2image model instance
+
+        Returns:
+            bool: True if loaded successfully, False otherwise
+        """
+        import os
+
+        if not os.path.exists(checkpoint_path):
+            print(f"[Server] ⚠ Checkpoint not found: {checkpoint_path}")
+            return False
+
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location='cpu')
+
+            # Load adapter state(s)
+            if adapter_name == 'all':
+                # Load all adapters from checkpoint
+                if 'clip_adapter_state_dict' in checkpoint and hasattr(global_audio2image, 'clip_adapter') and global_audio2image.clip_adapter is not None:
+                    try:
+                        global_audio2image.clip_adapter.load_state_dict(checkpoint['clip_adapter_state_dict'])
+                        print(f"  ✓ Loaded clip_adapter from round {checkpoint.get('round', 'N/A')}")
+                    except Exception as e:
+                        print(f"  ⚠ Warning: Could not load clip_adapter: {e}")
+
+                if 't5_adapter_state_dict' in checkpoint and hasattr(global_audio2image, 't5_adapter') and global_audio2image.t5_adapter is not None:
+                    try:
+                        global_audio2image.t5_adapter.load_state_dict(checkpoint['t5_adapter_state_dict'])
+                        print(f"  ✓ Loaded t5_adapter from round {checkpoint.get('round', 'N/A')}")
+                    except Exception as e:
+                        print(f"  ⚠ Warning: Could not load t5_adapter: {e}")
+
+                if 'clip_projection_state_dict' in checkpoint and hasattr(global_audio2image, 'clip_projection') and global_audio2image.clip_projection is not None:
+                    try:
+                        global_audio2image.clip_projection.load_state_dict(checkpoint['clip_projection_state_dict'])
+                        print(f"  ✓ Loaded clip_projection from round {checkpoint.get('round', 'N/A')}")
+                    except Exception as e:
+                        print(f"  ⚠ Warning: Could not load clip_projection: {e}")
+
+                if 't5_projection_state_dict' in checkpoint and hasattr(global_audio2image, 't5_projection') and global_audio2image.t5_projection is not None:
+                    try:
+                        global_audio2image.t5_projection.load_state_dict(checkpoint['t5_projection_state_dict'])
+                        print(f"  ✓ Loaded t5_projection from round {checkpoint.get('round', 'N/A')}")
+                    except Exception as e:
+                        print(f"  ⚠ Warning: Could not load t5_projection: {e}")
+            else:
+                # Load specific adapter
+                if 'adapter_state_dict' in checkpoint:
+                    adapter = None
+                    model_adapters_model = global_audio2image.adapters
+                    # get the appropriate adapter from the global model
+                    if adapter_name == 'clip_adapter' and hasattr(model_adapters_model['clip'], 'adapter_clip'):
+                        adapter = model_adapters_model['clip'].adapter_clip
+                    elif adapter_name == 't5_adapter' and hasattr(model_adapters_model['t5'], 'adapter_t5'):
+                        adapter = model_adapters_model['t5'].adapter_t5
+                    elif adapter_name == 'clip_projection' and hasattr(model_adapters_model['clip'], 'projection_clip'):
+                        adapter = model_adapters_model['clip'].projection_clip
+                    elif adapter_name == 't5_projection' and hasattr(model_adapters_model['t5'], 'projection_t5'):
+                        adapter = model_adapters_model['t5'].projection_t5
+
+                    if adapter is not None:
+                        try:
+                            adapter.load_state_dict(checkpoint['adapter_state_dict'])
+                            print(f"[Server] ✓ Loaded {adapter_name} from round {checkpoint.get('round', 'N/A')}")
+                        except Exception as e:
+                            print(f"[Server] ⚠ Warning: Could not load {adapter_name}: {e}")
+                            return False
+                    else:
+                        print(f"[Server] ⚠ Warning: Adapter {adapter_name} not found in global model")
+                        return False
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error loading adapter checkpoint: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def _load_single_adapter_checkpoint_to_client(self, checkpoint_path, client, adapter_name):
+        """
+        Load a specific adapter checkpoint into a client's model.
+
+        Args:
+            checkpoint_path: Path to checkpoint file
+            client: Client object to load adapter into
+            adapter_name: Name of adapter to load ('clip_adapter', 't5_adapter', 'clip_projection', 't5_projection')
+
+        Returns:
+            bool: True if loaded successfully, False otherwise
+        """
+        import os
+
+        if not os.path.exists(checkpoint_path):
+            print(f"[Server] ⚠ Checkpoint not found: {checkpoint_path}")
+            return False
+
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location='cpu')
+
+            if 'adapter_state_dict' not in checkpoint:
+                print(f"[Server] ⚠ No adapter_state_dict in checkpoint: {checkpoint_path}")
+                return False
+
+            # Get the appropriate adapter from the client's model
+            adapter = None
+
+            if adapter_name == 'clip_adapter' and 'clip' in client.adapters:
+                clip_seq = client.adapters['clip']
+                adapter = clip_seq.adapter_clip if hasattr(clip_seq, 'adapter_clip') else None
+            elif adapter_name == 'clip_projection' and 'clip' in client.adapters:
+                clip_seq = client.adapters['clip']
+                adapter = clip_seq.projection_clip if hasattr(clip_seq, 'projection_clip') else None
+            elif adapter_name == 't5_adapter' and client.diffusion_type == 'flux' and 't5' in client.adapters:
+                t5_seq = client.adapters['t5']
+                adapter = t5_seq.adapter_t5 if hasattr(t5_seq, 'adapter_t5') else None
+            elif adapter_name == 't5_projection' and client.diffusion_type == 'flux' and 't5' in client.adapters:
+                t5_seq = client.adapters['t5']
+                adapter = t5_seq.projection_t5 if hasattr(t5_seq, 'projection_t5') else None
+
+            if adapter is not None:
+                try:
+                    adapter.load_state_dict(checkpoint['adapter_state_dict'])
+                    print(f"[Server]   ✓ Client {client.id}: Loaded {adapter_name} from round {checkpoint.get('round', 'N/A')}")
+                    return True
+                except Exception as e:
+                    print(f"[Server]   ⚠ Client {client.id}: Could not load {adapter_name}: {e}")
+                    return False
+            else:
+                print(f"[Server]   ⚠ Client {client.id}: Adapter {adapter_name} not found in client model")
+                return False
+
+        except Exception as e:
+            print(f"[Server] Error loading adapter checkpoint for client {client.id}: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def validate_generator(self, test_class_prompts):
@@ -1467,6 +2641,24 @@ class FedA2V(FedRewind):
             for class_name, samples in synthetic_samples.items():
                 aggregated_by_class[class_name][client_id] = samples
 
+        # Memory tracking - before clearing
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            mem_before = torch.cuda.memory_allocated(self.device) / (1024**2)
+            logger.debug(f"[MemTrack] Server - Before aggregate synthetic samples clear: {mem_before:.2f} MB")
+
+        # Clear previous aggregated samples to prevent memory leaks
+        if hasattr(self, 'aggregated_synthetic_samples'):
+            del self.aggregated_synthetic_samples
+        torch.cuda.empty_cache()
+
+        # Memory tracking - after clearing
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            mem_after_clear = torch.cuda.memory_allocated(self.device) / (1024**2)
+            mem_freed = mem_before - mem_after_clear
+            logger.debug(f"[MemTrack] Server - After clear synthetic samples: {mem_after_clear:.2f} MB (freed {mem_freed:.2f} MB)")
+
         # Store aggregated samples
         self.aggregated_synthetic_samples = {}
 
@@ -1481,6 +2673,13 @@ class FedA2V(FedRewind):
             # Stack or concatenate samples
             if len(all_samples) > 0:
                 self.aggregated_synthetic_samples[class_name] = torch.cat(all_samples, dim=0)
+
+        # Memory tracking - after aggregation
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            mem_after_agg = torch.cuda.memory_allocated(self.device) / (1024**2)
+            mem_added = mem_after_agg - mem_after_clear
+            logger.debug(f"[MemTrack] Server - After aggregating {total_samples} samples: {mem_after_agg:.2f} MB (added {mem_added:.2f} MB)")
 
         print(f"[Server] Aggregated {total_samples} synthetic samples across {len(self.aggregated_synthetic_samples)} classes")
 
@@ -1517,6 +2716,29 @@ class FedA2V(FedRewind):
     def receive_nodes_adapters(self):
 
         active_clients = self.selected_clients
+
+        # Memory tracking - before clearing
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            mem_before = torch.cuda.memory_allocated(self.device) / (1024**2)
+            logger.debug(f"[MemTrack] Server - Before receive_nodes_adapters clear: {mem_before:.2f} MB")
+
+        # Clear previous round's adapter data to prevent memory leaks
+        if hasattr(self, 'nodes_adapters'):
+            del self.nodes_adapters
+        if hasattr(self, 'nodes_adapters_modules'):
+            del self.nodes_adapters_modules
+        torch.cuda.empty_cache()
+
+        # Memory tracking - after clearing
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            mem_after_clear = torch.cuda.memory_allocated(self.device) / (1024**2)
+            mem_freed = mem_before - mem_after_clear
+            logger.debug(f"[MemTrack] Server - After clear: {mem_after_clear:.2f} MB (freed {mem_freed:.2f} MB)")
+
+        self.nodes_adapters = {}
+        self.nodes_adapters_modules = {}
         gathered_nodes = 0
 
         for node in active_clients:
@@ -1525,11 +2747,42 @@ class FedA2V(FedRewind):
 
             gathered_nodes += 1
 
+        # Memory tracking - after receiving
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            mem_after_receive = torch.cuda.memory_allocated(self.device) / (1024**2)
+            mem_added = mem_after_receive - mem_after_clear
+            logger.debug(f"[MemTrack] Server - After receiving {gathered_nodes} adapters: {mem_after_receive:.2f} MB (added {mem_added:.2f} MB)")
+
         return gathered_nodes
 
     def receive_models_per_class_average(self):
 
         active_clients = self.selected_clients
+
+        # Memory tracking - before clearing
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            mem_before = torch.cuda.memory_allocated(self.device) / (1024**2)
+            logger.debug(f"[MemTrack] Server - Before receive_models_per_class_average clear: {mem_before:.2f} MB")
+
+        # Clear previous round's data explicitly to prevent memory leaks
+        if hasattr(self, 'nodes_per_class_outputs'):
+            del self.nodes_per_class_outputs
+        if hasattr(self, 'nodes_per_class_outputs_means'):
+            del self.nodes_per_class_outputs_means
+        if hasattr(self, 'nodes_per_class_adapters_outputs'):
+            del self.nodes_per_class_adapters_outputs
+        if hasattr(self, 'nodes_per_class_adapters_outputs_means'):
+            del self.nodes_per_class_adapters_outputs_means
+        torch.cuda.empty_cache()
+
+        # Memory tracking - after clearing
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            mem_after_clear = torch.cuda.memory_allocated(self.device) / (1024**2)
+            mem_freed = mem_before - mem_after_clear
+            logger.debug(f"[MemTrack] Server - After clear per_class data: {mem_after_clear:.2f} MB (freed {mem_freed:.2f} MB)")
 
         self.nodes_per_class_outputs = {}
         self.nodes_per_class_outputs_means = {}
@@ -1576,18 +2829,20 @@ class FedA2V(FedRewind):
 
             if self.adapter_aggregation_mode == 'avg':
                 self.send_adapters(node)
+            elif self.adapter_aggregation_mode == 'kd':
+                self.send_adapters(node)
         return
     
     def send_adapters(self, node):
         logger.info(f"Sending global adapters to node {node.id}")
-        self.global_model.to(self.device)
+        self.global_model = self.global_model.to(self.device)
         node.update_local_adapters(self.global_adapters)
 
-        self.global_model.to("cpu")
+        self.global_model = self.global_model.to("cpu")
 
     def send_models_per_class_average(self,node):
         return
-        self.global_model.to(self.device)
+        self.global_model = self.global_model.to(self.device)
         for client in self.clients:
             start_time = time.time()
             client.update_local_adapters(self.global_adapters)
@@ -1596,7 +2851,7 @@ class FedA2V(FedRewind):
             client.send_time_cost['total_cost'] += 2 * (time.time() - start_time)
             client._move_to_cpu()
 
-        self.global_model.to("cpu")
+        self.global_model = self.global_model.to("cpu")
 
     def aggregate_parameters(self):
         """Aggregate Audio2Visual model parameters from clients."""
@@ -1607,8 +2862,10 @@ class FedA2V(FedRewind):
 
         if self.adapter_aggregation_mode == 'avg':
             self.aggregate_adapters_parameters_fedavg()
-        else:
-            print(f"Model aggregation method {self.aggregation_method} not recognized.")
+        elif self.adapter_aggregation_mode == 'kd':
+            self.aggregate_adapters_knowledge_distillation()
+        elif self.adapter_aggregation_mode != 'none':
+            print(f"Adapter aggregation mode {self.adapter_aggregation_mode} not recognized.")
             return
         
     def aggregate_audio_encoder_parameters_per_class_avarage(self):
@@ -1713,6 +2970,7 @@ class FedA2V(FedRewind):
         averaged_state = self.average_state_dicts(nodes_adapters_states)
 
         self.global_adapters_modules.load_state_dict(averaged_state)
+        logger.info(f"Aggregated adapters from nodes {list(nodes_adapters_states.keys())} using FedAvg.")
 
     @torch.no_grad()
     def average_state_dicts(self, state_dicts, weights=None):
@@ -1760,6 +3018,287 @@ class FedA2V(FedRewind):
                 out[k] = v0  # es. num_batches_tracked, interi, bool
         return out
 
+    def aggregate_adapters_knowledge_distillation(self):
+        """
+        Aggregate adapters using Knowledge Distillation approach:
+        1. Freeze node adapters (eval mode)
+        2. Create ONE single adapter on server
+        3. Train server adapter on ALL classes:
+           - For each class: generate synthetic samples with frozen generators
+           - Compute MSE loss between server adapter outputs and frozen node adapters outputs
+           - Train with accumulated loss from all classes
+        4. Load trained adapter into global_adapters_modules
+        5. Send trained adapter to all client nodes
+        """
+        logger.info("[KD Aggregation] Starting Knowledge Distillation adapter aggregation")
+
+        # Check prerequisites
+        if not hasattr(self, 'prompt_generators') or not self.prompt_generators:
+            logger.error("[KD Aggregation] No generators available, cannot perform KD aggregation")
+            return
+
+        if not self.nodes_adapters_modules:
+            logger.error("[KD Aggregation] No adapter modules from nodes, cannot perform KD aggregation")
+            return
+
+        # Get configuration parameters
+        kd_epochs = getattr(self.config.feda2v, 'kd_training_epochs', 10)
+        kd_batch_size = getattr(self.config.training, 'batch_size', 8)
+        kd_lr = getattr(self.config.feda2v, 'kd_learning_rate', 0.001)
+        kd_samples_per_class = getattr(self.config.feda2v, 'kd_samples_per_class', 100)
+
+        logger.info(f"[KD Aggregation] Config: epochs={kd_epochs}, batch_size={kd_batch_size}, lr={kd_lr}, samples_per_class={kd_samples_per_class}")
+
+        # Step 1: Freeze node adapters and collect target generator function
+        logger.info("[KD Aggregation] Step 1: Freezing node adapters")
+        self._freeze_nodes_adapters()
+
+        # Step 2: Collect classes present in nodes
+        classes_to_train = self._get_classes_from_nodes()
+        if not classes_to_train:
+            logger.error("[KD Aggregation] No classes found in nodes")
+            return
+        logger.info(f"[KD Aggregation] Classes to train on: {classes_to_train}")
+
+        # Step 3: Create single server adapter
+        logger.info("[KD Aggregation] Step 2: Creating single server adapter")
+        server_adapter = self._create_single_server_adapter()
+
+        # Step 4: Train server adapter with KD on all classes
+        logger.info("[KD Aggregation] Step 3: Training server adapter with Knowledge Distillation")
+        self._train_single_adapter_kd(
+            server_adapter=server_adapter,
+            classes_to_train=classes_to_train,
+            epochs=kd_epochs,
+            batch_size=kd_batch_size,
+            learning_rate=kd_lr,
+            samples_per_class=kd_samples_per_class
+        )
+
+        # Step 5: Load trained adapter into global_adapters_modules
+        logger.info("[KD Aggregation] Step 4: Loading trained adapter into global_adapters_modules")
+        self.global_adapters_modules.load_state_dict(server_adapter.state_dict())
+
+        # Step 6: Generate and distribute synthetic samples to nodes (for image generation)
+        logger.info("[KD Aggregation] Step 5: Generating synthetic samples for nodes")
+        if hasattr(self, 'generate_synthetic_samples_for_all_nodes') and hasattr(self, 'distribute_synthetic_samples_to_nodes'):
+            try:
+                self.generate_synthetic_samples_for_all_nodes()
+                self.distribute_synthetic_samples_to_nodes()
+                logger.info("[KD Aggregation] Synthetic samples generated and distributed to nodes")
+            except Exception as e:
+                logger.error(f"[KD Aggregation] Failed to generate/distribute synthetic samples: {e}")
+        else:
+            logger.warning("[KD Aggregation] Synthetic sample generation/distribution methods not available")
+
+        # Step 7: Cleanup
+        logger.info("[KD Aggregation] Step 6: Cleaning up intermediate data")
+        del server_adapter
+        torch.cuda.empty_cache()
+
+        logger.info("[KD Aggregation] Knowledge Distillation aggregation completed successfully")
+
+    def _freeze_nodes_adapters(self):
+        """
+        Set all node adapters to eval mode and freeze their parameters.
+        """
+        for node_id, node_adapter in self.nodes_adapters_modules.items():
+            if node_adapter is not None:
+                node_adapter.eval()
+                for param in node_adapter.parameters():
+                    param.requires_grad = False
+        logger.info(f"[KD] Frozen {len(self.nodes_adapters_modules)} node adapters")
+
+    def _get_classes_from_nodes(self):
+        """
+        Collect all unique classes present in the nodes.
+
+        Returns:
+            list: List of unique class names
+        """
+        all_classes = set()
+        for node in self.clients:
+            if hasattr(node.node_data, 'selected_classes') and node.node_data.selected_classes:
+                all_classes.update(node.node_data.selected_classes)
+            elif hasattr(node.node_data, 'class_names') and node.node_data.class_names:
+                all_classes.update(node.node_data.class_names)
+
+        # Filter classes that have generators
+        classes_with_generators = [c for c in all_classes if c in self.prompt_generators]
+
+        logger.info(f"[KD] Found {len(all_classes)} classes in nodes, {len(classes_with_generators)} have generators")
+        return classes_with_generators
+
+    def _create_single_server_adapter(self):
+        """
+        Create a single adapter module on server.
+
+        Returns:
+            DownstreamSinestesiaAdapters: Single adapter instance
+        """
+        from system.flcore.trainmodel.downstreamsinestesiaadapters import DownstreamSinestesiaAdapters
+
+        device = self.device if hasattr(self, 'device') else 'cuda' if torch.cuda.is_available() else 'cpu'
+
+        adapter = DownstreamSinestesiaAdapters(
+            diffusion_type=self.global_model.diffusion_type,
+            init_ast_model=False  # Don't need AST model, only adapters
+        )
+        adapter.setup_adapters()
+        adapter.to(device)
+
+        logger.info(f"[KD] Created single server adapter on device {device}")
+        return adapter
+
+    def _train_single_adapter_kd(self, server_adapter, classes_to_train,
+                                  epochs, batch_size, learning_rate, samples_per_class):
+        """
+        Train single server adapter using Knowledge Distillation with MSE loss.
+        The adapter is trained on synthetic samples from ALL classes, with loss
+        accumulated across all classes.
+
+        Args:
+            server_adapter: Single adapter module to train
+            classes_to_train: List of class names to train on
+            epochs: Number of training epochs
+            batch_size: Batch size for training
+            learning_rate: Learning rate
+            samples_per_class: Number of synthetic samples to generate per class
+        """
+        device = self.device if hasattr(self, 'device') else 'cuda' if torch.cuda.is_available() else 'cpu'
+        mse_loss = nn.MSELoss()
+
+        # Create single optimizer for the server adapter
+        optimizer = torch.optim.AdamW(
+            server_adapter.parameters(),
+            lr=learning_rate,
+            weight_decay=getattr(self.config.feda2v, 'adapters_weight_decay', 0.0001)
+        )
+
+        # Collect which nodes have which classes
+        node_classes = {}
+        for node in self.clients:
+            if hasattr(node.node_data, 'selected_classes') and node.node_data.selected_classes:
+                node_classes[node.id] = node.node_data.selected_classes
+            elif hasattr(node.node_data, 'class_names') and node.node_data.class_names:
+                node_classes[node.id] = node.node_data.class_names
+
+        logger.info(f"[KD Training] Node classes mapping: {node_classes}")
+        logger.info(f"[KD Training] Training single adapter on {len(classes_to_train)} classes")
+
+        # Training loop
+        for epoch in range(epochs):
+            server_adapter.train()
+            epoch_total_loss = 0.0
+            epoch_class_losses = {}
+            total_batches = 0
+
+            # Iterate over all classes
+            for class_name in classes_to_train:
+                if class_name not in self.prompt_generators:
+                    logger.warning(f"[KD Training] No generator for class '{class_name}', skipping")
+                    continue
+
+                generator = self.prompt_generators[class_name]
+                generator.eval()  # Keep generator frozen
+
+                # Generate synthetic samples for this class
+                with torch.no_grad():
+                    try:
+                        synthetic_samples = generator.sample(num_samples=samples_per_class, device=device)
+                    except Exception as e:
+                        logger.error(f"[KD Training] Failed to generate samples for class '{class_name}': {e}")
+                        continue
+
+                # Get target outputs from nodes that have this class (frozen adapters)
+                class_clip_targets = []
+                class_t5_targets = []
+
+                with torch.no_grad():
+                    for node_id, classes in node_classes.items():
+                        if class_name not in classes:
+                            continue
+
+                        node_adapter = self.nodes_adapters_modules.get(node_id)
+                        if node_adapter is None:
+                            continue
+
+                        try:
+                            if hasattr(node_adapter, 'clip'):
+                                clip_output = node_adapter.clip(synthetic_samples.to(device))
+                                class_clip_targets.append(clip_output.detach())
+
+                            if hasattr(node_adapter, 't5'):
+                                t5_output = node_adapter.t5(synthetic_samples.to(device))
+                                class_t5_targets.append(t5_output.detach())
+                        except Exception as e:
+                            logger.error(f"[KD Training] Failed to get target outputs for node {node_id}, class '{class_name}': {e}")
+                            continue
+
+                # Average targets across nodes for this class
+                if not class_clip_targets and not class_t5_targets:
+                    logger.warning(f"[KD Training] No target outputs for class '{class_name}', skipping")
+                    continue
+
+                clip_target = torch.stack(class_clip_targets).mean(dim=0) if class_clip_targets else None
+                t5_target = torch.stack(class_t5_targets).mean(dim=0) if class_t5_targets else None
+
+                # Train on batches for this class
+                num_batches = (samples_per_class + batch_size - 1) // batch_size
+                class_loss = 0.0
+
+                for batch_idx in range(num_batches):
+                    start_idx = batch_idx * batch_size
+                    end_idx = min(start_idx + batch_size, samples_per_class)
+
+                    batch_samples = synthetic_samples[start_idx:end_idx]
+
+                    optimizer.zero_grad()
+
+                    # Forward pass through server adapter
+                    batch_loss = 0.0
+
+                    try:
+                        if clip_target is not None and hasattr(server_adapter, 'clip'):
+                            clip_output = server_adapter.clip(batch_samples)
+                            batch_clip_target = clip_target[start_idx:end_idx]
+                            batch_loss += mse_loss(clip_output, batch_clip_target)
+
+                        if t5_target is not None and hasattr(server_adapter, 't5'):
+                            t5_output = server_adapter.t5(batch_samples)
+                            batch_t5_target = t5_target[start_idx:end_idx]
+                            batch_loss += mse_loss(t5_output, batch_t5_target)
+
+                        # Backward pass
+                        if batch_loss > 0:
+                            batch_loss.backward()
+                            optimizer.step()
+                            class_loss += batch_loss.item()
+                            epoch_total_loss += batch_loss.item()
+                            total_batches += 1
+                    except Exception as e:
+                        logger.error(f"[KD Training] Error during training for class '{class_name}', batch {batch_idx}: {e}")
+                        continue
+
+                # Track per-class loss
+                avg_class_loss = class_loss / num_batches if num_batches > 0 else 0.0
+                epoch_class_losses[class_name] = avg_class_loss
+
+            # Log epoch progress
+            avg_epoch_loss = epoch_total_loss / total_batches if total_batches > 0 else 0.0
+
+            if epoch % max(1, epochs // 5) == 0 or epoch == epochs - 1:
+                loss_str = ", ".join([f"{cls}: {loss:.6f}" for cls, loss in epoch_class_losses.items()])
+                logger.info(f"[KD Training] Epoch {epoch+1}/{epochs} - Total Loss: {avg_epoch_loss:.6f}")
+                logger.info(f"[KD Training] Epoch {epoch+1}/{epochs} - Per-class Losses: {loss_str}")
+
+                # Memory tracking
+                if torch.cuda.is_available():
+                    mem_allocated = torch.cuda.memory_allocated() / 1024**2
+                    logger.debug(f"[KD Training] GPU Memory: {mem_allocated:.2f} MB")
+
+        logger.info(f"[KD Training] Completed training single adapter over {epochs} epochs")
+
     def add_parameters(self, w, client_model):
         """Add weighted client parameters to global Audio2Visual model."""
         if hasattr(self.global_model, 'audio2image') and hasattr(client_model, 'audio2image'):
@@ -1769,29 +3308,25 @@ class FedA2V(FedRewind):
                 if server_param.requires_grad and client_param.requires_grad:
                     server_param.data += client_param.data.clone() * w
 
-    def client_round_starting_hook(self, client):
+    def client_round_starting_hook(self, node):
         # Skip metrics in generator-only training mode
         if self.generator_training_mode:
             return
 
-        if self.eval_gap % self.round:
+        if self.eval_gap > 0 and self.round % self.eval_gap == 0:
             return
 
-        print(f"\nStarting training round for Node {client.id}.")
+        print(f"\nStarting training round {self.round} for Node {node.id}.")
 
-        node_metrics = self.node_metrics(client, train_splits=self.train_metrics_splits, test_splits=self.test_metrics_splits)
-        round_train_metrics = node_metrics['train_metrics']['train'] if 'train' in node_metrics['train_metrics'] else []
-        round_test_metrics_on_val = node_metrics['test_metrics']['val'] if 'val' in node_metrics['test_metrics'] else []
-        round_test_metrics_on_test = node_metrics['test_metrics']['test'] if 'test' in node_metrics['test_metrics'] else []
-        round_test_metrics_on_train = node_metrics['test_metrics_on_train'] if 'test_metrics_on_train' in node_metrics else None
+        node_metrics = self.node_metrics(node, train_splits=self.nodes_train_metrics_splits, test_splits=[])
 
         if not self.no_wandb:
-            wandb_metrics = client.log_metrics(round_train_metrics, round=self.round, suffix="_start")
-            wandb_metrics.update(client.log_metrics(round_test_metrics_on_val, round=self.round, suffix="_start"))
-            if round_test_metrics_on_train is not None:
-                wandb_metrics.update(client.log_metrics(round_test_metrics_on_train, round=self.round, suffix="_start"))
-            
-            
+            wandb_metrics = {}
+
+            for metric_type, metric_splits in node_metrics.items():
+                for split, metric in metric_splits.items():
+                    wandb_metrics.update(node.log_metrics( metric, round = self.round, suffix=f"_on_{split}_pre"))
+
             for wandb_metric in wandb_metrics:
                 metrics = {wandb_metric: wandb_metrics[wandb_metric], "round": self.round}
                 self.data_log(metrics)
@@ -1799,15 +3334,13 @@ class FedA2V(FedRewind):
         # Display only text_loss or accuracy if present
         display_metrics = []
         for metric_name in ['text_loss', 'accuracy']:
-            if metric_name in round_train_metrics:
-                display_metrics.append(f"train {metric_name} {round_train_metrics[metric_name]['mean']:.4f}")
-            if metric_name in round_test_metrics_on_val:
-                display_metrics.append(f"test {metric_name} {round_test_metrics_on_val[metric_name]['mean']:.4f}")
-            if round_test_metrics_on_train is not None and metric_name in round_test_metrics_on_train:
-                display_metrics.append(f"test_on_train {metric_name} {round_test_metrics_on_train[metric_name]['mean']:.4f}")
+            for metric_type, metric_splits in node_metrics.items():
+                for split, metrics in metric_splits.items():
+                    if metric_name in metrics:
+                        display_metrics.append(f"{metric_type} on {split} {metric_name} {metrics[metric_name]['mean']:.4f}")
 
         if display_metrics:
-            print(F"Node {client.id} pre-round metrics: " + ", ".join(display_metrics))
+            print(F"Node {node.id} pre-round metrics: " + ", ".join(display_metrics))
 
     def client_round_ending_hook(self, client):
         # Skip metrics in generator-only training mode (but still allow synthetic sample generation)
@@ -1847,42 +3380,41 @@ class FedA2V(FedRewind):
                     print(f"[Server] Collected {len(synthetic_samples)} synthetic sample sets from Client {client.id}")
             return
 
-        if self.eval_gap % self.round:
-            return
+        # if self.eval_gap % self.round:
+        #     return
 
-        node_metrics = self.node_metrics(client, train_splits=self.train_metrics_splits, test_splits=self.test_metrics_splits)
-        round_train_metrics = node_metrics['train_metrics']['train'] if 'train' in node_metrics['train_metrics'] else None
-        round_test_metrics = node_metrics['test_metrics']['val'] if 'val' in node_metrics['test_metrics'] else None
-        round_test_metrics_on_train = node_metrics['test_metrics']['train'] if 'train' in node_metrics['test_metrics'] else None
+        # client._move_to_gpu(client.device)
+        # node_metrics = self.node_metrics(client, train_splits=self.nodes_train_metrics_splits, test_splits=self.nodes_test_metrics_splits)
+        # round_train_metrics = node_metrics['train_metrics']['train'] if 'train' in node_metrics['train_metrics'] else None
+        # round_test_metrics = node_metrics['test_metrics']['val'] if 'val' in node_metrics['test_metrics'] else None
+        # round_test_metrics_on_train = node_metrics['test_metrics']['train'] if 'train' in node_metrics['test_metrics'] else None
 
-        if not self.no_wandb:
-            wandb_metrics = {}
+        # if not self.no_wandb:
+        #     wandb_metrics = {}
 
-            if isinstance(round_train_metrics, NodeMetric):
-                wandb_metrics.update(client.log_metrics(round_train_metrics, round=self.round, suffix="_end"))
-            if isinstance(round_test_metrics, NodeMetric):
-                wandb_metrics.update(client.log_metrics(round_test_metrics, round=self.round, suffix="_end"))
-            if isinstance(round_test_metrics_on_train, NodeMetric):
-                wandb_metrics.update(client.log_metrics(round_test_metrics_on_train, round=self.round, suffix="_end"))
+        #     if isinstance(round_train_metrics, NodeMetric):
+        #         wandb_metrics.update(client.log_metrics(round_train_metrics, round=self.round, suffix="_end"))
+        #     if isinstance(round_test_metrics, NodeMetric):
+        #         wandb_metrics.update(client.log_metrics(round_test_metrics, round=self.round, suffix="_end"))
+        #     if isinstance(round_test_metrics_on_train, NodeMetric):
+        #         wandb_metrics.update(client.log_metrics(round_test_metrics_on_train, round=self.round, suffix="_end"))
 
-            for wandb_metric in wandb_metrics:
-                metrics = {wandb_metric: wandb_metrics[wandb_metric], "round": self.round}
-                self.data_log(metrics)
+        #     for wandb_metric in wandb_metrics:
+        #         metrics = {wandb_metric: wandb_metrics[wandb_metric], "round": self.round}
+        #         self.data_log(metrics)
 
-         # Display only text_loss or accuracy if present
-        display_metrics = []
-        for metric_name in ['text_loss', 'accuracy']:
-            if metric_name in round_train_metrics:
-                display_metrics.append(f"train {metric_name} {round_train_metrics[metric_name]['mean']:.4f}")
-            if metric_name in round_test_metrics:
-                display_metrics.append(f"test {metric_name} {round_test_metrics[metric_name]['mean']:.4f}")
-            if round_test_metrics_on_train is not None and metric_name in round_test_metrics_on_train:
-                display_metrics.append(f"test_on_train {metric_name} {round_test_metrics_on_train[metric_name]['mean']:.4f}")
+        #  # Display only text_loss or accuracy if present
+        # display_metrics = []
+        # for metric_name in ['text_loss', 'accuracy']:
+        #     if metric_name in round_train_metrics:
+        #         display_metrics.append(f"train {metric_name} {round_train_metrics[metric_name]['mean']:.4f}")
+        #     if metric_name in round_test_metrics:
+        #         display_metrics.append(f"test {metric_name} {round_test_metrics[metric_name]['mean']:.4f}")
+        #     if round_test_metrics_on_train is not None and metric_name in round_test_metrics_on_train:
+        #         display_metrics.append(f"test_on_train {metric_name} {round_test_metrics_on_train[metric_name]['mean']:.4f}")
 
-        if display_metrics:
-            print(F"Node {client.id} post-round metrics: " + ", ".join(display_metrics))
-
-        # print (f"Node {client.id} post metric train {round_train_metrics['text_loss']['mean']:.4f}. test {round_test_metrics['text_loss']['mean']:.4f}")
+        # if display_metrics:
+        #     print(F"Node {client.id} post-round metrics: " + ", ".join(display_metrics))
 
         # Generate synthetic samples if using pretrained generators
         use_pretrained_generators = getattr(self.config.feda2v, 'use_pretrained_generators', False)
@@ -1902,23 +3434,21 @@ class FedA2V(FedRewind):
 
                 print(f"[Server] Collected {len(synthetic_samples)} synthetic sample sets from Client {client.id}")
 
+        # Save client adapter checkpoint if configured
+        if client.adapter_save_checkpoint and self.round % client.adapter_checkpoint_frequency == 0:
+            logger.info(f"Saving adapter checkpoint for node {client.id} at round {self.round}")
+            client.save_adapter_checkpoint(round_num=self.round)
+
     def node_metrics(self, client, train_splits=['train'], test_splits=['val'] ):
-        """Compute metrics for a client node."""
-        node_metrics = {'train_metrics': {}, 'test_metrics': {}}
+        node_metrics = {'train': {}, 'test': {}}
 
         for split in train_splits:
             metrics = self.round_train_metrics(client, split=split)
-            node_metrics['train_metrics'][f'{split}'] = metrics
-
-        if len(test_splits):
-            self.global_model.diffusion_model.to(self.device)
-
+            node_metrics['train'][f'{split}'] = metrics
+       
         for split in test_splits:
             metrics = self.round_test_metrics(client, split=split)
-            node_metrics['test_metrics'][f'{split}'] = metrics
-        
-        if len(train_splits):
-            self.global_model.diffusion_model.to('cpu')
+            node_metrics['test'][f'{split}'] = metrics
 
         return node_metrics
 
@@ -1927,79 +3457,107 @@ class FedA2V(FedRewind):
             print ('Text embeddings is missing something')
             return[]
 
+        prompt_embeds = None
+        pooled_prompt_embeds = None
+        imgs = None
 
-        if base_embeddings is not None:
-            orginal_prompt_embeds = []
-            orginal_pooled_prompt_embeds = []
-            for class_name in text_embeddings['class_name']:
-                if class_name in base_embeddings:
-                    orginal_prompt_embeds.append( base_embeddings[class_name]['flux']['prompt_embeds'] )
-                    orginal_pooled_prompt_embeds.append( base_embeddings[class_name]['flux']['pooled_prompt_embeds'] )
-                else:
-                    print ( f"Class name {class_name} not found in base embeddings")
-                    continue
+        try:
+            if base_embeddings is not None:
+                orginal_prompt_embeds = []
+                orginal_pooled_prompt_embeds = []
+                for class_name in text_embeddings['class_name']:
+                    if class_name in base_embeddings:
+                        orginal_prompt_embeds.append( base_embeddings[class_name]['flux']['prompt_embeds'] )
+                        orginal_pooled_prompt_embeds.append( base_embeddings[class_name]['flux']['pooled_prompt_embeds'] )
+                    else:
+                        print ( f"Class name {class_name} not found in base embeddings")
+                        continue
 
-        if self.generate_from_t5_text_embeddings and base_embeddings:
-            prompt_embeds = []
-            for class_name in text_embeddings['class_name']:
-                if class_name in base_embeddings:
-                    prompt_embeds.append( base_embeddings[class_name]['flux']['prompt_embeds'] )
-                else:
-                    print ( f"Class name {class_name} not found in base embeddings")
-                    continue
-            prompt_embeds = torch.stack(prompt_embeds).squeeze(dim=1).to(self.global_model.diffusion_dtype).to(self.diffusion_device)
-        else:
-            prompt_embeds = text_embeddings['t5'].to(self.global_model.diffusion_dtype).to(self.diffusion_device)
+            if self.generate_from_t5_text_embeddings and base_embeddings:
+                prompt_embeds = []
+                for class_name in text_embeddings['class_name']:
+                    if class_name in base_embeddings:
+                        prompt_embeds.append( base_embeddings[class_name]['flux']['prompt_embeds'] )
+                    else:
+                        print ( f"Class name {class_name} not found in base embeddings")
+                        continue
+                prompt_embeds = torch.stack(prompt_embeds).squeeze(dim=1).to(self.global_model.diffusion_dtype).to(self.diffusion_device)
+            else:
+                prompt_embeds = text_embeddings['t5'].to(self.global_model.diffusion_dtype).to(self.diffusion_device)
 
-        if self.generate_from_clip_text_embeddings and base_embeddings:
-            pooled_prompt_embeds = []
-            for class_name in text_embeddings['class_name']:
-                if class_name in base_embeddings:
-                    pooled_prompt_embeds.append( base_embeddings[class_name]['flux']['pooled_prompt_embeds'] )
-                else:
-                    print ( f"Class name {class_name} not found in base embeddings")
-                    continue
-            pooled_prompt_embeds = torch.stack(pooled_prompt_embeds).squeeze(dim=1).to(self.global_model.diffusion_dtype).to(self.diffusion_device)
-        else:
-            pooled_prompt_embeds = text_embeddings['clip'].to(self.global_model.diffusion_dtype).to(self.diffusion_device)
+            if self.generate_from_clip_text_embeddings and base_embeddings:
+                pooled_prompt_embeds = []
+                for class_name in text_embeddings['class_name']:
+                    if class_name in base_embeddings:
+                        pooled_prompt_embeds.append( base_embeddings[class_name]['flux']['pooled_prompt_embeds'] )
+                    else:
+                        print ( f"Class name {class_name} not found in base embeddings")
+                        continue
+                pooled_prompt_embeds = torch.stack(pooled_prompt_embeds).squeeze(dim=1).to(self.global_model.diffusion_dtype).to(self.diffusion_device)
+            else:
+                pooled_prompt_embeds = text_embeddings['clip'].to(self.global_model.diffusion_dtype).to(self.diffusion_device)
 
 
-        if not self.generate_low_memomy_footprint:
-            imgs = self.global_model.diffusion_model(
-                                        prompt_embeds=prompt_embeds,
-                                        pooled_prompt_embeds=pooled_prompt_embeds,
-                                        num_inference_steps=1,
-                                        output_type="pt",
-                                        ).images
-        else:
-            imgs = self.generate_single_images_from_diffusion(prompt_embeds, pooled_prompt_embeds)
-        return imgs
+            if not self.generate_low_memomy_footprint:
+                imgs = self.global_model.diffusion_model(
+                                            prompt_embeds=prompt_embeds,
+                                            pooled_prompt_embeds=pooled_prompt_embeds,
+                                            num_inference_steps=1,
+                                            output_type="pt",
+                                            ).images
+            else:
+                imgs = self.generate_single_images_from_diffusion(prompt_embeds, pooled_prompt_embeds)
+
+            return imgs
+
+        finally:
+            # CRITICAL: Cleanup intermediate tensors
+            if prompt_embeds is not None:
+                del prompt_embeds
+            if pooled_prompt_embeds is not None:
+                del pooled_prompt_embeds
+            torch.cuda.empty_cache()
     
     def generate_single_images_from_diffusion(self, prompt_embeds, pooled_prompt_embeds):
         imgs = []
         for pe, ppe in zip(prompt_embeds, pooled_prompt_embeds):
-            pe = pe.unsqueeze(0)
-            ppe = ppe.unsqueeze(0)
-            img = self.global_model.diffusion_model(
-                                        prompt_embeds=pe,
-                                        pooled_prompt_embeds=ppe,
-                                        num_inference_steps=1,
-                                        output_type="pt",
-                                        ).images
-            imgs.append(img)
+            pe_unsqueezed = None
+            ppe_unsqueezed = None
+            img = None
+
+            try:
+                pe_unsqueezed = pe.unsqueeze(0)
+                ppe_unsqueezed = ppe.unsqueeze(0)
+                img = self.global_model.diffusion_model(
+                                            prompt_embeds=pe_unsqueezed,
+                                            pooled_prompt_embeds=ppe_unsqueezed,
+                                            num_inference_steps=1,
+                                            output_type="pt",
+                                            ).images
+                imgs.append(img)
+
+            finally:
+                # Cleanup intermediate tensors
+                if pe_unsqueezed is not None:
+                    del pe_unsqueezed
+                if ppe_unsqueezed is not None:
+                    del ppe_unsqueezed
+                # Note: don't delete img as it's appended to imgs list
 
         imgs = torch.cat(imgs,dim=0)
         return imgs
     
-    def save_generated_images(self, imgs, client_id, embeddings, suffix=""):
-        saved_images = {}  
+    def save_generated_images(self, imgs, client_id, embeddings, suffix="", output_image_base_name=None):
+        saved_images = {}
+        base_name = output_image_base_name if output_image_base_name is not None else self.output_image_base_name
+
         for idx, img in enumerate(imgs):
             if type(embeddings['class_name']) == list:
                 class_name = embeddings['class_name'][idx]
             else:
                 class_name = embeddings['class_name']
 
-            img_save_path = os.path.join(self.images_output_dir, f"round_{self.round}_node_{client_id}_img_{class_name}_{idx}{suffix}.png")
+            img_save_path = os.path.join(self.images_output_dir, f"round_{self.round}_node_{client_id}_{base_name}_{class_name}_{suffix}_{idx}.png")
             saved_images[img_save_path] = class_name
             img = img.squeeze(0)
             converted_img = transforms.ToPILImage()(img.to(torch.float32).cpu())
@@ -2030,32 +3588,69 @@ class FedA2V(FedRewind):
         }
 
         # Initialize result dictionary
-        generated_images_files = {'on_train': None, 'on_test': None, 'from_embeddings': None}
+        generated_images_files = {}
+
+        # Use nodes splits for per-node generation
+        generation_splits = self.nodes_test_metrics_splits
 
         # Generate images for configured splits
-        for split_name in self.save_generated_images_splits:
+        for split_name in generation_splits:
             dataset = split_datasets.get(split_name)
 
-            if dataset is not None and len(dataset) > 0:
+            if dataset is None or len(dataset) == 0:
+                print(f"Unable to get {split_name} split from node {client.id}")
+                continue
+
+            # Variables for cleanup
+            text_embs = None
+            embeddings = None
+            generated_imgs = None
+
+            try:
                 print(f"Generating images for split: {split_name}")
                 text_embs = dataset.text_embs
+
+                # Get audio embeddings from dataset (FIXED function)
                 embeddings = client.get_audio_embeddings_from_dataset(dataset)
+
+                if embeddings is None:
+                    print(f"Failed to get embeddings for {split_name} split")
+                    continue
+
+                # Generate images from diffusion model
                 generated_imgs = self.generate_images_from_diffusion(embeddings, base_embeddings=text_embs)
-                saved_files = self.save_generated_images(generated_imgs, client.id, embeddings, suffix=f'_{split_name}')
 
-                # Map to output dictionary
-                if split_name == 'train':
-                    generated_images_files['on_train'] = saved_files
-                elif split_name in ['val', 'test']:
-                    generated_images_files['on_test'] = saved_files
-            else:
-                print(f"Unable to get {split_name} split from node {client.id}")
+                # Save generated images
+                saved_files = self.save_generated_images(
+                    generated_imgs,
+                    client.id,
+                    embeddings,
+                    suffix=f'{split_name}'
+                )
 
-        on_train_images_files = generated_images_files['on_train']
-        on_test_imgs_files = generated_images_files['on_test']
-        from_text_images_files = None
+                generated_images_files[split_name] = saved_files
 
-        
+            except Exception as e:
+                logger.error(f"Error generating images for split {split_name}: {e}")
+                import traceback
+                traceback.print_exc()
+
+            finally:
+                # CRITICAL: Cleanup split data to prevent accumulation
+                if embeddings is not None:
+                    for key in list(embeddings.keys()):
+                        if isinstance(embeddings[key], torch.Tensor):
+                            del embeddings[key]
+                    del embeddings
+
+                if generated_imgs is not None:
+                    del generated_imgs
+
+                # Force GPU cleanup after each split
+                torch.cuda.empty_cache()
+
+                print(f"✓ Cleaned up memory after {split_name} split")
+
         # embeddings = client.get_audio_embeddings_for_generation(num_embeddings=2, from_train=True )
 
         # on_train_imgs = self.generate_images_from_diffusion(embeddings)
@@ -2084,99 +3679,107 @@ class FedA2V(FedRewind):
         #     converted_img = transforms.ToPILImage()(imgs[0].cpu().detach())
         #     converted_img.save(img_save_path)
         #     print(f"Saved generated image from text embeddings to {img_save_path}")
-        return { 'on_train': on_train_images_files, 'on_test': on_test_imgs_files, 'from_embeddings': from_text_images_files }
+        return generated_images_files
 
-    def generate_global_images_with_aggregated_adapters(self):
-        """Generate images using aggregated adapters and federation validation dataset."""
-        if self.federation_val_data is None:
-            print("Warning: No federation validation dataset available for global image generation")
+    def generate_global_images_with_aggregated_adapters(self, split='val'):
+        """Generate images using aggregated adapters and federation dataset for specified split."""
+        if split not in self.server_node_data_splits:
+            print(f"Warning: No federation dataset available for global image generation on {split}")
             return None
 
-        print(f"\nGenerating global images using aggregated adapters at round {self.round}")
+        print(f"\nGenerating global images using aggregated adapters at round {self.round} on {split} split")
 
-        # Get the federation validation dataset
-        fed_val_dataset = self.federation_val_data.get_val_dataset()
+        saved_splits_images = {} 
+        for split,node_data in self.server_node_data_splits.items():
+            if split == 'val':
+                fed_dataset = node_data.val_dataset
+            if split == 'test':
+                fed_dataset = node_data.test_dataset
+            if split == 'train':
+                fed_dataset = node_data.train_dataset
 
-        if fed_val_dataset is None or len(fed_val_dataset) == 0:
-            print("Warning: Federation validation dataset is empty")
-            return None
+            if fed_dataset is None or len(fed_dataset) == 0:
+                print(f"Warning: Federation {split} dataset is empty")
+                return None
 
-        # Ensure output directory exists
-        if not os.path.exists(self.images_output_dir):
-            try:
-                os.makedirs(self.images_output_dir)
-            except FileExistsError:
-                pass
+            # Ensure output directory exists
+            if not os.path.exists(self.images_output_dir):
+                try:
+                    os.makedirs(self.images_output_dir)
+                except FileExistsError:
+                    pass
 
-        # Ensure global model and adapters are on the correct device
-        self.global_model.to(self.device)
+            self._move_to_gpu(self.device, models=['adapter', 'ast'])
 
-        # Create dataloader for the federation validation dataset
-        from torch.utils.data import DataLoader
-        dataloader = DataLoader(fed_val_dataset, batch_size=len(fed_val_dataset), shuffle=False)
+            # Create dataloader for the federation dataset
+            from torch.utils.data import DataLoader
+            dataloader = DataLoader(fed_dataset, batch_size=len(fed_dataset), shuffle=False)
 
-        generated_images = []
-        embeddings = {}
-        embeddings['class_name'] = []
-        for module_name in self.global_adapters.keys():
-            embeddings[module_name] = []
-
-        text_embs = []
-
-
-        with torch.no_grad():
-            for batch_idx, samples in enumerate(dataloader):
-                # Move audio data to device
-                if 'audio' in samples and isinstance(samples['audio'], torch.Tensor):
-                    audio_data = samples['audio'].to(self.device)
-                else:
-                    print("Warning: Audio data not found in federation validation batch")
-                    continue
-
-                # Extract audio embeddings using the global model
-                if isinstance(audio_data, torch.Tensor):
-                    audio_data_np = audio_data.to('cpu').numpy()
-
-                audio_inputs = self.global_model.ast_feature_extractor(
-                    audio_data_np,
-                    sampling_rate=16000,
-                    return_tensors="pt",
-                    padding=True
-                ).input_values.to(self.device, self.global_model.torch_dtype)
-
-                self.global_model.ast_transformer.eval()
-                audio_embeddings = self.global_model.ast_transformer(audio_inputs).last_hidden_state
-
-                for module_name, adapter_module in self.global_adapters.items():
-                    adapter_module.eval()
-                    adapter_module.to(self.device)
-                    adapted_embeddings = adapter_module(audio_embeddings)
-                    embeddings[module_name].extend(adapted_embeddings)
-
-                embeddings['class_name'].extend(samples['class_name'])
-                if hasattr(fed_val_dataset, 'text_embs'):
-                    text_embs.extend(fed_val_dataset.text_embs)
-
-            # Generate images from adapted embeddings
+            generated_images = []
+            embeddings = {}
+            embeddings['class_name'] = []
             for module_name in self.global_adapters.keys():
-                embeddings[module_name] = torch.stack(embeddings[module_name], dim=0)
+                embeddings[module_name] = []
 
-            if self.optimize_memory_usage:
-                self.global_model.diffusion_model.to(self.diffusion_device)
+            text_embs = []
 
-            if len(text_embs):
-                generated_images = self.generate_images_from_diffusion(embeddings, base_embeddings=text_embs)
-            else:
-                generated_images = self.generate_images_from_diffusion(embeddings)
 
-            saved_images = self.save_generated_images(generated_images, "server", embeddings)
+            with torch.no_grad():
+                for batch_idx, samples in enumerate(dataloader):
+                    # Move audio data to device
+                    if 'audio' in samples and isinstance(samples['audio'], torch.Tensor):
+                        audio_data = samples['audio'].to(self.device)
+                    else:
+                        print(f"Warning: Audio data not found in federation {split} batch")
+                        continue
 
-            if self.optimize_memory_usage:
-                self.global_model.diffusion_model.to('cpu')
+                    # Extract audio embeddings using the global model
+                    # Skip if AST not initialized (using pretrained generators)
+                    if self.global_model.ast_model is None or self.global_model.ast_feature_extractor is None:
+                        print(f"Warning: AST model not initialized (using pretrained generators), skipping audio processing")
+                        continue
 
-            print(f"Generated and saved {len(generated_images)} global images using aggregated adapters")
+                    if isinstance(audio_data, torch.Tensor):
+                        audio_data_np = audio_data.to('cpu').numpy()
 
-        return saved_images
+                    audio_inputs = self.global_model.ast_feature_extractor(
+                        audio_data_np,
+                        sampling_rate=16000,
+                        return_tensors="pt",
+                        padding=True
+                    ).input_values.to(self.device, self.global_model.torch_dtype)
+
+                    self.global_model.ast_model.eval()
+                    audio_embeddings = self.global_model.ast_model(audio_inputs).last_hidden_state
+
+                    for module_name, adapter_module in self.global_adapters.items():
+                        adapter_module.eval()
+                        adapter_module = adapter_module.to(self.device)
+                        adapted_embeddings = adapter_module(audio_embeddings)
+                        embeddings[module_name].extend(adapted_embeddings)
+
+                    embeddings['class_name'].extend(samples['class_name'])
+                    if hasattr(fed_dataset, 'text_embs'):
+                        text_embs.extend(fed_dataset.text_embs)
+
+                # Generate images from adapted embeddings
+                for module_name in self.global_adapters.keys():
+                    embeddings[module_name] = torch.stack(embeddings[module_name], dim=0)
+
+                self._move_to_gpu(self.diffusion_device, models=['diffusion']) 
+
+                if len(text_embs):
+                    generated_images = self.generate_images_from_diffusion(embeddings, base_embeddings=text_embs)
+                else:
+                    generated_images = self.generate_images_from_diffusion(embeddings)
+
+                saved_splits_images |= self.save_generated_images(generated_images, "server", embeddings, suffix=split)
+
+                self._move_to_cpu(models=['diffusion', 'adapter', 'ast'])
+
+                print(f"Generated and saved {len(generated_images)} global images using aggregated adapters")
+
+        return saved_splits_images
 
     def create_clients(self, clientObj):
         config = self.args.json_config if hasattr(self.args, 'json_config') else None 
@@ -2194,26 +3797,73 @@ class FedA2V(FedRewind):
                 audio_embedding_file_loaded = False
                 selected_classes = getattr(node_config, 'selected_classes', None)
                 excluded_classes = getattr(node_config, 'excluded_classes', None)
+                # Support both new name (num_samples_per_class) and old name (num_samples) for backward compatibility
+                num_samples_per_class = node_config.get('num_samples_per_class', node_config.get('num_samples', 0))
+
+                # Get federated split parameters
+                node_split_id = getattr(node_config, 'node_split_id', None)
+                samples_per_node = getattr(node_config, 'samples_per_node', None)
+                node_split_seed = getattr(node_config, 'node_split_seed', 42)
+
+                train_ratio = 0.8 if getattr(node_config, 'train_ratio', 0.8) is None else getattr(node_config, 'train_ratio', 0.8)
+                val_ratio = 0.1 if getattr(node_config, 'val_ratio', 0.1) == None else getattr(node_config, 'val_ratio', 0.1)
+                test_ratio = 1.0 - train_ratio - val_ratio
+
                 node_dataset = VEGASDataset(
                     selected_classes=selected_classes,
                     excluded_classes=excluded_classes,
-                    use_saved_audio_embeddings=self.use_saved_audio_embeddings
+                    num_samples_per_class=num_samples_per_class,
+                    test_ratio=test_ratio,
+                    train_ratio=train_ratio,
+                    val_ratio=val_ratio,
+                    node_split_id=node_split_id,
+                    samples_per_node=samples_per_node,
+                    node_split_seed=node_split_seed,
+                    use_saved_audio_embeddings=self.use_saved_audio_embeddings,
+                    enable_ast_cache=True,  # Enable AST cache
+                    ast_cache_dir="/home/lpala/fedgfe/dataset/VEGAS.cache"  # Centralized cache directory
                 )
 
-                for client in self.clients:
-                    if client.dataset == "VEGAS":
-                        if isinstance(client.node_data.train_dataset, torch.utils.data.Subset):
-                            dataset = client.node_data.train_dataset.dataset
-                        else:
-                            dataset = client.node_data.train_dataset
-                        if isinstance(dataset, VEGASDataset) and dataset.audio_embs_from_file is not None:
-                            audio_embedding_file_loaded = True
-                            node_dataset.audio_embs_from_file = dataset.audio_embs_from_file
-                            break
+                # Try to load AST embeddings from cache first
+                ast_cache_loaded = False
+                if self.use_saved_audio_embeddings:
+                    # AST cache configuration - should match how embeddings are extracted
+                    ast_sample_rate = 16000
+                    ast_duration = 5.0
+                    ast_model_name = "ast-finetuned"  # MIT/ast-finetuned-audioset-10-10-0.4593
 
+                    logger.info(f"Attempting to load AST embeddings from cache for node {node_id}...")
+                    ast_cache_loaded = node_dataset.load_ast_embeddings_from_cache(
+                        sample_rate=ast_sample_rate,
+                        duration=ast_duration,
+                        model_name=ast_model_name
+                    )
+
+                    if ast_cache_loaded:
+                        logger.info(f"✓ AST embeddings loaded from cache for node {node_id}")
+                        node_dataset.filter_audio_embeddings_from_file()
+                        audio_embedding_file_loaded = True
+                    else:
+                        logger.info(f"AST cache not found or incompatible for node {node_id}, will try alternative methods")
+
+                # Fallback 1: Try to copy embeddings from existing clients
+                if not audio_embedding_file_loaded:
+                    for client in self.clients:
+                        if client.dataset == "VEGAS":
+                            if isinstance(client.node_data.train_dataset, torch.utils.data.Subset):
+                                dataset = client.node_data.train_dataset.dataset
+                            else:
+                                dataset = client.node_data.train_dataset
+                            if isinstance(dataset, VEGASDataset) and dataset.audio_embs_from_file is not None:
+                                audio_embedding_file_loaded = True
+                                node_dataset.audio_embs_from_file = dataset.audio_embs_from_file
+                                logger.info(f"Copied audio embeddings from existing client for node {node_id}")
+                                break
+
+                # Fallback 2: Load from legacy .pt file
                 if self.use_saved_audio_embeddings and self.audio_embedding_file_name is not None and not audio_embedding_file_loaded:
                     node_dataset.load_audio_embeddings_from_file(self.audio_embedding_file_name)
-                    logger.info(f"Loaded audio embeddings for VEGAS dataset from {self.audio_embedding_file_name}")
+                    logger.info(f"Loaded audio embeddings for VEGAS dataset from legacy file {self.audio_embedding_file_name}")
 
             elif node_config.dataset == "ESC50":
                 selected_classes = getattr(node_config, 'selected_classes', None)
@@ -2223,14 +3873,68 @@ class FedA2V(FedRewind):
                 train_folds = getattr(node_config, 'train_folds', [0, 1, 2, 3])
                 test_folds = getattr(node_config, 'test_folds', [4])
 
+                train_ratio = 0.8 if getattr(node_config, 'train_ratio', 0.8) is None else getattr(node_config, 'train_ratio', 0.8)
+                val_ratio = 0.1 if getattr(node_config, 'val_ratio', 0.1) == None else getattr(node_config, 'val_ratio', 0.1)
+                test_ratio = 1.0 - train_ratio - val_ratio
+
+
                 node_dataset = ESC50Dataset(
                     selected_classes=selected_classes,
                     excluded_classes=excluded_classes,
                     node_id=int(node_id),
-                    test_ratio=0.1,
-                    train_ratio=0.9,
-                    val_ratio=0.1
+                    test_ratio=test_ratio,
+                    train_ratio=train_ratio,
+                    val_ratio=val_ratio
                 )
+
+            elif node_config.dataset == "VGGSound":
+                audio_embedding_file = "/home/lpala/fedgfe/dataset/Audio/vggsound_audio_embs_dict.pt"
+                audio_embedding_file_loaded = False
+                selected_classes = getattr(node_config, 'selected_classes', None)
+                excluded_classes = getattr(node_config, 'excluded_classes', None)
+                # Support both new name (num_samples_per_class) and old name (num_samples) for backward compatibility
+                num_samples_per_class = node_config.get('num_samples_per_class', node_config.get('num_samples', 0))
+
+                train_ratio = 0.7 if getattr(node_config, 'train_ratio', 0.7) is None else getattr(node_config, 'train_ratio', 0.7)
+                val_ratio = 0.1 if getattr(node_config, 'val_ratio', 0.1) is None else getattr(node_config, 'val_ratio', 0.1)
+                test_ratio = 0.2 if getattr(node_config, 'test_ratio', 0.2) is None else getattr(node_config, 'test_ratio', 0.2)
+                use_official_split = getattr(node_config, 'use_official_split', True)
+
+                node_dataset = VGGSoundDataset(
+                    root_dir="/home/lpala/fedgfe/dataset/Audio/vggsound",
+                    text_embedding_file="/home/lpala/fedgfe/dataset/Audio/vggsound_text_embs_dict.pt",
+                    audio_embedding_file=audio_embedding_file if self.use_saved_audio_embeddings else None,
+                    selected_classes=selected_classes,
+                    excluded_classes=excluded_classes,
+                    num_samples_per_class=num_samples_per_class if num_samples_per_class > 0 else None,
+                    node_id=int(node_id),
+                    train_ratio=train_ratio,
+                    val_ratio=val_ratio,
+                    test_ratio=test_ratio,
+                    use_official_split=use_official_split,
+                    stratify=True,
+                    load_audio=True,
+                    load_video=False,
+                    load_image=False
+                )
+
+                # Load audio embeddings from existing clients if available
+                for client in self.clients:
+                    if client.dataset == "VGGSound":
+                        if isinstance(client.node_data.train_dataset, torch.utils.data.Subset):
+                            dataset = client.node_data.train_dataset.dataset
+                        else:
+                            dataset = client.node_data.train_dataset
+                        if isinstance(dataset, VGGSoundDataset) and hasattr(dataset, 'audio_embs') and dataset.audio_embs is not None:
+                            audio_embedding_file_loaded = True
+                            if hasattr(node_dataset, 'audio_embs'):
+                                node_dataset.audio_embs = dataset.audio_embs
+                            break
+
+                if self.use_saved_audio_embeddings and self.audio_embedding_file_name is not None and not audio_embedding_file_loaded:
+                    if hasattr(node_dataset, 'load_audio_embeddings_from_file'):
+                        node_dataset.load_audio_embeddings_from_file(self.audio_embedding_file_name)
+                        logger.info(f"Loaded audio embeddings for VGGSound dataset from {self.audio_embedding_file_name}")
 
             if node_dataset is None:
                 logger.warn("No dataset assigned to node, skipping node creation")
@@ -2245,60 +3949,107 @@ class FedA2V(FedRewind):
         
             self.clients.append(node)
 
+        # If we have multiple adapter sets, distribute them round-robin to clients
+        if hasattr(self, '_multiple_adapter_sets') and self._multiple_adapter_sets is not None:
+            print(f"\n[Server] Distributing {len(self._multiple_adapter_sets)} adapter sets to {len(self.clients)} clients in round-robin fashion")
+
+            node_list = list(self._multiple_adapter_sets.keys())
+            adapter_types = ['clip_adapter', 't5_adapter', 'clip_projection', 't5_projection']
+
+            for client_idx, client in enumerate(self.clients):
+                # Assign adapter set in round-robin
+                assigned_node_id = node_list[client_idx % len(node_list)]
+                print(f"[Server] Client {client.id} -> loading adapters from node {assigned_node_id}")
+
+                # Load each adapter type for this client
+                for adapter_name in adapter_types:
+                    checkpoint_files = sorted(self._multiple_adapter_sets[assigned_node_id][adapter_name])
+                    checkpoint_file = checkpoint_files[-1]  # Use most recent
+
+                    # Load adapter checkpoint into this specific client
+                    loaded = self._load_single_adapter_checkpoint_to_client(
+                        checkpoint_file, client, adapter_name
+                    )
+
+                    if not loaded:
+                        print(f"[Server] ⚠ Failed to load {adapter_name} for client {client.id}")
+
+     
+
         self.federation_available_classes = []
         self.federation_active_classes = []
         for node in self.clients:
             node_dataset = node.node_data.dataset if not isinstance(node.node_data.dataset, torch.utils.data.Subset) else node.node_data.dataset.dataset
             self.federation_available_classes.extend(node_dataset.available_classes)
             self.federation_available_classes.extend(node_dataset.available_classes)
-            self.federation_active_classes.extend(node_dataset.available_classes)
-            self.federation_active_classes.extend(node_dataset.available_classes)
+            self.federation_active_classes.extend(node_dataset.active_classes)
+            self.federation_active_classes.extend(node_dataset.active_classes)
 
-        # Create a merged NodeData with all validation datasets from all nodes
-        from datautils.node_dataset import NodeData
-        from torch.utils.data import ConcatDataset
 
-        # Collect all validation datasets
-        val_datasets = []
-        test_datasets = []
+        self.federation_available_classes = list(set(self.federation_available_classes))
+        self.federation_active_classes = list(set(self.federation_active_classes))
+
+        # Dictionary to store datasets for each split
+        split_datasets = {split_name: [] for split_name in self.server_test_metrics_splits}
+
+        # Mapping from split names to NodeData getter methods
+        split_getters = {
+            'train': 'get_train_dataset',
+            'val': 'get_val_dataset',
+            'test': 'get_test_dataset'
+        }
+
+        # Collect datasets from all nodes for each split
         for node in self.clients:
-            val_dataset = node.node_data.get_val_dataset()
-            test_dataset = node.node_data.get_test_dataset()
-            if val_dataset is not None:
-                val_datasets.append(val_dataset)
-            if test_dataset is not None:
-                test_datasets.append(test_dataset)
+            for split_name in self.server_test_metrics_splits:
+                if split_name in split_getters:
+                    getter_method = split_getters[split_name]
+                    if hasattr(node.node_data, getter_method):
+                        dataset = getattr(node.node_data, getter_method)()
+                        if dataset is not None:
+                            split_datasets[split_name].append(dataset)
+                else:
+                    print(f"Warning: Unknown split name '{split_name}', skipping")
 
-        # Create merged validation dataset
-        if val_datasets:
-            merged_val_dataset = ConcatDataset(val_datasets)
+        # Create NodeData instances for each split with merged datasets
+        self.server_node_data_splits = {}
 
-            # Create a NodeData instance with the merged validation dataset
-            self.federation_val_data = NodeData(
-                self.args,
-                node_id=-1,  # Use -1 to indicate this is the federation-level data
-                dataset_split_id=-1,
-                custom_val_dataset=merged_val_dataset
-            )
-            print(f"Created federation validation dataset with {len(merged_val_dataset)} samples from {len(val_datasets)} nodes")
-        else:
-            self.federation_val_data = None
-            print("Warning: No validation datasets found in any node")
-        
-        if test_datasets:
-            merged_test_dataset = ConcatDataset(test_datasets)
+        for split_name, datasets in split_datasets.items():
+            if datasets:
+                merged_dataset = ConcatDataset(datasets)
 
-            # Create a NodeData instance with the merged validation dataset
-            self.federation_test_data = NodeData(
-                self.args,
-                node_id=-1,  # Use -1 to indicate this is the federation-level data
-                dataset_split_id=-1,
-                custom_test_dataset=merged_test_dataset
-            )
-            print(f"Created federation test dataset with {len(merged_test_dataset)} samples from {len(val_datasets)} nodes")
-        else:
-            self.federationtest_data = None
-            print("Warning: No test datasets found in any node")
+                # Determine which parameter to use based on split name
+                kwargs = {
+                    'node_id': -1,  # Use -1 to indicate this is the server-level data
+                    'dataset_split_id': -1
+                }
+
+                if split_name == 'train':
+                    kwargs['custom_train_dataset'] = merged_dataset
+                elif split_name == 'val':
+                    kwargs['custom_val_dataset'] = merged_dataset
+                elif split_name == 'test':
+                    kwargs['custom_test_dataset'] = merged_dataset
+
+                # Get collate_fn from first client's node_data
+                collate_fn = None
+                if len(self.clients) > 0:
+                    collate_fn = self.clients[0].node_data.collate_fn
+
+                # Create NodeData instance
+                self.server_node_data_splits[split_name] = NodeData(
+                    self.args,
+                    collate_fn=collate_fn,
+                    **kwargs
+                )
+                print(f"Created server {split_name} dataset with {len(merged_dataset)} samples from {len(datasets)} nodes")
+            else:
+                self.server_node_data_splits[split_name] = None
+                print(f"Warning: No {split_name} datasets found in any node")
+
+        # Maintain backward compatibility with existing code
+        self.federation_val_data = self.server_node_data_splits.get('val', None)
+        self.federation_test_data = self.server_node_data_splits.get('test', None)
 
         self.federation_available_classes = list((set(self.federation_available_classes)))
         self.federation_active_classes = list((set(self.federation_active_classes)))
@@ -2309,17 +4060,350 @@ class FedA2V(FedRewind):
         self.federation_available_classes = {v: i for i, v in enumerate(self.federation_available_classes)}
         self.federation_active_classes = {v: i for i, v in enumerate(self.federation_active_classes)}
 
+        # Setup synthetic_samples_per_class based on federation dataset size
+        self._setup_synthetic_samples_count_for_federation()
+
+        # Load generator checkpoints after clients are created and federation classes are collected
+        if self.use_generator and self.generator_load_checkpoint:
+            logger.info("Loading generator checkpoints now that federation classes are available **TEMPORARY DISABLED**")
+            # success = False
+            success = self.load_generator_checkpoint()
+            if success:
+                logger.info("Successfully loaded generator checkpoint")
+                # Assign generators to global_model after loading
+                self.global_model.generators_dict = self.prompt_generators if hasattr(self, 'prompt_generators') else None
+
+                # If shared_generator_in_only_mode is active, also set prompt_generator references
+                if self.shared_generator_in_only_mode and self.generator_only_mode:
+                    if hasattr(self, 'prompt_generator') and self.prompt_generator is not None:
+                        self.global_model.prompt_generator = self.prompt_generator
+                        logger.info("Set unified prompt_generator in global_model for shared access")
+                    if hasattr(self, 'prompt_generator_clip') and self.prompt_generator_clip is not None:
+                        self.global_model.prompt_generator_clip = self.prompt_generator_clip
+                        logger.info("Set prompt_generator_clip in global_model for shared access")
+                    if hasattr(self, 'prompt_generator_t5') and self.prompt_generator_t5 is not None:
+                        self.global_model.prompt_generator_t5 = self.prompt_generator_t5
+                        logger.info("Set prompt_generator_t5 in global_model for shared access")
+            else:
+                logger.warning("Could not load generator checkpoint, initializing from scratch")
+                self.initialize_generators()
+                # Assign generators to global_model after initialization
+                self.global_model.generators_dict = self.prompt_generators if hasattr(self, 'prompt_generators') else None
+
+            # Generate synthetic samples for all nodes after loading generators
+            logger.info("\n[Server] Generating synthetic samples for all nodes after generator loading")
+            # DEBUG: Use random tensors instead of actual generation for speed
+            self.generate_synthetic_samples_for_all_nodes()  # Original version - uncomment when done debugging
+            # self.generate_random_synthetic_samples_for_all_nodes()
+
+            # Distribute samples to nodes
+            self.distribute_synthetic_samples_to_nodes()
+
+        elif self.use_generator:
+            for client in self.clients:
+                for generator_class, generator in client.prompt_generators.items():
+                    if generator_class not in self.generators:
+                        self.generators[generator_class] = generator
+                    else:
+                        logging.warning(f"Generator class {generator_class} already exists in server generators, skipping addition from client {client.id}")
+
+
         return self.clients
 
     def set_clients(self, clientObj):
         return self.create_clients(clientObj)
+
+    def _setup_synthetic_samples_count_for_federation(self):
+        """
+        Setup the number of synthetic samples per class for the server.
+        Creates a dict structure:
+        {
+            'count': {node_id: {class_name: num_samples}},
+            node_id: {class_name: tensor}  # populated by generate_synthetic_samples_for_all_nodes
+        }
+
+        If synthetic_samples_per_class is "auto" or None, calculate it based on each node's dataset size.
+        """
+        # Create dict structure with 'count' key for the counts
+        self.synthetic_samples_per_node = {'count': {}}
+
+        # Check if synthetic_samples_per_class is set to "auto" or None
+        if self.synthetic_samples_per_class == "auto" or self.synthetic_samples_per_class is None:
+            # Calculate samples per class for each node individually
+            logger.info("[Server] Auto-calculating synthetic_samples_per_class for each node and class")
+
+            for client in self.clients:
+                node_id = client.id
+                self.synthetic_samples_per_node['count'][node_id] = {}
+
+                if hasattr(client.node_data, 'train_dataset') and client.node_data.train_dataset is not None:
+                    train_dataset = client.node_data.train_dataset
+
+                    # Get the actual dataset (unwrap Subset if needed)
+                    if isinstance(train_dataset, torch.utils.data.Subset):
+                        base_dataset = train_dataset.dataset
+                    else:
+                        base_dataset = train_dataset
+
+                    # Get classes for this node
+                    node_classes = base_dataset.active_classes if hasattr(base_dataset, 'active_classes') else []
+
+                    if node_classes:
+                        # Calculate samples per class for this node
+                        total_node_samples = len(train_dataset)
+                        num_node_classes = len(node_classes)
+                        samples_per_class = max(1, total_node_samples // num_node_classes)
+
+                        # Assign same count to all classes of this node
+                        for class_name in node_classes:
+                            self.synthetic_samples_per_node['count'][node_id][class_name] = samples_per_class
+
+                        logger.info(f"[Server] Node {node_id}: {samples_per_class} synthetic samples/class "
+                                   f"(total samples: {total_node_samples}, classes: {num_node_classes})")
+                    else:
+                        logger.warning(f"[Server] Node {node_id}: No classes found, using default = 5")
+                else:
+                    logger.warning(f"[Server] Node {node_id}: No train dataset, using default = 5")
+
+            # Calculate average for fallback (if needed later)
+            total_samples = sum(
+                sum(counts.values()) for counts in self.synthetic_samples_per_node['count'].values()
+            )
+            total_classes = sum(
+                len(counts) for counts in self.synthetic_samples_per_node['count'].values()
+            )
+
+            if total_classes > 0:
+                avg_samples_per_class = max(1, total_samples // total_classes)
+                self.synthetic_samples_per_class = avg_samples_per_class
+                logger.info(f"[Server] Average synthetic_samples_per_class = {avg_samples_per_class}")
+            else:
+                self.synthetic_samples_per_class = 5
+                logger.info(f"[Server] Could not determine dataset size, using default = 5")
+
+        else:
+            # Explicit value provided in configuration - use same for all nodes/classes
+            logger.info(f"[Server] Using configured synthetic_samples_per_class = {self.synthetic_samples_per_class}")
+
+            for client in self.clients:
+                node_id = client.id
+                self.synthetic_samples_per_node['count'][node_id] = {}
+
+                # Get classes for this node
+                if hasattr(client.node_data, 'dataset'):
+                    dataset = client.node_data.dataset
+                    if isinstance(dataset, torch.utils.data.Subset):
+                        dataset = dataset.dataset
+
+                    node_classes = dataset.available_classes if hasattr(dataset, 'available_classes') else []
+
+                    # Assign configured count to all classes
+                    for class_name in node_classes:
+                        self.synthetic_samples_per_node['count'][node_id][class_name] = self.synthetic_samples_per_class
+
+            logger.info(f"[Server] Will generate {self.synthetic_samples_per_class} synthetic samples for each class")
+
+    def generate_synthetic_samples_for_all_nodes(self):
+        """
+        Generate synthetic samples for ALL nodes, considering each node's classes.
+
+        Stores samples directly in self.synthetic_samples_per_node[node_id][class_name].
+        Uses self.synthetic_samples_per_node['count'][node_id][class_name] for sample counts.
+
+        Structure after generation:
+        {
+            'count': {node_id: {class_name: num_samples}},
+            node_id: {class_name: tensor(num_samples, seq_len, 768)}
+        }
+        """
+        if not hasattr(self, 'prompt_generators') or not self.prompt_generators:
+            logger.warning("[Server] No generators available, cannot generate synthetic samples")
+            return
+
+        if not hasattr(self, 'clients') or not self.clients:
+            logger.warning("[Server] No clients available, cannot generate synthetic samples")
+            return
+
+        logger.info(f"\n{'='*80}")
+        logger.info(f"[Server] Generating synthetic samples for all {len(self.clients)} nodes")
+        logger.info(f"{'='*80}")
+
+        # Get target sequence length for generation
+        target_seq_len = getattr(self, 'generator_output_sequence_length', None)
+        training_seq_len = getattr(self, 'generator_training_sequence_length', 4)
+        seq_info = f"[{target_seq_len if target_seq_len else training_seq_len}, 768]"
+
+        total_samples_generated = 0
+        total_classes_processed = 0
+
+        # Generate samples for each node using info from 'count' dict
+        if 'count' not in self.synthetic_samples_per_node:
+            logger.error("[Server] 'count' key not found in synthetic_samples_per_node")
+            return
+
+        for node_id, classes_dict in self.synthetic_samples_per_node['count'].items():
+            logger.info(f"\n[Server] Generating samples for Node {node_id} ({len(classes_dict)} classes): {list(classes_dict.keys())}")
+
+            # Initialize node entry in synthetic_samples_per_node
+            self.synthetic_samples_per_node[node_id] = {}
+
+            node_generated = 0
+            node_missing = 0
+
+            # Generate samples for each class of this node
+            for class_name, num_samples_for_class in classes_dict.items():
+                if class_name not in self.prompt_generators:
+                    logger.warning(f"  ✗ No generator for class '{class_name}'")
+                    node_missing += 1
+                    continue
+
+                generator = self.prompt_generators[class_name]
+                generator.eval()
+
+                with torch.no_grad():
+                    try:
+                        # Generate samples on CPU (generators are kept on CPU for memory efficiency)
+                        synthetic_audio_embs = generator.sample(
+                            num_samples=num_samples_for_class,
+                            device='cpu',
+                            target_sequence_length=target_seq_len
+                        )
+
+                        # Store directly in self.synthetic_samples_per_node[node_id][class_name]
+                        self.synthetic_samples_per_node[node_id][class_name] = synthetic_audio_embs
+                        node_generated += 1
+                        total_samples_generated += num_samples_for_class
+                        logger.info(f"  ✓ Generated {num_samples_for_class} samples for '{class_name}' {seq_info}")
+
+                    except Exception as e:
+                        logger.error(f"  ✗ Error generating samples for class '{class_name}': {e}")
+                        node_missing += 1
+
+            total_classes_processed += node_generated
+            logger.info(f"[Server] Node {node_id} summary: {node_generated} classes generated, {node_missing} missing")
+
+        # Count actual nodes (excluding 'count' key)
+        num_nodes = len([k for k in self.synthetic_samples_per_node.keys() if k != 'count'])
+
+        logger.info(f"\n{'='*80}")
+        logger.info(f"[Server] Generation complete:")
+        logger.info(f"  - Nodes: {num_nodes}")
+        logger.info(f"  - Total classes processed: {total_classes_processed}")
+        logger.info(f"  - Total samples generated: {total_samples_generated}")
+        logger.info(f"  - Sample shape: {seq_info}")
+        logger.info(f"{'='*80}\n")
+
+    def generate_random_synthetic_samples_for_all_nodes(self):
+        """
+        DEBUG VERSION: Generate RANDOM synthetic samples for ALL nodes, considering each node's classes.
+        This version creates random tensors instead of using the actual generators for faster debugging.
+
+        Stores samples directly in self.synthetic_samples_per_node[node_id][class_name].
+        Uses self.synthetic_samples_per_node['count'][node_id][class_name] for sample counts.
+
+        Structure after generation:
+        {
+            'count': {node_id: {class_name: num_samples}},
+            node_id: {class_name: tensor(num_samples, seq_len, 768)}
+        }
+        """
+        if not hasattr(self, 'clients') or not self.clients:
+            logger.warning("[Server] No clients available, cannot generate synthetic samples")
+            return
+
+        logger.info(f"\n{'='*80}")
+        logger.info(f"[Server] [DEBUG MODE] Generating RANDOM synthetic samples for all {len(self.clients)} nodes")
+        logger.info(f"{'='*80}")
+
+        # Get target sequence length for generation
+        target_seq_len = getattr(self, 'generator_output_sequence_length', None)
+        training_seq_len = getattr(self, 'generator_training_sequence_length', 4)
+        seq_len = target_seq_len if target_seq_len else training_seq_len
+        seq_info = f"[{seq_len}, 768]"
+
+        total_samples_generated = 0
+        total_classes_processed = 0
+
+        # Generate samples for each node using info from 'count' dict
+        if 'count' not in self.synthetic_samples_per_node:
+            logger.error("[Server] 'count' key not found in synthetic_samples_per_node")
+            return
+
+        for node_id, classes_dict in self.synthetic_samples_per_node['count'].items():
+            logger.info(f"\n[Server] Generating RANDOM samples for Node {node_id} ({len(classes_dict)} classes): {list(classes_dict.keys())}")
+
+            # Initialize node entry in synthetic_samples_per_node
+            self.synthetic_samples_per_node[node_id] = {}
+
+            node_generated = 0
+
+            # Generate samples for each class of this node
+            for class_name, num_samples_for_class in classes_dict.items():
+                # Generate random tensors with shape [num_samples, seq_len, 768]
+                synthetic_audio_embs = torch.randn(num_samples_for_class, seq_len, 768)
+
+                # Store directly in self.synthetic_samples_per_node[node_id][class_name]
+                self.synthetic_samples_per_node[node_id][class_name] = synthetic_audio_embs
+                node_generated += 1
+                total_samples_generated += num_samples_for_class
+                logger.info(f"  ✓ Generated {num_samples_for_class} RANDOM samples for '{class_name}' {seq_info}")
+
+            total_classes_processed += node_generated
+            logger.info(f"[Server] Node {node_id} summary: {node_generated} classes generated")
+
+        # Count actual nodes (excluding 'count' key)
+        num_nodes = len([k for k in self.synthetic_samples_per_node.keys() if k != 'count'])
+
+        logger.info(f"\n{'='*80}")
+        logger.info(f"[Server] [DEBUG MODE] Random generation complete:")
+        logger.info(f"  - Nodes: {num_nodes}")
+        logger.info(f"  - Total classes processed: {total_classes_processed}")
+        logger.info(f"  - Total RANDOM samples generated: {total_samples_generated}")
+        logger.info(f"  - Sample shape: {seq_info}")
+        logger.info(f"{'='*80}\n")
+
+    def distribute_synthetic_samples_to_nodes(self):
+        """
+        Distribute the generated synthetic samples to their respective nodes.
+
+        Reads from self.synthetic_samples_per_node[node_id] and assigns to client.server_synthetic_samples
+        """
+        if not hasattr(self, 'synthetic_samples_per_node'):
+            logger.warning("[Server] No synthetic_samples_per_node available")
+            return
+
+        # Count nodes (exclude 'count' key)
+        node_ids = [k for k in self.synthetic_samples_per_node.keys() if k != 'count']
+
+        if not node_ids:
+            logger.warning("[Server] No synthetic samples to distribute")
+            return
+
+        logger.info(f"[Server] Distributing synthetic samples to {len(node_ids)} nodes")
+
+        for client in self.clients:
+            node_id = client.id
+
+            if node_id not in self.synthetic_samples_per_node or node_id == 'count':
+                logger.warning(f"[Server] No synthetic samples for Node {node_id}")
+                continue
+
+            # Assign synthetic samples to the client
+            client.server_synthetic_samples = self.synthetic_samples_per_node[node_id]
+
+            num_classes = len(client.server_synthetic_samples)
+            total_samples = sum(samples.shape[0] for samples in client.server_synthetic_samples.values())
+
+            logger.info(f"[Server] → Node {node_id}: {num_classes} classes, {total_samples} total samples")
+
+        logger.info(f"[Server] Synthetic sample distribution complete\n")
 
     def define_metrics(self):
         wandb.define_metric(f"round")
 
         self.metrics_path = "server/"
         if self.global_model is not None:
-            self.global_model.define_metrics(metrics_path=self.metrics_path)
+            self.global_model.define_metrics( metrics_path=self.metrics_path, train_splits = self.server_train_metrics_splits, test_splits=self.server_test_metrics_splits )
 
         for client in self.clients:
             client.define_metrics()
@@ -2335,6 +4419,9 @@ class FedA2V(FedRewind):
                 metric_path = f"train/{self.metrics_path}{prefix}{metric_name}{suffix}"
                 # metric_path = f"train/{self.metrics_path}a2v_{prefix}{metric_name}{suffix}"
             elif metrics.phase == NodeMetric.Phase.TEST:
+                metric_path = f"test/{self.metrics_path}{prefix}{metric_name}{suffix}"
+                # metric_path = f"test/{self.metrics_path}a2v_{prefix}{metric_name}{suffix}"
+            elif metrics.phase == NodeMetric.Phase.VALIDATE:
                 metric_path = f"test/{self.metrics_path}{prefix}{metric_name}{suffix}"
                 # metric_path = f"test/{self.metrics_path}a2v_{prefix}{metric_name}{suffix}"
             metric_value = metrics[metric_name]['mean']
@@ -2379,9 +4466,16 @@ class FedA2V(FedRewind):
             print(f"**Federation average train loss: {avg_train_loss:.4f}")
 
     def train_metrics(self):
-        """Calculate training metrics for Audio2Visual clients."""
-        # Skip in generator-only training mode
-        if self.generator_training_mode:
+        """
+        Calculate training metrics for Audio2Visual clients.
+        Uses training dataset for metrics computation.
+
+        Returns:
+            Dictionary mapping client IDs to their training metrics
+        """
+        # Skip if adapters are not being trained
+        if not self.train_adapters:
+            print("[Server] Skipping train_metrics: adapters not being trained (train_adapters=False)")
             return {}
 
         nodes_train_metrics = {}
@@ -2398,11 +4492,33 @@ class FedA2V(FedRewind):
 
         return nodes_train_metrics
 
-    def test_metrics(self, standalone=False):
-        """Calculate test metrics for Audio2Visual clients."""
-        # Skip in generator-only training mode
-        if self.generator_training_mode:
+    def test_metrics(self, standalone=None):
+        """
+        Calculate test metrics for Audio2Visual clients using test dataset.
+        Test is performed only when adapters are being trained.
+
+        Args:
+            standalone: If True, each client tests only on itself.
+                       If None (default), automatically determined:
+                       - True if adapter_aggregation_mode == 'none' (no aggregation)
+                       - False otherwise (with aggregation, cross-client testing)
+
+        Returns:
+            Dictionary mapping client IDs to their test metrics
+        """
+        # Skip test if adapters are not being trained
+        # This ensures test set is only used when adapters are actually learning
+        if not self.train_adapters:
+            print("[Server] Skipping test_metrics: adapters not being trained (train_adapters=False)")
             return {}
+
+        # Auto-determine standalone mode based on aggregation configuration
+        if standalone is None:
+            standalone = (self.adapter_aggregation_mode == 'none')
+            if standalone:
+                print("[Server] No adapter aggregation configured: testing each node on its own test set only")
+            else:
+                print(f"[Server] Adapter aggregation mode '{self.adapter_aggregation_mode}': performing cross-client testing")
 
         test_clients_stats = {}
 
@@ -2417,7 +4533,10 @@ class FedA2V(FedRewind):
             if client_index < len(self.clients) - 1:
                 self.clients[client_index + 1].node_data.load_test_data(self.args.batch_size)
 
-            test_clients = self.clients if not standalone else [c]
+            # Determine which clients to test on
+            # If standalone: only test on self
+            # If cross-client: test on all clients
+            test_clients = [c] if standalone else self.clients
 
             for t in test_clients:
                 if c.node_data.test_dataset == None:
@@ -2440,28 +4559,32 @@ class FedA2V(FedRewind):
         return test_clients_stats
 
     def round_train_metrics(self, client, split='train'):
-        """Calculate round training metrics for a client."""
 
-        client._move_to_gpu(self.device)
         train_metric = client.train_metrics(split=split)
-        client._move_to_cpu()
 
         node_loss_aggregated = train_metric['text_loss']['mean'] if 'text_loss' in train_metric else 0.0
         round_loss = node_loss_aggregated
-        # self.data_log({f'train/node_{client.id}/a2v_round_train_loss': round_loss, "round": self.round})
         logger.debug(f"Node {client.id} round train loss: {round_loss}")
         
         return train_metric
 
     def round_test_metrics(self, node, split='test'):
-        node._move_to_gpu(self.device)
+
         metrics = node.test_metrics(use_generated_images=True, generation_split=split)
-        node._move_to_cpu()
         return metrics
     
-    def _move_to_device(self, device):
-        self.global_model.to(device)
-        self.global_model.zero_shot_model.model.to(device)
+    def _move_to_device(self, device, models=['adapter', 'diffusion', 'zeroshot', 'ast']):
+        if 'adapter' in models:
+            self.global_model = self.global_model.to(device)
+
+        if 'zeroshot' in models:
+            self.global_model.zero_shot_model.model = self.global_model.zero_shot_model.model.to(device)
+
+        if 'diffusion' in models:
+            self.global_model.diffusion_model = self.global_model.diffusion_model.to(device)
+
+        if 'ast' in models and self.global_model.ast_model is not None:
+            self.global_model.ast_model = self.global_model.ast_model.to(device)
 
         # Move optimizer state if needed
         if hasattr(self, 'global_optimizers') and self.global_optimizers is not None:
@@ -2469,15 +4592,32 @@ class FedA2V(FedRewind):
                 if isinstance(optimizer, torch.optim.AdamW):
                     move_optimizer_state(optimizer, device)
 
-    def _move_to_gpu(self, device):
+        # Move generators if they exist
+        if 'generator' in models and hasattr(self, 'prompt_generator') and self.prompt_generator is not None:
+            self.prompt_generator = self.prompt_generator.to(device)
+
+        if 'generator' in models and hasattr(self, 'prompt_generator_clip') and self.prompt_generator_clip is not None:
+            self.prompt_generator_clip = self.prompt_generator_clip.to(device)
+
+        if 'generator' in models and hasattr(self, 'prompt_generator_t5') and self.prompt_generator_t5 is not None:
+            self.prompt_generator_t5 = self.prompt_generator_t5.to(device)
+
+        # Move generator optimizer if it exists
+        if hasattr(self, 'generator_optimizer') and self.generator_optimizer is not None:
+            move_optimizer_state(self.generator_optimizer, device)
+
+        torch.cuda.empty_cache()
+
+
+    def _move_to_gpu(self, device, models=['adapter', 'diffusion', 'zeroshot', 'ast']):
         if self.optimize_memory_usage or self.round <= 1:
             logger.debug(f"Server moving to GPU: {device}")
-            self._move_to_device(device)
+            self._move_to_device(device, models=models)
 
-    def _move_to_cpu(self):
-        if self.optimize_memory_usage or self.round <= 1:
+    def _move_to_cpu(self, models=['adapter', 'diffusion', 'zeroshot', 'ast']):
+        if self.optimize_memory_usage:
             logger.debug(f"Server moving to CPU for memory optimization")
-            self._move_to_device('cpu')
+            self._move_to_device('cpu', models=models)
 
 @torch.no_grad()
 def move_optimizer_state(optimizer, device):
@@ -2489,8 +4629,6 @@ def move_optimizer_state(optimizer, device):
             for k, v in list(st.items()):
                 if torch.is_tensor(v):
                     st[k] = v.to(device)
-    torch.cuda.empty_cache()
-
 
 def load_images_with_class_from_path(images_path, device='cuda', filter_round=None, use_last_round=False,
                                       filter_node=None, include_train=True, include_test=True,
@@ -2671,3 +4809,28 @@ def prepare_for_metrics(data_by_class):
     all_images = torch.cat(all_images, dim=0)
 
     return all_images, all_class_names, all_filenames
+
+def audio_embeddings_dataset_cache( samples, outputs, dataloader = None):
+        audio_embeddings_batch = outputs['audio_embeddings']
+        file_ids = samples.get('file_id', None)
+        classes = samples.get('class_name', 'unknown')
+
+        if dataloader == None:
+            train_dataset = self.node_data.train_dataset
+        else:
+            train_dataset = dataloader.dataset
+        
+        if hasattr(train_dataset, 'dataset'):
+            base_dataset = train_dataset.dataset
+        else:
+            base_dataset = train_dataset
+        if file_ids is not None:
+
+            #  audio_embs se non esiste
+            if not hasattr(base_dataset, 'audio_embs') or base_dataset.audio_embs is None:
+                base_dataset.audio_embs = {}
+
+            for file_id, class_name, audio_emb in zip(file_ids,classes,audio_embeddings_batch):
+                file_index = f'{file_id}:{class_name}'
+                base_dataset.audio_embs[file_index] = audio_emb.detach().cpu().to(self.model.device)
+        logger.debug(f"Node {self.id}: stored {len(file_ids)} audio embeddings int dataset  {len(base_dataset.audio_embs)})")

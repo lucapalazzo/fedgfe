@@ -1,0 +1,71 @@
+{
+  "experiment": {
+    "goal": "VEGAS-1N-AllClasses-Training",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 1,
+    "global_rounds": 20,
+    "local_epochs": 1,
+    "join_ratio": 1.0,
+    "eval_gap": 1,
+    "diffusion_type": "flux",
+    "model_aggregation": "none",
+    "use_saved_audio_embeddings": false
+  },
+  "feda2v": {
+    "generate_nodes_images_frequency": 0,
+    "generate_global_images_frequency": 0,
+    "images_output_dir": "vegas_1n_all_classes_output",
+    "global_model_train": false,
+    "global_model_train_epochs": 0,
+    "save_generated_images_splits": ["val", "test"],
+    "generation_split_for_metrics": ["train"],
+    "nodes_test_metrics_splits": ["test"],
+    "nodes_train_metrics_splits": ["train"],
+    "server_test_metrics_splits": ["val"],
+    "server_train_metrics_splits": ["train"],
+    "adapter_aggregation_mode": "none",
+    "train_adapters": false,
+    "use_generator": false,
+    "generator_training_mode": false,
+    "optimize_memory_usage": true
+  },
+  "nodes": {
+    "0": {
+      "dataset": "VEGAS",
+      "_comment": "Single node with all VEGAS classes - no selected_classes filter",
+      "diffusion_type": "flux"
+    }
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false,
+    "embedding_size": 768,
+    "patch_size": 16
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.0001,
+    "batch_size": 16,
+    "weight_decay": 0.0001,
+    "momentum": 0.9,
+    "learning_rate_schedule": false
+  },
+  "dataset": {
+    "name": "VEGAS",
+    "path": "./data",
+    "train_ratio": 0.7,
+    "val_ratio": 0.15,
+    "test_ratio": 0.15,
+    "stratify": true
+  },
+  "wandb": {
+    "disabled": false
+  }
+}

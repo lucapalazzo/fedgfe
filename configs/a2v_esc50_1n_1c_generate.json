@@ -19,6 +19,7 @@
     "use_saved_audio_embeddings": false
   },
   "feda2v": {
+    "train_adapters": true,
     "generate_nodes_images_frequency": 1,
     "generate_global_images_frequency": 0,
     "generate_low_memomy_footprint": true,
@@ -34,7 +35,7 @@
     "audio_embedding_file_name": null,
     "images_output_dir": "esc50-1n-1c",
     "save_generated_images_splits": ["val", "test", "train"],
-    "generation_split_for_metrics": "train"
+    "generation_split_for_metrics": ["train", "val", "test"]
   },
   "nodes": {
     "0": {

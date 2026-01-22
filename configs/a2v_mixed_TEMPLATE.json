@@ -1,0 +1,95 @@
+{
+  "_comment_template": "Template for mixed ESC50-VEGAS configurations. Replace PLACEHOLDER values.",
+  "experiment": {
+    "goal": "test",
+    "device": "cuda",
+    "device_id": "0",
+    "runs": 1,
+    "seed": 42,
+    "use_balooning": false,
+    "optimize_memory_usage": false
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "num_clients": 2,
+    "_comment_num_clients": "MUST MATCH number of nodes below",
+    "global_rounds": 20,
+    "local_epochs": 1,
+    "eval_gap": 10,
+    "diffusion_type": "flux",
+    "model_aggregation": "none",
+    "use_saved_audio_embeddings": false
+  },
+  "feda2v": {
+    "generate_nodes_images_frequency": 1,
+    "generate_global_images_frequency": 0,
+    "generate_low_memomy_footprint": true,
+    "adapter_aggregation_mode": "avg",
+    "global_model_train": true,
+    "global_model_train_from_nodes_adapters": false,
+    "global_model_train_from_generator": true,
+    "global_model_train_from_nodes_audio_embeddings": false,
+    "global_model_train_epochs": 5,
+    "use_generator": true,
+    "generator_type": "vae",
+    "store_audio_embeddings": false,
+    "audio_embedding_file_name": null,
+    "images_output_dir": "PLACEHOLDER_output_directory"
+  },
+  "nodes": {
+    "_comment_nodes": "Configure each node with different datasets",
+    "0": {
+      "dataset": "ESC50",
+      "_comment_dataset": "ESC50 or VEGAS",
+      "selected_classes": ["PLACEHOLDER_esc50_class"],
+      "_available_esc50_classes": "dog, rooster, pig, cow, frog, cat, hen, insects, sheep, crow, rain, sea_waves, crackling_fire, etc.",
+      "diffusion_type": "flux",
+      "train_ratio": 0.7,
+      "_comment_train_ratio": "Optional: 0.7 = 70% training",
+      "val_ratio": 0.15,
+      "_comment_val_ratio": "Optional: 0.15 = 15% validation",
+      "test_ratio": 0.15,
+      "_comment_test_ratio": "Optional: 0.15 = 15% test",
+      "stratify": true,
+      "_comment_stratify": "Optional: use stratified sampling"
+    },
+    "1": {
+      "dataset": "VEGAS",
+      "selected_classes": ["PLACEHOLDER_vegas_class"],
+      "_available_vegas_classes": "baby_cry, chainsaw, dog, drum, fireworks, helicopter, printer, rail_transport, snoring, water_flowing",
+      "diffusion_type": "flux",
+      "train_ratio": 0.7,
+      "val_ratio": 0.15,
+      "test_ratio": 0.15,
+      "stratify": true
+    },
+    "_comment_add_more_nodes": "Add more nodes by copying the structure above with keys 2, 3, etc."
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+  "training": {
+    "optimizer": "AdamW",
+    "learning_rate": 0.001,
+    "batch_size": 32,
+    "weight_decay": 0.0001,
+    "momentum": 0.9
+  },
+  "dataset": {
+    "name": "MIXED",
+    "path": "./data"
+  },
+  "wandb": {
+    "disabled": true
+  },
+  "_instructions": {
+    "step_1": "Replace PLACEHOLDER values with your desired configuration",
+    "step_2": "Set num_clients to match number of nodes",
+    "step_3": "Choose classes from available lists",
+    "step_4": "Adjust train/val/test ratios if needed (must sum to 1.0)",
+    "step_5": "Save with a descriptive name (e.g., a2v_mixed_dog_baby_2n.json)",
+    "step_6": "Run with: python main.py --config configs/your_config.json"
+  }
+}

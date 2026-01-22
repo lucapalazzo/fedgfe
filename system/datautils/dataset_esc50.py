@@ -244,14 +244,21 @@ class ESC50Dataset(Dataset):
         self.samples = self._load_samples()
 
     def to(self, device: torch.device):
+        """
+        Set the target device for the dataset.
+        NOTE: We do NOT move data to GPU here to prevent memory leaks.
+        Data is moved batch-by-batch by the DataLoader during training.
+        """
         self.device = device
-        for sample in self.samples:
-            if 'text_emb' in sample and sample['text_emb'] is not None:
-                sample['text_emb'] = sample['text_emb'].to(device)
-            if 'audio_emb' in sample and sample['audio_emb'] is not None:
-                sample['audio_emb'] = sample['audio_emb'].to(device)
-            if 'audio' in sample and sample['audio'] is not None:
-                sample['audio'] = sample['audio'].to(device)
+        # MEMORY LEAK FIX: Do NOT move samples to GPU in bulk
+        # The DataLoader will move individual batches to GPU as needed
+        # for sample in self.samples:
+        #     if 'text_emb' in sample and sample['text_emb'] is not None:
+        #         sample['text_emb'] = sample['text_emb'].to(device)
+        #     if 'audio_emb' in sample and sample['audio_emb'] is not None:
+        #         sample['audio_emb'] = sample['audio_emb'].to(device)
+        #     if 'audio' in sample and sample['audio'] is not None:
+        #         sample['audio'] = sample['audio'].to(device)
         return self
 
     def get_text_embeddings ( self, class_name ):
@@ -311,7 +318,17 @@ class ESC50Dataset(Dataset):
         return processed if processed else None
 
     def _filter_classes(self) -> Dict[str, int]:
-        """Filter classes based on selection and exclusion."""
+        """
+        Filter classes based on selection and exclusion.
+
+        IMPORTANT: Labels are NOT remapped - original CLASS_LABELS indices are preserved.
+        This ensures consistency across federated nodes and with conditional generators.
+
+        Example:
+            CLASS_LABELS = {'dog': 0, 'rooster': 1, 'pig': 2, 'cow': 3, ...}
+            selected_classes = ['pig', 'cow']
+            Result: {'pig': 2, 'cow': 3}  # Original labels preserved, not remapped to [0, 1]
+        """
         active_classes = dict(self.CLASS_LABELS)
 
         # Apply selection filter
@@ -324,9 +341,9 @@ class ESC50Dataset(Dataset):
             active_classes = {cls: label for cls, label in active_classes.items()
                             if cls not in self.excluded_classes}
 
-        # Remap labels to be contiguous starting from 0
-        sorted_classes = sorted(active_classes.keys())
-        active_classes = {cls: idx for idx, cls in enumerate(sorted_classes)}
+        # DO NOT remap labels - preserve original CLASS_LABELS indices
+        # This is critical for federated learning where multiple nodes with different
+        # class selections must use consistent label spaces
 
         return active_classes
 
@@ -508,6 +525,11 @@ class ESC50Dataset(Dataset):
 
         Uses scikit-learn's train_test_split for stratified sampling.
         Supports custom train_ratio, val_ratio, test_ratio (default 70-10-20).
+
+        Notes:
+        - train split is always present
+        - val split is optional (val_ratio can be 0)
+        - test split is optional (test_ratio can be 0)
         """
         if not samples:
             return samples
@@ -518,53 +540,81 @@ class ESC50Dataset(Dataset):
         # Extract labels for stratification
         labels = [sample['class_label'] for sample in samples]
 
+        # Validate and clean ratios to avoid floating point errors
+        # sklearn requires test_size in range (0.0, 1.0) or None
+        epsilon = 1e-6  # Tolerance for floating point comparison
+
+        # Clamp ratios to valid range [0.0, 1.0]
+        test_ratio_clean = max(0.0, min(1.0, self.test_ratio))
+        val_ratio_clean = max(0.0, min(1.0, self.val_ratio))
+        train_ratio_clean = max(0.0, min(1.0, self.train_ratio))
+
+        # If test_ratio is effectively zero (< epsilon), treat as no test split
+        has_test_split = test_ratio_clean >= epsilon
+        has_val_split = val_ratio_clean >= epsilon
+
         if self.stratify:
             # Stratified split using sklearn with custom ratios
             if self.split in ['train', 'val']:
                 # First split: train+val vs test using test_ratio
-                if (self.test_ratio > 0):
+                if has_test_split:
                     train_val_samples, test_samples = train_test_split(
                         samples,
-                        test_size=self.test_ratio,
+                        test_size=test_ratio_clean,
                         stratify=labels if self.stratify else None,
                         random_state=random_state
                     )
                 else:
+                    # No test split - all samples go to train+val
                     train_val_samples = samples
                     test_samples = []
 
                 # If we need validation split
-                if self.val_ratio > 0 and not (self.use_folds and self.val_folds):
+                if has_val_split and not (self.use_folds and self.val_folds):
                     # Second split: train vs val
                     train_val_labels = [s['class_label'] for s in train_val_samples]
                     # Calculate val size relative to train_val set
                     # val_ratio is relative to total, so we need to adjust
-                    val_size_relative = self.val_ratio / (self.train_ratio + self.val_ratio)
+                    total_train_val = train_ratio_clean + val_ratio_clean
+                    if total_train_val > epsilon:
+                        val_size_relative = val_ratio_clean / total_train_val
+                        # Ensure val_size_relative is in valid range
+                        val_size_relative = max(epsilon, min(1.0 - epsilon, val_size_relative))
 
-                    train_samples, val_samples = train_test_split(
-                        train_val_samples,
-                        test_size=val_size_relative,
-                        stratify=train_val_labels if self.stratify else None,
-                        random_state=random_state
-                    )
+                        train_samples, val_samples = train_test_split(
+                            train_val_samples,
+                            test_size=val_size_relative,
+                            stratify=train_val_labels if self.stratify else None,
+                            random_state=random_state
+                        )
 
-                    if self.split == 'train':
-                        return train_samples
-                    elif self.split == 'val':
-                        return val_samples
+                        if self.split == 'train':
+                            return train_samples
+                        elif self.split == 'val':
+                            return val_samples
+                    else:
+                        # Invalid ratios, return all samples for train
+                        if self.split == 'train':
+                            return train_val_samples
+                        elif self.split == 'val':
+                            return []
                 else:
                     # No validation split needed
                     if self.split == 'train':
                         return train_val_samples
+                    elif self.split == 'val':
+                        # Val requested but val_ratio is 0
+                        return []
 
             elif self.split == 'test':
                 # Split to get test set using test_ratio
-                if (self.test_ratio == 0):
+                if not has_test_split:
+                    # No test split configured
                     return []
-                
+
                 _, test_samples = train_test_split(
                     samples,
-                    test_size=self.test_ratio,
+                    test_size=test_ratio_clean,
                     stratify=labels if self.stratify else None,
                     random_state=random_state
                 )
@@ -588,25 +638,32 @@ class ESC50Dataset(Dataset):
                 cls_samples = sorted(cls_samples, key=lambda x: x['file_id'])
                 rng.shuffle(cls_samples)
 
-                if self.val_ratio > 0 and not (self.use_folds and self.val_folds):
+                if has_val_split and not (self.use_folds and self.val_folds):
                     # Three-way split: train / val / test using custom ratios
-                    n_train = int(len(cls_samples) * self.train_ratio)
-                    n_val = int(len(cls_samples) * self.val_ratio)
+                    n_train = int(len(cls_samples) * train_ratio_clean)
+                    n_val = int(len(cls_samples) * val_ratio_clean)
 
                     if self.split == 'train':
                         split_samples.extend(cls_samples[:n_train])
                     elif self.split == 'val':
                         split_samples.extend(cls_samples[n_train:n_train + n_val])
                     elif self.split == 'test':
-                        split_samples.extend(cls_samples[n_train + n_val:])
+                        if has_test_split:
+                            split_samples.extend(cls_samples[n_train + n_val:])
+                        # else: return empty list for test when test_ratio=0
                 else:
                     # Two-way split: train / test using custom ratios
-                    n_train = int(len(cls_samples) * self.train_ratio)
+                    n_train = int(len(cls_samples) * train_ratio_clean)
 
                     if self.split == 'train':
                         split_samples.extend(cls_samples[:n_train])
+                    elif self.split == 'val':
+                        # Val requested but val_ratio is 0
+                        pass  # Return empty split_samples
                     elif self.split == 'test':
-                        split_samples.extend(cls_samples[n_train:])
+                        if has_test_split:
+                            split_samples.extend(cls_samples[n_train:])
+                        # else: return empty list for test when test_ratio=0
 
             return split_samples
 
@@ -725,8 +782,43 @@ class ESC50Dataset(Dataset):
         return list(self.active_classes.values())
 
     def get_num_classes(self) -> int:
-        """Get number of active classes."""
+        """
+        Get number of active classes.
+
+        NOTE: This returns the COUNT of active classes, not the maximum label value.
+        For the maximum label index needed for model output dimensions, use get_max_class_label().
+
+        Example:
+            selected_classes = ['pig', 'cow']  # labels 2, 3
+            get_num_classes() -> 2 (count of classes)
+            get_max_class_label() -> 3 (max label value)
+        """
         return len(self.active_classes)
+
+    def get_max_class_label(self) -> int:
+        """
+        Get the maximum class label value in active classes.
+
+        This is useful for determining model output dimensions when labels are not remapped.
+        Since ESC-50 preserves original CLASS_LABELS indices, this may differ from get_num_classes().
+
+        Returns:
+            Maximum label value, or -1 if no active classes
+
+        Example:
+            selected_classes = ['pig', 'cow']  # original labels: pig=2, cow=3
+            get_max_class_label() -> 3
+
+            all_classes (50 classes total)
+            get_max_class_label() -> 49
+        """
+        if not self.active_classes:
+            return -1
+        return max(self.active_classes.values())
+
+    def get_collate_fn(self):
+        return None
+        return _esc50_collate_fn
 
     def get_samples_per_class(self) -> Dict[str, int]:
         """Get number of samples per class."""
@@ -838,21 +930,27 @@ def create_esc50_dataloader(dataset,
 def _esc50_collate_fn(batch):
     """Custom collate function for ESC-50 batch processing."""
     # Stack tensors
+
     audio = torch.stack([item['audio'] for item in batch])
-    image = torch.stack([item['image'] for item in batch])
     labels = torch.stack([item['label'] for item in batch])
+
+    # Stack image if available
+    if 'image' in batch[0]:
+        image = torch.stack([item['image'] for item in batch])
+    else:
+        image = None
 
     # Stack text embeddings if available
     if 'text_emb' in batch[0]:
-        text_embs = torch.stack([item['text_emb'] for item in batch])
+        text_embs = [item['text_emb'] for item in batch]
     else:
         text_embs = None
 
     # Stack audio embeddings if available
     if 'audio_emb' in batch[0]:
-        audio_embs = torch.stack([item['audio_emb'] for item in batch])
+        audio_emb = torch.stack([item['audio_emb'] for item in batch])
     else:
-        audio_embs = None
+        audio_emb = None
 
     # Collect metadata
     metadata = {
@@ -865,15 +963,21 @@ def _esc50_collate_fn(batch):
 
     output = {
         'audio': audio,
-        'image': image,
         'labels': labels,
-        'metadata': metadata
+        'metadata': metadata,
+        # Add commonly accessed fields at top level for easy access
+        'class_name': metadata['class_names'],
+        'file_id': metadata['file_ids'],
+        'audio_filename': [item['audio_filename'] for item in batch]
     }
 
-    if text_embs is not None:
-        output['text_embs'] = text_embs
+    if image is not None:
+        output['image'] = image
 
-    if audio_embs is not None:
-        output['audio_embs'] = audio_embs
+    if text_embs is not None:
+        output['text_emb'] = text_embs
+
+    if audio_emb is not None:
+        output['audio_emb'] = audio_emb
 
     return output

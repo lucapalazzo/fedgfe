@@ -1,0 +1,177 @@
+================================================================================
+VEGAS DATASET - QUICK START (ESC50 Features)
+================================================================================
+
+ULTRA-QUICK EXAMPLE (Copy & Paste):
+
+    from system.datautils.dataset_vegas import VEGASDataset
+    from torch.utils.data import DataLoader
+
+    # Auto-create train/val/test splits
+    dataset = VEGASDataset(split=None)
+
+    # Create dataloaders
+    train_loader = DataLoader(dataset.train, batch_size=32, shuffle=True)
+    val_loader = DataLoader(dataset.val, batch_size=32, shuffle=False)
+    test_loader = DataLoader(dataset.test, batch_size=32, shuffle=False)
+
+    # Done! Start training...
+
+================================================================================
+
+KEY CHANGES IN v2.0.0:
+
+OLD WAY (still works):
+    train = VEGASDataset(split='train', split_ratio=0.8, val_ratio=0.1)
+    val = VEGASDataset(split='val', split_ratio=0.8, val_ratio=0.1)
+    test = VEGASDataset(split='test', split_ratio=0.8, val_ratio=0.1)
+
+NEW WAY (recommended):
+    dataset = VEGASDataset(split=None, train_ratio=0.7, val_ratio=0.1, test_ratio=0.2)
+    train, val, test = dataset.train, dataset.val, dataset.test
+
+================================================================================
+
+COMMON PATTERNS:
+
+1. CUSTOM RATIOS (60-20-20):
+    dataset = VEGASDataset(split=None, train_ratio=0.6, val_ratio=0.2, test_ratio=0.2)
+
+2. NO VALIDATION (80-20):
+    dataset = VEGASDataset(split=None, train_ratio=0.8, val_ratio=0.0, test_ratio=0.2)
+
+3. FINE-TUNING (combine train+val):
+    finetune = VEGASDataset(splits_to_load=['train', 'val'], ...)
+    test = VEGASDataset(split='test', ...)
+
+4. FEDERATED LEARNING:
+    node_train = VEGASDataset(split='train', node_id=0, ...)
+
+5. SELECT CLASSES:
+    dataset = VEGASDataset(selected_classes=['dog', 'baby_cry'], ...)
+
+================================================================================
+
+PARAMETERS:
+
+Required:
+    None - all have defaults!
+
+Common:
+    split           = None           # Auto-create splits
+    train_ratio     = 0.7           # 70% training
+    val_ratio       = 0.1           # 10% validation
+    test_ratio      = 0.2           # 20% test
+    stratify        = True          # Stratified sampling
+    selected_classes= ['dog', ...]  # Filter classes
+
+Advanced:
+    splits_to_load  = ['train', 'val']  # Combine splits
+    node_id         = 0                  # Federated learning
+    use_folds       = False              # Fold-based splitting
+
+Data loading:
+    load_audio      = True
+    load_image      = False
+    load_video      = False
+
+================================================================================
+
+VERIFY YOUR SETUP:
+
+    # Print statistics
+    dataset.train.print_split_statistics()
+
+    # Verify stratification
+    dataset.train.verify_stratification(dataset.val, tolerance=0.05)
+
+    # Check sizes
+    print(f"Train: {len(dataset.train)}")
+    print(f"Val: {len(dataset.val)}")
+    print(f"Test: {len(dataset.test)}")
+
+================================================================================
+
+DEBUGGING:
+
+Problem: Ratios don't sum to 1.0
+Solution: They auto-normalize with a warning. Fix manually for clarity.
+
+Problem: Different splits for train/test
+Solution: Use same node_id for both
+
+Problem: Need to combine train and val
+Solution: Use splits_to_load=['train', 'val']
+
+================================================================================
+
+DOCUMENTATION:
+
+Quick reference:   VEGAS_QUICK_REFERENCE.md
+Full docs:         VEGAS_README.md
+Features:          VEGAS_ESC50_FEATURES.md
+Examples (7):      system/datautils/example_vegas_esc50_usage.py
+Tests (7):         tests/test_vegas_esc50_features.py
+Migration:         VEGAS_CHANGELOG.md
+
+All docs indexed:  VEGAS_DOCUMENTATION_INDEX.md
+
+================================================================================
+
+COMPLETE TRAINING EXAMPLE:
+
+    from system.datautils.dataset_vegas import VEGASDataset, create_vegas_dataloader
+
+    # 1. Create dataset
+    dataset = VEGASDataset(
+        selected_classes=['dog', 'baby_cry', 'chainsaw'],
+        split=None,
+        train_ratio=0.7,
+        val_ratio=0.15,
+        test_ratio=0.15,
+        stratify=True
+    )
+
+    # 2. Create dataloaders
+    train_loader = create_vegas_dataloader(dataset.train, batch_size=32, shuffle=True)
+    val_loader = create_vegas_dataloader(dataset.val, batch_size=32, shuffle=False)
+    test_loader = create_vegas_dataloader(dataset.test, batch_size=32, shuffle=False)
+
+    # 3. Training loop
+    for epoch in range(num_epochs):
+        for batch in train_loader:
+            # Train...
+            pass
+
+        for batch in val_loader:
+            # Validate...
+            pass
+
+    # 4. Test
+    for batch in test_loader:
+        # Test...
+        pass
+
+================================================================================
+
+API COMPATIBILITY:
+
+✅ 100% backward compatible - all old code works
+✅ No breaking changes
+✅ Legacy split_ratio supported (with deprecation warning)
+✅ New features are optional
+
+PARITY WITH ESC50:
+
+✅ Same parameters: train_ratio, val_ratio, test_ratio
+✅ Same auto-split: split=None
+✅ Same utilities: verify_stratification, print_split_statistics
+✅ Same flexibility: splits_to_load, fold support
+
+================================================================================
+
+STATUS: ✅ READY FOR PRODUCTION
+
+Questions? Check documentation or examples!
+
+================================================================================

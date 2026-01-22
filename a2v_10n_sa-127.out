@@ -1,0 +1,1340 @@
+Wed Jan 21 11:33:37 PM UTC 2026
+==========================================
+Step 1/3: SA - No Aggregation
+==========================================
+_CudaDeviceProperties(name='NVIDIA H100 80GB HBM3', major=9, minor=0, total_memory=81089MB, multi_processor_count=132, uuid=1eeb6a7d-acce-e170-a127-51b5967e81ed, L2_cache_size=50MB)
+0 0
+
+Applied default for experiment.goal: test
+Applied default for experiment.device: cuda
+Applied default for experiment.device_id: 0
+Applied default for experiment.runs: 1
+Applied default for experiment.seed: -1
+Applied default for experiment.optimize_memory: False
+Applied default for experiment.debug: False
+Applied default for federation.join_ratio: 1.0
+Applied default for federation.generate_images_frequency: 0
+Applied default for model.num_classes: 10
+Applied default for model.embedding_size: 768
+Applied default for model.patch_size: 16
+Applied default for training.momentum: 0.9
+Applied default for training.learning_rate_schedule: False
+Applied default for dataset.image_size: -1
+Applied default for dataset.transform: False
+Applied default for dataset.partition: pat
+Applied default for dataset.dir_alpha: 0.1
+Applied default for dataset.balance: False
+Applied default for rewind.epochs: 0
+Applied default for rewind.ratio: 0.0
+Applied default for rewind.interval: 0
+Applied default for rewind.strategy: none
+Applied default for fedgfe.nodes_datasets: cifar10
+Applied default for fedgfe.nodes_downstream_tasks: none
+Applied default for fedgfe.nodes_pretext_tasks: 
+Applied default for fedgfe.nodes_training_sequence: both
+Applied default for fedgfe.cls_token_only: False
+Applied default for fedgfe.limit_samples_number: 0
+Applied default for feda2v.diffusion_type: sd
+Applied default for feda2v.use_act_loss: False
+Applied default for feda2v.use_text_loss: True
+Applied default for feda2v.use_image_loss: False
+Applied default for feda2v.audio_model_name: MIT/ast-finetuned-audioset-10-10-0.4593
+Applied default for feda2v.image_model_name: google/vit-base-patch16-224-in21k
+Applied default for feda2v.img_pipe_name: runwayml/stable-diffusion-v1-5
+Applied default for feda2v.img_lcm_lora_id: latent-consistency/lcm-lora-sdv1-5
+Applied default for feda2v.audio_pipe_name: cvssp/audioldm-l-full
+Applied default for feda2v.steps: 1000
+Applied default for feda2v.mode: train_nodata
+Applied default for feda2v.ablation_type: only_t5
+Applied default for feda2v.controllability_type: volume
+Applied default for feda2v.target_img_path: data/img
+Applied default for feda2v.img_out_path: exp/img
+Applied default for feda2v.audio_out_path: exp/audio
+Applied default for feda2v.class_to_activate: 8
+Applied default for feda2v.single_class: False
+Applied default for feda2v.checkpoint_name: best_model
+Applied default for feda2v.project: sinestesia
+Applied default for feda2v.entity: ctlab-team
+Applied default for feda2v.wandb_mode: offline
+Applied default for feda2v.global_model_train_from_generator: False
+Applied default for feda2v.global_model_train_from_nodes_audio_embeddings: False
+Applied default for feda2v.global_model_train_inputs: none
+Applied default for feda2v.adapter_aggregation_method: none
+Applied default for feda2v.text_losses_summed: False
+Applied default for feda2v.compute_global_mean_from_class_means: False
+Applied default for feda2v.generation_split_for_metrics: ['test', 'val']
+Applied default for feda2v.synthetic_samples_per_class: auto
+Applied default for feda2v.reset_generator_on_class_change: True
+Applied default for feda2v.shared_generator_in_only_mode: True
+Applied default for nodes.0.dataset_split: all
+Applied default for nodes.0.pretext_tasks: []
+Applied default for nodes.0.task_type: classification
+Applied default for nodes.0.balance_classes: False
+Applied default for nodes.0.use_folds: False
+Applied default for nodes.0.train_folds: [0, 1, 2, 3]
+Applied default for nodes.0.test_folds: [4]
+Applied default for nodes.1.dataset_split: all
+Applied default for nodes.1.pretext_tasks: []
+Applied default for nodes.1.task_type: classification
+Applied default for nodes.1.balance_classes: False
+Applied default for nodes.1.use_folds: False
+Applied default for nodes.1.train_folds: [0, 1, 2, 3]
+Applied default for nodes.1.test_folds: [4]
+Applied default for nodes.2.dataset_split: all
+Applied default for nodes.2.pretext_tasks: []
+Applied default for nodes.2.task_type: classification
+Applied default for nodes.2.balance_classes: False
+Applied default for nodes.2.use_folds: False
+Applied default for nodes.2.train_folds: [0, 1, 2, 3]
+Applied default for nodes.2.test_folds: [4]
+Applied default for nodes.3.dataset_split: all
+Applied default for nodes.3.pretext_tasks: []
+Applied default for nodes.3.task_type: classification
+Applied default for nodes.3.balance_classes: False
+Applied default for nodes.3.use_folds: False
+Applied default for nodes.3.train_folds: [0, 1, 2, 3]
+Applied default for nodes.3.test_folds: [4]
+Applied default for nodes.4.dataset_split: all
+Applied default for nodes.4.pretext_tasks: []
+Applied default for nodes.4.task_type: classification
+Applied default for nodes.4.balance_classes: False
+Applied default for nodes.4.use_folds: False
+Applied default for nodes.4.train_folds: [0, 1, 2, 3]
+Applied default for nodes.4.test_folds: [4]
+Applied default for nodes.5.dataset_split: all
+Applied default for nodes.5.pretext_tasks: []
+Applied default for nodes.5.task_type: classification
+Applied default for nodes.5.balance_classes: False
+Applied default for nodes.5.use_folds: False
+Applied default for nodes.5.train_folds: [0, 1, 2, 3]
+Applied default for nodes.5.test_folds: [4]
+Applied default for nodes.6.dataset_split: all
+Applied default for nodes.6.pretext_tasks: []
+Applied default for nodes.6.task_type: classification
+Applied default for nodes.6.balance_classes: False
+Applied default for nodes.6.use_folds: False
+Applied default for nodes.6.train_folds: [0, 1, 2, 3]
+Applied default for nodes.6.test_folds: [4]
+Applied default for nodes.7.dataset_split: all
+Applied default for nodes.7.pretext_tasks: []
+Applied default for nodes.7.task_type: classification
+Applied default for nodes.7.balance_classes: False
+Applied default for nodes.7.use_folds: False
+Applied default for nodes.7.train_folds: [0, 1, 2, 3]
+Applied default for nodes.7.test_folds: [4]
+Applied default for nodes.8.dataset_split: all
+Applied default for nodes.8.pretext_tasks: []
+Applied default for nodes.8.task_type: classification
+Applied default for nodes.8.balance_classes: False
+Applied default for nodes.8.use_folds: False
+Applied default for nodes.8.train_folds: [0, 1, 2, 3]
+Applied default for nodes.8.test_folds: [4]
+Applied default for nodes.9.dataset_split: all
+Applied default for nodes.9.pretext_tasks: []
+Applied default for nodes.9.task_type: classification
+Applied default for nodes.9.balance_classes: False
+Applied default for nodes.9.use_folds: False
+Applied default for nodes.9.train_folds: [0, 1, 2, 3]
+Applied default for nodes.9.test_folds: [4]
+Warning: Could not map class label 'baby_cry' to numeric index
+Node 0: Selected classes ['baby_cry'] -> []
+Warning: Could not map class label 'chainsaw' to numeric index
+Node 1: Selected classes ['chainsaw'] -> []
+Warning: Could not map class label 'dog' to numeric index
+Node 2: Selected classes ['dog'] -> []
+Warning: Could not map class label 'drum' to numeric index
+Node 3: Selected classes ['drum'] -> []
+Warning: Could not map class label 'fireworks' to numeric index
+Node 4: Selected classes ['fireworks'] -> []
+Warning: Could not map class label 'helicopter' to numeric index
+Node 5: Selected classes ['helicopter'] -> []
+Warning: Could not map class label 'printer' to numeric index
+Node 6: Selected classes ['printer'] -> []
+Warning: Could not map class label 'rail_transport' to numeric index
+Node 7: Selected classes ['rail_transport'] -> []
+Warning: Could not map class label 'snoring' to numeric index
+Node 8: Selected classes ['snoring'] -> []
+Warning: Could not map class label 'water_flowing' to numeric index
+Node 9: Selected classes ['water_flowing'] -> []
+Set num_clients: 10
+Successfully loaded configuration from: configs/a2v_vegas_10n_10c_400s_sa.json
+Using nodes_tasks from config file (already processed)
+==================================================
+Algorithm: FedA2V
+Local batch size: 8
+Local epochs: 10
+Local learing rate: 0.001
+Local learing rate schedule: False
+Total number of clients: 10
+Clients join in each round: 1.0
+Clients randomly join: False
+Client drop rate: 0.0
+Client select regarding time: False
+Running times: 1
+Dataset: VEGAS
+Number of classes: 10
+Backbone: a2v
+Using device: cuda
+Using DP: False
+Auto break: False
+Global rounds: 20
+DLG attack: False
+Total number of new clients: 0
+Fine tuning epoches on new clients: 0
+A2V G model sd
+
+============= Running time: 0th =============
+Creating server and clients ...
+None
+Enabling wandb to progect:  FedA2V
+Finished creating server and clients.
+2026-01-21 23:33:48,997 - utils.ballooning - INFO - Initialized GPUMemoryBalloon for GPU 0
+2026-01-21 23:33:49,231 - utils.ballooning - INFO - GPU 0: Total memory: 81089 MB, Free before: 80563 MB, Target reserve: 0 MB
+2026-01-21 23:33:49,232 - utils.ballooning - INFO - GPU 0: Successfully allocated 0 MB. Free memory: 80563 MB -> 80563 MB
+2026-01-21 23:33:50,710 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - Initializing AST model: MIT/ast-finetuned-audioset-10-10-0.4593
+2026-01-21 23:33:51,554 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - AST model initialized successfully
+Started diffusion model flux
+Creating 0 Audio2Visual node from nodes_tasks configuration:, using dataset VEGAS and labels ['baby_cry']
+2026-01-21 23:33:56,458 - datautils.dataset_vegas - INFO - Auto-creating train/val/test splits (split=None)
+2026-01-21 23:33:56,458 - datautils.dataset_vegas - INFO - Creating train split...
+2026-01-21 23:33:56,603 - datautils.dataset_vegas - INFO - Node split 0 - Class baby_cry: 400 samples (requested: 400)
+2026-01-21 23:33:56,603 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:33:56,739 - datautils.dataset_vegas - INFO - Node split 0 - Class baby_cry: 400 samples (requested: 400)
+2026-01-21 23:33:56,740 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:33:56,743 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 320 samples, classes: ['baby_cry'], split: train
+2026-01-21 23:33:56,743 - datautils.dataset_vegas - INFO - Creating validation split...
+2026-01-21 23:33:56,886 - datautils.dataset_vegas - INFO - Node split 0 - Class baby_cry: 400 samples (requested: 400)
+2026-01-21 23:33:56,887 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:33:57,030 - datautils.dataset_vegas - INFO - Node split 0 - Class baby_cry: 400 samples (requested: 400)
+2026-01-21 23:33:57,030 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:33:57,034 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['baby_cry'], split: val
+2026-01-21 23:33:57,034 - datautils.dataset_vegas - INFO - Creating test split...
+2026-01-21 23:33:57,180 - datautils.dataset_vegas - INFO - Node split 0 - Class baby_cry: 400 samples (requested: 400)
+2026-01-21 23:33:57,181 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:33:57,317 - datautils.dataset_vegas - INFO - Node split 0 - Class baby_cry: 400 samples (requested: 400)
+2026-01-21 23:33:57,317 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:33:57,320 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['baby_cry'], split: test
+2026-01-21 23:33:57,320 - datautils.dataset_vegas - INFO - Auto-split created: train=320, val=40, test=40
+2026-01-21 23:33:57,453 - datautils.dataset_vegas - INFO - Node split 0 - Class baby_cry: 400 samples (requested: 400)
+2026-01-21 23:33:57,453 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:33:57,587 - datautils.dataset_vegas - INFO - Node split 0 - Class baby_cry: 400 samples (requested: 400)
+2026-01-21 23:33:57,587 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:33:57,589 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 400 samples, classes: ['baby_cry'], split: None
+Stratified split: train=320, val=40, test=40
+Trying to set schdulers but no optimizer for client  0
+2026-01-21 23:34:02,905 - flcore.clients.clientA2V - INFO - Node 0: Using global use_cls_token_only=False
+2026-01-21 23:34:03,979 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+2026-01-21 23:34:03,979 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - SKIPPING AST INITIALIZATION - Using pretrained generators mode or disabled by constructor
+2026-01-21 23:34:03,980 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+Stratified split: train=320, val=40, test=40
+[Client 0] Auto-calculated synthetic_samples_per_class = 320 (total samples: 320, classes: 1)
+Creating 1 Audio2Visual node from nodes_tasks configuration:, using dataset VEGAS and labels ['chainsaw']
+2026-01-21 23:34:11,625 - datautils.dataset_vegas - INFO - Auto-creating train/val/test splits (split=None)
+2026-01-21 23:34:11,625 - datautils.dataset_vegas - INFO - Creating train split...
+2026-01-21 23:34:11,776 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 400 samples (requested: 400)
+2026-01-21 23:34:11,776 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:11,898 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 400 samples (requested: 400)
+2026-01-21 23:34:11,899 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:11,902 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 320 samples, classes: ['chainsaw'], split: train
+2026-01-21 23:34:11,902 - datautils.dataset_vegas - INFO - Creating validation split...
+2026-01-21 23:34:12,033 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 400 samples (requested: 400)
+2026-01-21 23:34:12,033 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:12,156 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 400 samples (requested: 400)
+2026-01-21 23:34:12,156 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:12,159 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['chainsaw'], split: val
+2026-01-21 23:34:12,159 - datautils.dataset_vegas - INFO - Creating test split...
+2026-01-21 23:34:12,290 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 400 samples (requested: 400)
+2026-01-21 23:34:12,290 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:12,411 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 400 samples (requested: 400)
+2026-01-21 23:34:12,411 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:12,413 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['chainsaw'], split: test
+2026-01-21 23:34:12,413 - datautils.dataset_vegas - INFO - Auto-split created: train=320, val=40, test=40
+2026-01-21 23:34:12,533 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 400 samples (requested: 400)
+2026-01-21 23:34:12,533 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:12,653 - datautils.dataset_vegas - INFO - Node split 0 - Class chainsaw: 400 samples (requested: 400)
+2026-01-21 23:34:12,654 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:12,655 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 400 samples, classes: ['chainsaw'], split: None
+Stratified split: train=320, val=40, test=40
+Trying to set schdulers but no optimizer for client  1
+2026-01-21 23:34:17,863 - flcore.clients.clientA2V - INFO - Node 1: Using global use_cls_token_only=False
+2026-01-21 23:34:18,885 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+2026-01-21 23:34:18,886 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - SKIPPING AST INITIALIZATION - Using pretrained generators mode or disabled by constructor
+2026-01-21 23:34:18,886 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+Stratified split: train=320, val=40, test=40
+[Client 1] Auto-calculated synthetic_samples_per_class = 320 (total samples: 320, classes: 1)
+Creating 2 Audio2Visual node from nodes_tasks configuration:, using dataset VEGAS and labels ['dog']
+2026-01-21 23:34:25,753 - datautils.dataset_vegas - INFO - Auto-creating train/val/test splits (split=None)
+2026-01-21 23:34:25,753 - datautils.dataset_vegas - INFO - Creating train split...
+2026-01-21 23:34:25,945 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 400 samples (requested: 400)
+2026-01-21 23:34:25,945 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:26,131 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 400 samples (requested: 400)
+2026-01-21 23:34:26,131 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:26,135 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 320 samples, classes: ['dog'], split: train
+2026-01-21 23:34:26,135 - datautils.dataset_vegas - INFO - Creating validation split...
+2026-01-21 23:34:26,330 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 400 samples (requested: 400)
+2026-01-21 23:34:26,330 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:26,515 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 400 samples (requested: 400)
+2026-01-21 23:34:26,516 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:26,519 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['dog'], split: val
+2026-01-21 23:34:26,520 - datautils.dataset_vegas - INFO - Creating test split...
+2026-01-21 23:34:26,713 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 400 samples (requested: 400)
+2026-01-21 23:34:26,714 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:26,898 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 400 samples (requested: 400)
+2026-01-21 23:34:26,898 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:26,901 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['dog'], split: test
+2026-01-21 23:34:26,901 - datautils.dataset_vegas - INFO - Auto-split created: train=320, val=40, test=40
+2026-01-21 23:34:27,083 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 400 samples (requested: 400)
+2026-01-21 23:34:27,084 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:27,267 - datautils.dataset_vegas - INFO - Node split 0 - Class dog: 400 samples (requested: 400)
+2026-01-21 23:34:27,267 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:27,269 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 400 samples, classes: ['dog'], split: None
+Stratified split: train=320, val=40, test=40
+Trying to set schdulers but no optimizer for client  2
+2026-01-21 23:34:32,822 - flcore.clients.clientA2V - INFO - Node 2: Using global use_cls_token_only=False
+2026-01-21 23:34:33,869 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+2026-01-21 23:34:33,870 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - SKIPPING AST INITIALIZATION - Using pretrained generators mode or disabled by constructor
+2026-01-21 23:34:33,870 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+Stratified split: train=320, val=40, test=40
+[Client 2] Auto-calculated synthetic_samples_per_class = 320 (total samples: 320, classes: 1)
+Creating 3 Audio2Visual node from nodes_tasks configuration:, using dataset VEGAS and labels ['drum']
+2026-01-21 23:34:41,122 - datautils.dataset_vegas - INFO - Auto-creating train/val/test splits (split=None)
+2026-01-21 23:34:41,122 - datautils.dataset_vegas - INFO - Creating train split...
+2026-01-21 23:34:41,299 - datautils.dataset_vegas - INFO - Node split 0 - Class drum: 400 samples (requested: 400)
+2026-01-21 23:34:41,299 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:41,470 - datautils.dataset_vegas - INFO - Node split 0 - Class drum: 400 samples (requested: 400)
+2026-01-21 23:34:41,470 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:41,474 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 320 samples, classes: ['drum'], split: train
+2026-01-21 23:34:41,474 - datautils.dataset_vegas - INFO - Creating validation split...
+2026-01-21 23:34:41,654 - datautils.dataset_vegas - INFO - Node split 0 - Class drum: 400 samples (requested: 400)
+2026-01-21 23:34:41,654 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:41,826 - datautils.dataset_vegas - INFO - Node split 0 - Class drum: 400 samples (requested: 400)
+2026-01-21 23:34:41,826 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:41,830 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['drum'], split: val
+2026-01-21 23:34:41,830 - datautils.dataset_vegas - INFO - Creating test split...
+2026-01-21 23:34:42,008 - datautils.dataset_vegas - INFO - Node split 0 - Class drum: 400 samples (requested: 400)
+2026-01-21 23:34:42,009 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:42,179 - datautils.dataset_vegas - INFO - Node split 0 - Class drum: 400 samples (requested: 400)
+2026-01-21 23:34:42,179 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:42,182 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['drum'], split: test
+2026-01-21 23:34:42,182 - datautils.dataset_vegas - INFO - Auto-split created: train=320, val=40, test=40
+2026-01-21 23:34:42,349 - datautils.dataset_vegas - INFO - Node split 0 - Class drum: 400 samples (requested: 400)
+2026-01-21 23:34:42,350 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:42,519 - datautils.dataset_vegas - INFO - Node split 0 - Class drum: 400 samples (requested: 400)
+2026-01-21 23:34:42,519 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:42,521 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 400 samples, classes: ['drum'], split: None
+Stratified split: train=320, val=40, test=40
+Trying to set schdulers but no optimizer for client  3
+2026-01-21 23:34:47,991 - flcore.clients.clientA2V - INFO - Node 3: Using global use_cls_token_only=False
+2026-01-21 23:34:49,015 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+2026-01-21 23:34:49,018 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - SKIPPING AST INITIALIZATION - Using pretrained generators mode or disabled by constructor
+2026-01-21 23:34:49,019 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+Stratified split: train=320, val=40, test=40
+[Client 3] Auto-calculated synthetic_samples_per_class = 320 (total samples: 320, classes: 1)
+Creating 4 Audio2Visual node from nodes_tasks configuration:, using dataset VEGAS and labels ['fireworks']
+2026-01-21 23:34:56,195 - datautils.dataset_vegas - INFO - Auto-creating train/val/test splits (split=None)
+2026-01-21 23:34:56,196 - datautils.dataset_vegas - INFO - Creating train split...
+2026-01-21 23:34:56,406 - datautils.dataset_vegas - INFO - Node split 0 - Class fireworks: 400 samples (requested: 400)
+2026-01-21 23:34:56,406 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:56,609 - datautils.dataset_vegas - INFO - Node split 0 - Class fireworks: 400 samples (requested: 400)
+2026-01-21 23:34:56,609 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:56,613 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 320 samples, classes: ['fireworks'], split: train
+2026-01-21 23:34:56,613 - datautils.dataset_vegas - INFO - Creating validation split...
+2026-01-21 23:34:56,826 - datautils.dataset_vegas - INFO - Node split 0 - Class fireworks: 400 samples (requested: 400)
+2026-01-21 23:34:56,826 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:57,028 - datautils.dataset_vegas - INFO - Node split 0 - Class fireworks: 400 samples (requested: 400)
+2026-01-21 23:34:57,029 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:57,032 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['fireworks'], split: val
+2026-01-21 23:34:57,033 - datautils.dataset_vegas - INFO - Creating test split...
+2026-01-21 23:34:57,241 - datautils.dataset_vegas - INFO - Node split 0 - Class fireworks: 400 samples (requested: 400)
+2026-01-21 23:34:57,241 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:57,443 - datautils.dataset_vegas - INFO - Node split 0 - Class fireworks: 400 samples (requested: 400)
+2026-01-21 23:34:57,444 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:57,446 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['fireworks'], split: test
+2026-01-21 23:34:57,447 - datautils.dataset_vegas - INFO - Auto-split created: train=320, val=40, test=40
+2026-01-21 23:34:57,645 - datautils.dataset_vegas - INFO - Node split 0 - Class fireworks: 400 samples (requested: 400)
+2026-01-21 23:34:57,645 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:57,845 - datautils.dataset_vegas - INFO - Node split 0 - Class fireworks: 400 samples (requested: 400)
+2026-01-21 23:34:57,845 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:34:57,847 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 400 samples, classes: ['fireworks'], split: None
+Stratified split: train=320, val=40, test=40
+Trying to set schdulers but no optimizer for client  4
+2026-01-21 23:35:03,454 - flcore.clients.clientA2V - INFO - Node 4: Using global use_cls_token_only=False
+2026-01-21 23:35:04,468 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+2026-01-21 23:35:04,470 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - SKIPPING AST INITIALIZATION - Using pretrained generators mode or disabled by constructor
+2026-01-21 23:35:04,470 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+Stratified split: train=320, val=40, test=40
+[Client 4] Auto-calculated synthetic_samples_per_class = 320 (total samples: 320, classes: 1)
+Creating 5 Audio2Visual node from nodes_tasks configuration:, using dataset VEGAS and labels ['helicopter']
+2026-01-21 23:35:11,414 - datautils.dataset_vegas - INFO - Auto-creating train/val/test splits (split=None)
+2026-01-21 23:35:11,415 - datautils.dataset_vegas - INFO - Creating train split...
+2026-01-21 23:35:11,660 - datautils.dataset_vegas - INFO - Node split 0 - Class helicopter: 400 samples (requested: 400)
+2026-01-21 23:35:11,661 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:11,902 - datautils.dataset_vegas - INFO - Node split 0 - Class helicopter: 400 samples (requested: 400)
+2026-01-21 23:35:11,902 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:11,906 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 320 samples, classes: ['helicopter'], split: train
+2026-01-21 23:35:11,906 - datautils.dataset_vegas - INFO - Creating validation split...
+2026-01-21 23:35:12,153 - datautils.dataset_vegas - INFO - Node split 0 - Class helicopter: 400 samples (requested: 400)
+2026-01-21 23:35:12,153 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:12,392 - datautils.dataset_vegas - INFO - Node split 0 - Class helicopter: 400 samples (requested: 400)
+2026-01-21 23:35:12,392 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:12,396 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['helicopter'], split: val
+2026-01-21 23:35:12,396 - datautils.dataset_vegas - INFO - Creating test split...
+2026-01-21 23:35:12,644 - datautils.dataset_vegas - INFO - Node split 0 - Class helicopter: 400 samples (requested: 400)
+2026-01-21 23:35:12,644 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:12,883 - datautils.dataset_vegas - INFO - Node split 0 - Class helicopter: 400 samples (requested: 400)
+2026-01-21 23:35:12,883 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:12,886 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['helicopter'], split: test
+2026-01-21 23:35:12,887 - datautils.dataset_vegas - INFO - Auto-split created: train=320, val=40, test=40
+2026-01-21 23:35:13,123 - datautils.dataset_vegas - INFO - Node split 0 - Class helicopter: 400 samples (requested: 400)
+2026-01-21 23:35:13,123 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:13,359 - datautils.dataset_vegas - INFO - Node split 0 - Class helicopter: 400 samples (requested: 400)
+2026-01-21 23:35:13,360 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:13,362 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 400 samples, classes: ['helicopter'], split: None
+Stratified split: train=320, val=40, test=40
+Trying to set schdulers but no optimizer for client  5
+2026-01-21 23:35:18,678 - flcore.clients.clientA2V - INFO - Node 5: Using global use_cls_token_only=False
+2026-01-21 23:35:19,698 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+2026-01-21 23:35:19,699 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - SKIPPING AST INITIALIZATION - Using pretrained generators mode or disabled by constructor
+2026-01-21 23:35:19,699 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+Stratified split: train=320, val=40, test=40
+[Client 5] Auto-calculated synthetic_samples_per_class = 320 (total samples: 320, classes: 1)
+Creating 6 Audio2Visual node from nodes_tasks configuration:, using dataset VEGAS and labels ['printer']
+2026-01-21 23:35:26,648 - datautils.dataset_vegas - INFO - Auto-creating train/val/test splits (split=None)
+2026-01-21 23:35:26,648 - datautils.dataset_vegas - INFO - Creating train split...
+2026-01-21 23:35:26,892 - datautils.dataset_vegas - INFO - Node split 0 - Class printer: 400 samples (requested: 400)
+2026-01-21 23:35:26,893 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:27,131 - datautils.dataset_vegas - INFO - Node split 0 - Class printer: 400 samples (requested: 400)
+2026-01-21 23:35:27,131 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:27,135 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 320 samples, classes: ['printer'], split: train
+2026-01-21 23:35:27,135 - datautils.dataset_vegas - INFO - Creating validation split...
+2026-01-21 23:35:27,382 - datautils.dataset_vegas - INFO - Node split 0 - Class printer: 400 samples (requested: 400)
+2026-01-21 23:35:27,382 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:27,620 - datautils.dataset_vegas - INFO - Node split 0 - Class printer: 400 samples (requested: 400)
+2026-01-21 23:35:27,620 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:27,624 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['printer'], split: val
+2026-01-21 23:35:27,624 - datautils.dataset_vegas - INFO - Creating test split...
+2026-01-21 23:35:27,871 - datautils.dataset_vegas - INFO - Node split 0 - Class printer: 400 samples (requested: 400)
+2026-01-21 23:35:27,872 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:28,107 - datautils.dataset_vegas - INFO - Node split 0 - Class printer: 400 samples (requested: 400)
+2026-01-21 23:35:28,107 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:28,111 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['printer'], split: test
+2026-01-21 23:35:28,111 - datautils.dataset_vegas - INFO - Auto-split created: train=320, val=40, test=40
+2026-01-21 23:35:28,343 - datautils.dataset_vegas - INFO - Node split 0 - Class printer: 400 samples (requested: 400)
+2026-01-21 23:35:28,344 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:28,578 - datautils.dataset_vegas - INFO - Node split 0 - Class printer: 400 samples (requested: 400)
+2026-01-21 23:35:28,579 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:28,581 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 400 samples, classes: ['printer'], split: None
+Stratified split: train=320, val=40, test=40
+Trying to set schdulers but no optimizer for client  6
+2026-01-21 23:35:34,236 - flcore.clients.clientA2V - INFO - Node 6: Using global use_cls_token_only=False
+2026-01-21 23:35:35,270 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+2026-01-21 23:35:35,271 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - SKIPPING AST INITIALIZATION - Using pretrained generators mode or disabled by constructor
+2026-01-21 23:35:35,272 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+Stratified split: train=320, val=40, test=40
+[Client 6] Auto-calculated synthetic_samples_per_class = 320 (total samples: 320, classes: 1)
+Creating 7 Audio2Visual node from nodes_tasks configuration:, using dataset VEGAS and labels ['rail_transport']
+2026-01-21 23:35:42,216 - datautils.dataset_vegas - INFO - Auto-creating train/val/test splits (split=None)
+2026-01-21 23:35:42,216 - datautils.dataset_vegas - INFO - Creating train split...
+2026-01-21 23:35:42,434 - datautils.dataset_vegas - INFO - Node split 0 - Class rail_transport: 400 samples (requested: 400)
+2026-01-21 23:35:42,435 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:42,643 - datautils.dataset_vegas - INFO - Node split 0 - Class rail_transport: 400 samples (requested: 400)
+2026-01-21 23:35:42,644 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:42,648 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 320 samples, classes: ['rail_transport'], split: train
+2026-01-21 23:35:42,648 - datautils.dataset_vegas - INFO - Creating validation split...
+2026-01-21 23:35:42,865 - datautils.dataset_vegas - INFO - Node split 0 - Class rail_transport: 400 samples (requested: 400)
+2026-01-21 23:35:42,865 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:43,075 - datautils.dataset_vegas - INFO - Node split 0 - Class rail_transport: 400 samples (requested: 400)
+2026-01-21 23:35:43,075 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:43,079 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['rail_transport'], split: val
+2026-01-21 23:35:43,079 - datautils.dataset_vegas - INFO - Creating test split...
+2026-01-21 23:35:43,296 - datautils.dataset_vegas - INFO - Node split 0 - Class rail_transport: 400 samples (requested: 400)
+2026-01-21 23:35:43,296 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:43,504 - datautils.dataset_vegas - INFO - Node split 0 - Class rail_transport: 400 samples (requested: 400)
+2026-01-21 23:35:43,505 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:43,508 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['rail_transport'], split: test
+2026-01-21 23:35:43,508 - datautils.dataset_vegas - INFO - Auto-split created: train=320, val=40, test=40
+2026-01-21 23:35:43,713 - datautils.dataset_vegas - INFO - Node split 0 - Class rail_transport: 400 samples (requested: 400)
+2026-01-21 23:35:43,714 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:43,921 - datautils.dataset_vegas - INFO - Node split 0 - Class rail_transport: 400 samples (requested: 400)
+2026-01-21 23:35:43,922 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:43,924 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 400 samples, classes: ['rail_transport'], split: None
+Stratified split: train=320, val=40, test=40
+Trying to set schdulers but no optimizer for client  7
+2026-01-21 23:35:49,207 - flcore.clients.clientA2V - INFO - Node 7: Using global use_cls_token_only=False
+2026-01-21 23:35:50,244 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+2026-01-21 23:35:50,244 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - SKIPPING AST INITIALIZATION - Using pretrained generators mode or disabled by constructor
+2026-01-21 23:35:50,244 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+Stratified split: train=320, val=40, test=40
+[Client 7] Auto-calculated synthetic_samples_per_class = 320 (total samples: 320, classes: 1)
+Creating 8 Audio2Visual node from nodes_tasks configuration:, using dataset VEGAS and labels ['snoring']
+2026-01-21 23:35:57,065 - datautils.dataset_vegas - INFO - Auto-creating train/val/test splits (split=None)
+2026-01-21 23:35:57,065 - datautils.dataset_vegas - INFO - Creating train split...
+2026-01-21 23:35:57,211 - datautils.dataset_vegas - INFO - Node split 0 - Class snoring: 400 samples (requested: 400)
+2026-01-21 23:35:57,212 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:57,351 - datautils.dataset_vegas - INFO - Node split 0 - Class snoring: 400 samples (requested: 400)
+2026-01-21 23:35:57,352 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:57,355 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 320 samples, classes: ['snoring'], split: train
+2026-01-21 23:35:57,355 - datautils.dataset_vegas - INFO - Creating validation split...
+2026-01-21 23:35:57,503 - datautils.dataset_vegas - INFO - Node split 0 - Class snoring: 400 samples (requested: 400)
+2026-01-21 23:35:57,504 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:57,643 - datautils.dataset_vegas - INFO - Node split 0 - Class snoring: 400 samples (requested: 400)
+2026-01-21 23:35:57,644 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:57,647 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['snoring'], split: val
+2026-01-21 23:35:57,647 - datautils.dataset_vegas - INFO - Creating test split...
+2026-01-21 23:35:57,794 - datautils.dataset_vegas - INFO - Node split 0 - Class snoring: 400 samples (requested: 400)
+2026-01-21 23:35:57,794 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:57,933 - datautils.dataset_vegas - INFO - Node split 0 - Class snoring: 400 samples (requested: 400)
+2026-01-21 23:35:57,933 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:57,936 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['snoring'], split: test
+2026-01-21 23:35:57,936 - datautils.dataset_vegas - INFO - Auto-split created: train=320, val=40, test=40
+2026-01-21 23:35:58,072 - datautils.dataset_vegas - INFO - Node split 0 - Class snoring: 400 samples (requested: 400)
+2026-01-21 23:35:58,072 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:58,209 - datautils.dataset_vegas - INFO - Node split 0 - Class snoring: 400 samples (requested: 400)
+2026-01-21 23:35:58,209 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:35:58,211 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 400 samples, classes: ['snoring'], split: None
+Stratified split: train=320, val=40, test=40
+Trying to set schdulers but no optimizer for client  8
+2026-01-21 23:36:04,323 - flcore.clients.clientA2V - INFO - Node 8: Using global use_cls_token_only=False
+2026-01-21 23:36:05,337 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+2026-01-21 23:36:05,338 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - SKIPPING AST INITIALIZATION - Using pretrained generators mode or disabled by constructor
+2026-01-21 23:36:05,338 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+Stratified split: train=320, val=40, test=40
+[Client 8] Auto-calculated synthetic_samples_per_class = 320 (total samples: 320, classes: 1)
+Creating 9 Audio2Visual node from nodes_tasks configuration:, using dataset VEGAS and labels ['water_flowing']
+2026-01-21 23:36:12,936 - datautils.dataset_vegas - INFO - Auto-creating train/val/test splits (split=None)
+2026-01-21 23:36:12,936 - datautils.dataset_vegas - INFO - Creating train split...
+2026-01-21 23:36:13,202 - datautils.dataset_vegas - INFO - Node split 0 - Class water_flowing: 400 samples (requested: 400)
+2026-01-21 23:36:13,203 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:36:13,413 - datautils.dataset_vegas - INFO - Node split 0 - Class water_flowing: 400 samples (requested: 400)
+2026-01-21 23:36:13,413 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:36:13,417 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 320 samples, classes: ['water_flowing'], split: train
+2026-01-21 23:36:13,417 - datautils.dataset_vegas - INFO - Creating validation split...
+2026-01-21 23:36:13,612 - datautils.dataset_vegas - INFO - Node split 0 - Class water_flowing: 400 samples (requested: 400)
+2026-01-21 23:36:13,613 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:36:13,802 - datautils.dataset_vegas - INFO - Node split 0 - Class water_flowing: 400 samples (requested: 400)
+2026-01-21 23:36:13,802 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:36:13,806 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['water_flowing'], split: val
+2026-01-21 23:36:13,806 - datautils.dataset_vegas - INFO - Creating test split...
+2026-01-21 23:36:14,003 - datautils.dataset_vegas - INFO - Node split 0 - Class water_flowing: 400 samples (requested: 400)
+2026-01-21 23:36:14,003 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:36:14,192 - datautils.dataset_vegas - INFO - Node split 0 - Class water_flowing: 400 samples (requested: 400)
+2026-01-21 23:36:14,193 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:36:14,195 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 40 samples, classes: ['water_flowing'], split: test
+2026-01-21 23:36:14,196 - datautils.dataset_vegas - INFO - Auto-split created: train=320, val=40, test=40
+2026-01-21 23:36:14,382 - datautils.dataset_vegas - INFO - Node split 0 - Class water_flowing: 400 samples (requested: 400)
+2026-01-21 23:36:14,382 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:36:14,569 - datautils.dataset_vegas - INFO - Node split 0 - Class water_flowing: 400 samples (requested: 400)
+2026-01-21 23:36:14,570 - datautils.dataset_vegas - INFO - Node split 0 total samples after split: 400
+2026-01-21 23:36:14,571 - datautils.dataset_vegas - INFO - VEGAS Dataset initialized: 400 samples, classes: ['water_flowing'], split: None
+Stratified split: train=320, val=40, test=40
+Trying to set schdulers but no optimizer for client  9
+2026-01-21 23:36:20,426 - flcore.clients.clientA2V - INFO - Node 9: Using global use_cls_token_only=False
+2026-01-21 23:36:21,454 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+2026-01-21 23:36:21,455 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - SKIPPING AST INITIALIZATION - Using pretrained generators mode or disabled by constructor
+2026-01-21 23:36:21,455 - flcore.trainmodel.downstreamsinestesiaadapters - INFO - ================================================================================
+Stratified split: train=320, val=40, test=40
+[Client 9] Auto-calculated synthetic_samples_per_class = 320 (total samples: 320, classes: 1)
+Created server test dataset with 400 samples from 10 nodes
+2026-01-21 23:36:28,636 - flcore.servers.serverA2V - INFO - [Server] Auto-calculating synthetic_samples_per_class for each node and class
+2026-01-21 23:36:28,637 - flcore.servers.serverA2V - INFO - [Server] Node 0: 320 synthetic samples/class (total samples: 320, classes: 1)
+2026-01-21 23:36:28,637 - flcore.servers.serverA2V - INFO - [Server] Node 1: 320 synthetic samples/class (total samples: 320, classes: 1)
+2026-01-21 23:36:28,637 - flcore.servers.serverA2V - INFO - [Server] Node 2: 320 synthetic samples/class (total samples: 320, classes: 1)
+2026-01-21 23:36:28,637 - flcore.servers.serverA2V - INFO - [Server] Node 3: 320 synthetic samples/class (total samples: 320, classes: 1)
+2026-01-21 23:36:28,637 - flcore.servers.serverA2V - INFO - [Server] Node 4: 320 synthetic samples/class (total samples: 320, classes: 1)
+2026-01-21 23:36:28,637 - flcore.servers.serverA2V - INFO - [Server] Node 5: 320 synthetic samples/class (total samples: 320, classes: 1)
+2026-01-21 23:36:28,637 - flcore.servers.serverA2V - INFO - [Server] Node 6: 320 synthetic samples/class (total samples: 320, classes: 1)
+2026-01-21 23:36:28,637 - flcore.servers.serverA2V - INFO - [Server] Node 7: 320 synthetic samples/class (total samples: 320, classes: 1)
+2026-01-21 23:36:28,637 - flcore.servers.serverA2V - INFO - [Server] Node 8: 320 synthetic samples/class (total samples: 320, classes: 1)
+2026-01-21 23:36:28,637 - flcore.servers.serverA2V - INFO - [Server] Node 9: 320 synthetic samples/class (total samples: 320, classes: 1)
+2026-01-21 23:36:28,637 - flcore.servers.serverA2V - INFO - [Server] Average synthetic_samples_per_class = 320
+
+*** Client 0 dataset VEGAS
+2026-01-21 23:36:28,638 - flcore.servers.serverA2V - WARNING - Skipping dataset details for VEGASDataset to avoid long logs.
+
+*** Client 1 dataset VEGAS
+2026-01-21 23:36:28,638 - flcore.servers.serverA2V - WARNING - Skipping dataset details for VEGASDataset to avoid long logs.
+
+*** Client 2 dataset VEGAS
+2026-01-21 23:36:28,638 - flcore.servers.serverA2V - WARNING - Skipping dataset details for VEGASDataset to avoid long logs.
+
+*** Client 3 dataset VEGAS
+2026-01-21 23:36:28,638 - flcore.servers.serverA2V - WARNING - Skipping dataset details for VEGASDataset to avoid long logs.
+
+*** Client 4 dataset VEGAS
+2026-01-21 23:36:28,638 - flcore.servers.serverA2V - WARNING - Skipping dataset details for VEGASDataset to avoid long logs.
+
+*** Client 5 dataset VEGAS
+2026-01-21 23:36:28,638 - flcore.servers.serverA2V - WARNING - Skipping dataset details for VEGASDataset to avoid long logs.
+
+*** Client 6 dataset VEGAS
+2026-01-21 23:36:28,639 - flcore.servers.serverA2V - WARNING - Skipping dataset details for VEGASDataset to avoid long logs.
+
+*** Client 7 dataset VEGAS
+2026-01-21 23:36:28,639 - flcore.servers.serverA2V - WARNING - Skipping dataset details for VEGASDataset to avoid long logs.
+
+*** Client 8 dataset VEGAS
+2026-01-21 23:36:28,639 - flcore.servers.serverA2V - WARNING - Skipping dataset details for VEGASDataset to avoid long logs.
+
+*** Client 9 dataset VEGAS
+2026-01-21 23:36:28,639 - flcore.servers.serverA2V - WARNING - Skipping dataset details for VEGASDataset to avoid long logs.
+2026-01-21 23:36:28,643 - flcore.servers.serverA2V - INFO - Finished creating Audio2Visual server and clients.
+
+-------------Round number: 1-------------
+
+Evaluate Audio2Visual models
+[Server] Skipping test_metrics: adapters not being trained (train_adapters=False)
+[Server] Skipping train_metrics: adapters not being trained (train_adapters=False)
+2026-01-21 23:36:28,953 - flcore.servers.serverA2V - WARNING - === Round 1 starting hook temporally disabled ===
+Creating dataloader for train dataset for client 0 with 320 samples
+Creating dataloader for test dataset for client 0 with 40 samples
+Creating optimizer for node 0 with model optimizer AdamW and learning rate 0.001
+Creating learning rate scheduler for node 0
+Node 0: No optimizer initialized
+Node 0 training Audio2Visual model for 10 epochs
+Node 0 - Computing mean adapter outputs per class from training data
+Node 0 - Stored outputs for 0 classes, 0 adapters, 0 total samples
+
+====================================================================================================
+[Node 0] ⚠️  MEMORY GROWTH DETECTED - Round 1
+====================================================================================================
+
+📊 MEMORY SUMMARY:
+  Start:  Allocated=8.55 GB, Reserved=8.97 GB (11.3%)
+  End:    Allocated=11.37 GB, Reserved=13.18 GB (16.6%)
+  Growth: Allocated=+2.816 GB, Reserved=+4.209 GB
+
+📈 PER-EPOCH BREAKDOWN:
+Epoch    Allocated (GB)       Reserved (GB)        Δ Alloc         Δ Reserved      Avg Loss    
+-------- -------------------- -------------------- --------------- --------------- ------------
+1         11.37 GB           13.18 GB          +2.817 GB     +4.209 GB     0.5531
+2         11.37 GB           13.18 GB          +2.816 GB     +4.209 GB     0.0362
+3         11.37 GB           13.18 GB          +2.816 GB     +4.209 GB     0.0124
+4         11.37 GB           13.18 GB          +2.816 GB     +4.209 GB     0.0109
+5         11.37 GB           13.18 GB          +2.816 GB     +4.209 GB     0.0100
+6         11.37 GB           13.18 GB          +2.816 GB     +4.209 GB     0.0095
+7         11.37 GB           13.18 GB          +2.816 GB     +4.209 GB     0.0092
+8         11.37 GB           13.18 GB          +2.816 GB     +4.209 GB     0.0090
+9         11.37 GB           13.18 GB          +2.816 GB     +4.209 GB     0.0089
+10        11.37 GB           13.18 GB          +2.816 GB     +4.209 GB     0.0088
+
+  🔴 Max growth at Epoch 1: +4.209 GB reserved
+====================================================================================================
+
+
+Generating images for Node 0 using Audio2Visual model.
+Generating images for split: val
+Node 0 - Processing 5 batches from dataset...
+  Progress: 5/5 batches processed, 40 total samples
+Node 0 - ✓ Retrieved 40 audio embeddings from dataset
+Node 0 - Embedding shapes: clip: torch.Size([40, 768]), t5: torch.Size([40, 17, 4096])
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_0.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_1.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_2.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_3.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_4.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_5.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_6.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_7.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_8.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_9.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_10.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_11.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_12.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_13.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_14.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_15.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_16.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_17.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_18.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_19.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_20.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_21.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_22.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_23.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_24.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_25.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_26.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_27.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_28.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_29.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_30.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_31.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_32.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_33.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_34.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_35.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_36.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_37.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_38.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_0_10le_20gr_baby_cry_val_39.png
+✓ Cleaned up memory after val split
+Creating dataloader for train dataset for client 1 with 320 samples
+Creating dataloader for test dataset for client 1 with 40 samples
+Creating optimizer for node 1 with model optimizer AdamW and learning rate 0.001
+Creating learning rate scheduler for node 1
+Node 1: No optimizer initialized
+Node 1 training Audio2Visual model for 10 epochs
+Node 1 - Computing mean adapter outputs per class from training data
+Node 1 - Stored outputs for 0 classes, 0 adapters, 0 total samples
+
+====================================================================================================
+[Node 1] ⚠️  MEMORY GROWTH DETECTED - Round 1
+====================================================================================================
+
+📊 MEMORY SUMMARY:
+  Start:  Allocated=8.05 GB, Reserved=8.42 GB (10.6%)
+  End:    Allocated=10.81 GB, Reserved=12.68 GB (16.0%)
+  Growth: Allocated=+2.755 GB, Reserved=+4.258 GB
+
+📈 PER-EPOCH BREAKDOWN:
+Epoch    Allocated (GB)       Reserved (GB)        Δ Alloc         Δ Reserved      Avg Loss    
+-------- -------------------- -------------------- --------------- --------------- ------------
+1         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.5688
+2         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0427
+3         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0139
+4         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0124
+5         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0115
+6         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0110
+7         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0107
+8         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0105
+9         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0104
+10        10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0103
+
+  🔴 Max growth at Epoch 1: +4.258 GB reserved
+====================================================================================================
+
+
+Generating images for Node 1 using Audio2Visual model.
+Generating images for split: val
+Node 1 - Processing 5 batches from dataset...
+  Progress: 5/5 batches processed, 40 total samples
+Node 1 - ✓ Retrieved 40 audio embeddings from dataset
+Node 1 - Embedding shapes: clip: torch.Size([40, 768]), t5: torch.Size([40, 17, 4096])
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_0.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_1.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_2.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_3.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_4.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_5.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_6.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_7.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_8.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_9.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_10.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_11.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_12.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_13.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_14.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_15.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_16.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_17.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_18.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_19.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_20.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_21.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_22.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_23.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_24.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_25.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_26.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_27.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_28.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_29.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_30.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_31.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_32.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_33.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_34.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_35.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_36.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_37.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_38.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_1_10le_20gr_chainsaw_val_39.png
+✓ Cleaned up memory after val split
+Creating dataloader for train dataset for client 2 with 320 samples
+Creating dataloader for test dataset for client 2 with 40 samples
+Creating optimizer for node 2 with model optimizer AdamW and learning rate 0.001
+Creating learning rate scheduler for node 2
+Node 2: No optimizer initialized
+Node 2 training Audio2Visual model for 10 epochs
+Node 2 - Computing mean adapter outputs per class from training data
+Node 2 - Stored outputs for 0 classes, 0 adapters, 0 total samples
+
+====================================================================================================
+[Node 2] ⚠️  MEMORY GROWTH DETECTED - Round 1
+====================================================================================================
+
+📊 MEMORY SUMMARY:
+  Start:  Allocated=8.05 GB, Reserved=8.42 GB (10.6%)
+  End:    Allocated=10.81 GB, Reserved=12.68 GB (16.0%)
+  Growth: Allocated=+2.755 GB, Reserved=+4.258 GB
+
+📈 PER-EPOCH BREAKDOWN:
+Epoch    Allocated (GB)       Reserved (GB)        Δ Alloc         Δ Reserved      Avg Loss    
+-------- -------------------- -------------------- --------------- --------------- ------------
+1         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.5662
+2         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0397
+3         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0128
+4         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0113
+5         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0105
+6         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0099
+7         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0096
+8         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0094
+9         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0093
+10        10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0092
+
+  🔴 Max growth at Epoch 1: +4.258 GB reserved
+====================================================================================================
+
+
+Generating images for Node 2 using Audio2Visual model.
+Generating images for split: val
+Node 2 - Processing 5 batches from dataset...
+  Progress: 5/5 batches processed, 40 total samples
+Node 2 - ✓ Retrieved 40 audio embeddings from dataset
+Node 2 - Embedding shapes: clip: torch.Size([40, 768]), t5: torch.Size([40, 17, 4096])
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_0.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_1.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_2.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_3.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_4.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_5.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_6.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_7.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_8.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_9.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_10.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_11.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_12.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_13.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_14.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_15.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_16.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_17.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_18.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_19.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_20.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_21.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_22.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_23.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_24.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_25.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_26.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_27.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_28.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_29.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_30.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_31.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_32.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_33.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_34.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_35.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_36.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_37.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_38.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_2_10le_20gr_dog_val_39.png
+✓ Cleaned up memory after val split
+Creating dataloader for train dataset for client 3 with 320 samples
+Creating dataloader for test dataset for client 3 with 40 samples
+Creating optimizer for node 3 with model optimizer AdamW and learning rate 0.001
+Creating learning rate scheduler for node 3
+Node 3: No optimizer initialized
+Node 3 training Audio2Visual model for 10 epochs
+Node 3 - Computing mean adapter outputs per class from training data
+Node 3 - Stored outputs for 0 classes, 0 adapters, 0 total samples
+
+====================================================================================================
+[Node 3] ⚠️  MEMORY GROWTH DETECTED - Round 1
+====================================================================================================
+
+📊 MEMORY SUMMARY:
+  Start:  Allocated=8.05 GB, Reserved=8.42 GB (10.6%)
+  End:    Allocated=10.81 GB, Reserved=12.68 GB (16.0%)
+  Growth: Allocated=+2.755 GB, Reserved=+4.258 GB
+
+📈 PER-EPOCH BREAKDOWN:
+Epoch    Allocated (GB)       Reserved (GB)        Δ Alloc         Δ Reserved      Avg Loss    
+-------- -------------------- -------------------- --------------- --------------- ------------
+1         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.5939
+2         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0441
+3         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0133
+4         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0118
+5         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0109
+6         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0104
+7         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0101
+8         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0099
+9         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0097
+10        10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0097
+
+  🔴 Max growth at Epoch 1: +4.258 GB reserved
+====================================================================================================
+
+
+Generating images for Node 3 using Audio2Visual model.
+Generating images for split: val
+Node 3 - Processing 5 batches from dataset...
+  Progress: 5/5 batches processed, 40 total samples
+Node 3 - ✓ Retrieved 40 audio embeddings from dataset
+Node 3 - Embedding shapes: clip: torch.Size([40, 768]), t5: torch.Size([40, 17, 4096])
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_0.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_1.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_2.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_3.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_4.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_5.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_6.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_7.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_8.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_9.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_10.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_11.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_12.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_13.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_14.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_15.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_16.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_17.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_18.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_19.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_20.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_21.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_22.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_23.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_24.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_25.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_26.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_27.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_28.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_29.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_30.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_31.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_32.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_33.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_34.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_35.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_36.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_37.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_38.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_3_10le_20gr_drum_val_39.png
+✓ Cleaned up memory after val split
+Creating dataloader for train dataset for client 4 with 320 samples
+Creating dataloader for test dataset for client 4 with 40 samples
+Creating optimizer for node 4 with model optimizer AdamW and learning rate 0.001
+Creating learning rate scheduler for node 4
+Node 4: No optimizer initialized
+Node 4 training Audio2Visual model for 10 epochs
+Node 4 - Computing mean adapter outputs per class from training data
+Node 4 - Stored outputs for 0 classes, 0 adapters, 0 total samples
+
+====================================================================================================
+[Node 4] ⚠️  MEMORY GROWTH DETECTED - Round 1
+====================================================================================================
+
+📊 MEMORY SUMMARY:
+  Start:  Allocated=8.05 GB, Reserved=8.42 GB (10.6%)
+  End:    Allocated=10.81 GB, Reserved=12.68 GB (16.0%)
+  Growth: Allocated=+2.755 GB, Reserved=+4.258 GB
+
+📈 PER-EPOCH BREAKDOWN:
+Epoch    Allocated (GB)       Reserved (GB)        Δ Alloc         Δ Reserved      Avg Loss    
+-------- -------------------- -------------------- --------------- --------------- ------------
+1         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.5888
+2         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0401
+3         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0144
+4         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0129
+5         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0121
+6         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0115
+7         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0111
+8         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0107
+9         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0098
+10        10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0083
+
+  🔴 Max growth at Epoch 1: +4.258 GB reserved
+====================================================================================================
+
+
+Generating images for Node 4 using Audio2Visual model.
+Generating images for split: val
+Node 4 - Processing 5 batches from dataset...
+  Progress: 5/5 batches processed, 40 total samples
+Node 4 - ✓ Retrieved 40 audio embeddings from dataset
+Node 4 - Embedding shapes: clip: torch.Size([40, 768]), t5: torch.Size([40, 17, 4096])
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_0.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_1.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_2.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_3.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_4.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_5.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_6.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_7.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_8.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_9.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_10.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_11.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_12.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_13.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_14.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_15.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_16.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_17.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_18.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_19.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_20.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_21.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_22.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_23.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_24.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_25.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_26.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_27.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_28.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_29.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_30.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_31.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_32.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_33.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_34.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_35.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_36.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_37.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_38.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_4_10le_20gr_fireworks_val_39.png
+✓ Cleaned up memory after val split
+Creating dataloader for train dataset for client 5 with 320 samples
+Creating dataloader for test dataset for client 5 with 40 samples
+Creating optimizer for node 5 with model optimizer AdamW and learning rate 0.001
+Creating learning rate scheduler for node 5
+Node 5: No optimizer initialized
+Node 5 training Audio2Visual model for 10 epochs
+Node 5 - Computing mean adapter outputs per class from training data
+Node 5 - Stored outputs for 0 classes, 0 adapters, 0 total samples
+
+====================================================================================================
+[Node 5] ⚠️  MEMORY GROWTH DETECTED - Round 1
+====================================================================================================
+
+📊 MEMORY SUMMARY:
+  Start:  Allocated=8.05 GB, Reserved=8.42 GB (10.6%)
+  End:    Allocated=10.81 GB, Reserved=12.68 GB (16.0%)
+  Growth: Allocated=+2.755 GB, Reserved=+4.258 GB
+
+📈 PER-EPOCH BREAKDOWN:
+Epoch    Allocated (GB)       Reserved (GB)        Δ Alloc         Δ Reserved      Avg Loss    
+-------- -------------------- -------------------- --------------- --------------- ------------
+1         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.6550
+2         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0545
+3         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0140
+4         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0122
+5         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0113
+6         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0108
+7         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0105
+8         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0103
+9         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0102
+10        10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0101
+
+  🔴 Max growth at Epoch 1: +4.258 GB reserved
+====================================================================================================
+
+
+Generating images for Node 5 using Audio2Visual model.
+Generating images for split: val
+Node 5 - Processing 5 batches from dataset...
+  Progress: 5/5 batches processed, 40 total samples
+Node 5 - ✓ Retrieved 40 audio embeddings from dataset
+Node 5 - Embedding shapes: clip: torch.Size([40, 768]), t5: torch.Size([40, 17, 4096])
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_0.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_1.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_2.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_3.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_4.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_5.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_6.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_7.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_8.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_9.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_10.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_11.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_12.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_13.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_14.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_15.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_16.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_17.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_18.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_19.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_20.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_21.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_22.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_23.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_24.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_25.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_26.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_27.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_28.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_29.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_30.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_31.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_32.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_33.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_34.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_35.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_36.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_37.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_38.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_5_10le_20gr_helicopter_val_39.png
+✓ Cleaned up memory after val split
+Creating dataloader for train dataset for client 6 with 320 samples
+Creating dataloader for test dataset for client 6 with 40 samples
+Creating optimizer for node 6 with model optimizer AdamW and learning rate 0.001
+Creating learning rate scheduler for node 6
+Node 6: No optimizer initialized
+Node 6 training Audio2Visual model for 10 epochs
+Node 6 - Computing mean adapter outputs per class from training data
+Node 6 - Stored outputs for 0 classes, 0 adapters, 0 total samples
+
+====================================================================================================
+[Node 6] ⚠️  MEMORY GROWTH DETECTED - Round 1
+====================================================================================================
+
+📊 MEMORY SUMMARY:
+  Start:  Allocated=8.05 GB, Reserved=8.42 GB (10.6%)
+  End:    Allocated=10.81 GB, Reserved=12.68 GB (16.0%)
+  Growth: Allocated=+2.755 GB, Reserved=+4.258 GB
+
+📈 PER-EPOCH BREAKDOWN:
+Epoch    Allocated (GB)       Reserved (GB)        Δ Alloc         Δ Reserved      Avg Loss    
+-------- -------------------- -------------------- --------------- --------------- ------------
+1         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.5444
+2         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0369
+3         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0137
+4         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0121
+5         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0111
+6         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0100
+7         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0084
+8         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0075
+9         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0073
+10        10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0071
+
+  🔴 Max growth at Epoch 1: +4.258 GB reserved
+====================================================================================================
+
+
+Generating images for Node 6 using Audio2Visual model.
+Generating images for split: val
+Node 6 - Processing 5 batches from dataset...
+  Progress: 5/5 batches processed, 40 total samples
+Node 6 - ✓ Retrieved 40 audio embeddings from dataset
+Node 6 - Embedding shapes: clip: torch.Size([40, 768]), t5: torch.Size([40, 17, 4096])
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_0.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_1.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_2.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_3.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_4.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_5.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_6.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_7.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_8.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_9.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_10.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_11.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_12.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_13.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_14.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_15.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_16.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_17.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_18.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_19.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_20.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_21.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_22.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_23.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_24.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_25.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_26.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_27.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_28.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_29.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_30.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_31.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_32.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_33.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_34.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_35.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_36.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_37.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_38.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_6_10le_20gr_printer_val_39.png
+✓ Cleaned up memory after val split
+Creating dataloader for train dataset for client 7 with 320 samples
+Creating dataloader for test dataset for client 7 with 40 samples
+Creating optimizer for node 7 with model optimizer AdamW and learning rate 0.001
+Creating learning rate scheduler for node 7
+Node 7: No optimizer initialized
+Node 7 training Audio2Visual model for 10 epochs
+Node 7 - Computing mean adapter outputs per class from training data
+Node 7 - Stored outputs for 0 classes, 0 adapters, 0 total samples
+
+====================================================================================================
+[Node 7] ⚠️  MEMORY GROWTH DETECTED - Round 1
+====================================================================================================
+
+📊 MEMORY SUMMARY:
+  Start:  Allocated=8.05 GB, Reserved=8.42 GB (10.6%)
+  End:    Allocated=10.81 GB, Reserved=12.68 GB (16.0%)
+  Growth: Allocated=+2.755 GB, Reserved=+4.258 GB
+
+📈 PER-EPOCH BREAKDOWN:
+Epoch    Allocated (GB)       Reserved (GB)        Δ Alloc         Δ Reserved      Avg Loss    
+-------- -------------------- -------------------- --------------- --------------- ------------
+1         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.5564
+2         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0388
+3         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0134
+4         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0120
+5         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0111
+6         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0105
+7         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0102
+8         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0100
+9         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0099
+10        10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0098
+
+  🔴 Max growth at Epoch 1: +4.258 GB reserved
+====================================================================================================
+
+
+Generating images for Node 7 using Audio2Visual model.
+Generating images for split: val
+Node 7 - Processing 5 batches from dataset...
+  Progress: 5/5 batches processed, 40 total samples
+Node 7 - ✓ Retrieved 40 audio embeddings from dataset
+Node 7 - Embedding shapes: clip: torch.Size([40, 768]), t5: torch.Size([40, 17, 4096])
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_0.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_1.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_2.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_3.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_4.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_5.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_6.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_7.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_8.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_9.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_10.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_11.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_12.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_13.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_14.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_15.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_16.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_17.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_18.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_19.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_20.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_21.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_22.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_23.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_24.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_25.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_26.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_27.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_28.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_29.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_30.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_31.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_32.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_33.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_34.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_35.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_36.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_37.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_38.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_7_10le_20gr_rail_transport_val_39.png
+✓ Cleaned up memory after val split
+Creating dataloader for train dataset for client 8 with 320 samples
+Creating dataloader for test dataset for client 8 with 40 samples
+Creating optimizer for node 8 with model optimizer AdamW and learning rate 0.001
+Creating learning rate scheduler for node 8
+Node 8: No optimizer initialized
+Node 8 training Audio2Visual model for 10 epochs
+Node 8 - Computing mean adapter outputs per class from training data
+Node 8 - Stored outputs for 0 classes, 0 adapters, 0 total samples
+
+====================================================================================================
+[Node 8] ⚠️  MEMORY GROWTH DETECTED - Round 1
+====================================================================================================
+
+📊 MEMORY SUMMARY:
+  Start:  Allocated=8.05 GB, Reserved=8.42 GB (10.6%)
+  End:    Allocated=10.81 GB, Reserved=12.68 GB (16.0%)
+  Growth: Allocated=+2.755 GB, Reserved=+4.258 GB
+
+📈 PER-EPOCH BREAKDOWN:
+Epoch    Allocated (GB)       Reserved (GB)        Δ Alloc         Δ Reserved      Avg Loss    
+-------- -------------------- -------------------- --------------- --------------- ------------
+1         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.5611
+2         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0357
+3         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0114
+4         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0099
+5         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0090
+6         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0084
+7         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0078
+8         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0073
+9         10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0071
+10        10.81 GB           12.68 GB          +2.755 GB     +4.258 GB     0.0070
+
+  🔴 Max growth at Epoch 1: +4.258 GB reserved
+====================================================================================================
+
+
+Generating images for Node 8 using Audio2Visual model.
+Generating images for split: val
+Node 8 - Processing 5 batches from dataset...
+  Progress: 5/5 batches processed, 40 total samples
+Node 8 - ✓ Retrieved 40 audio embeddings from dataset
+Node 8 - Embedding shapes: clip: torch.Size([40, 768]), t5: torch.Size([40, 17, 4096])
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_0.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_1.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_2.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_3.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_4.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_5.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_6.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_7.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_8.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_9.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_10.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_11.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_12.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_13.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_14.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_15.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_16.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_17.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_18.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_19.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_20.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_21.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_22.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_23.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_24.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_25.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_26.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_27.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_28.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_29.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_30.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_31.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_32.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_33.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_34.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_35.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_36.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_37.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_38.png
+Saved generated image to output_images/vegas-10n-10c-400s-avg/round_1_node_8_10le_20gr_snoring_val_39.png
+✓ Cleaned up memory after val split
+Creating dataloader for train dataset for client 9 with 320 samples
+Creating dataloader for test dataset for client 9 with 40 samples
+Creating optimizer for node 9 with model optimizer AdamW and learning rate 0.001
+Creating learning rate scheduler for node 9
+Node 9: No optimizer initialized
+Node 9 training Audio2Visual model for 10 epochs

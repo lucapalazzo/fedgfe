@@ -1,0 +1,48 @@
+{
+  "round": 1,
+  "client_id": 0,
+  "timestamp": "2026-01-10T19:09:23.601796",
+  "classes": [
+    {
+      "class_name": "baby_cry",
+      "class_index": 1,
+      "loss": 2.8834363039068536,
+      "memory_before": {
+        "allocated_gb": 8.586082458496094,
+        "reserved_gb": 9.541015625,
+        "percent_used": 12.048434212250372
+      },
+      "memory_after": {
+        "allocated_gb": 7.379753112792969,
+        "reserved_gb": 7.787109375,
+        "percent_used": 9.833594105269649
+      },
+      "delta_from_start": {
+        "allocated_gb": -1.206329345703125,
+        "reserved_gb": -1.75390625
+      },
+      "delta_from_previous": {
+        "allocated_gb": -1.206329345703125,
+        "reserved_gb": -1.75390625
+      }
+    }
+  ],
+  "summary": {
+    "total_classes": 1,
+    "memory_start": {
+      "allocated_gb": 8.586082458496094,
+      "reserved_gb": 9.541015625,
+      "percent_used": 12.048434212250372
+    },
+    "memory_end": {
+      "allocated_gb": 7.379753112792969,
+      "reserved_gb": 7.787109375,
+      "percent_used": 9.833594105269649
+    },
+    "total_growth": {
+      "allocated_gb": -1.206329345703125,
+      "reserved_gb": -1.75390625
+    },
+    "avg_loss": 2.8834363039068536
+  }
+}
