@@ -71,6 +71,8 @@
     "clip_adapter_learning_rate_schedule": true,
 
     "_comment_generation": "=== IMAGE GENERATION (disabled in training mode) ===",
+    "generate_embeddings_only": false,
+    "embeddings_checkpoint_dir": "checkpoints/embeddings/vegas-2n-2c-200s-avg",
     "generate_nodes_images_frequency": 1,
     "generate_global_images_frequency": 1,
     "generate_low_memomy_footprint": true,
@@ -92,7 +94,7 @@
       "dataset": "VEGAS",
       "selected_classes": ["dog"],
       "node_split_id": 0,
-      "samples_per_node": 200,
+      "samples_per_node": 300,
       "node_split_seed": 42,
       "diffusion_type": "flux",
       "train_ratio": 0.8,
@@ -103,7 +105,7 @@
       "dataset": "VEGAS",
       "selected_classes": ["chainsaw"],
       "node_split_id": 0,
-      "samples_per_node": 200,
+      "samples_per_node": 300,
       "node_split_seed": 42,
       "diffusion_type": "flux",
       "train_ratio": 0.8,
@@ -121,6 +123,6 @@
     "path": "./data"
   },
   "wandb": {
-    "disabled": false
+    "disabled": true
   }
 }

@@ -9,8 +9,8 @@
     "algorithm": "FedA2V",
     "diffusion_type": "flux",
     "num_clients": 11,
-    "global_rounds": 20,
-    "local_epochs": 10,
+    "global_rounds": 40,
+    "local_epochs": 5,
     "eval_gap": 1,
     "model_aggregation": "none",
     "use_saved_audio_embeddings": false
@@ -59,7 +59,7 @@
     "global_model_train_epochs": 0,
     "global_model_train_from_nodes_adapters": false,
 
-    "t5_adapter_learning_rate": 0.01,
+    "t5_adapter_learning_rate": 0.003,
     "t5_adapter_weight_decay": 0.01,
     "clip_adapter_learning_rate": 0.001,
     "clip_adapter_weight_decay": 0.01,
@@ -71,6 +71,8 @@
     "clip_adapter_learning_rate_schedule": true,
 
     "_comment_generation": "=== IMAGE GENERATION (disabled in training mode) ===",
+    "generate_embeddings_only": false,
+    "embeddings_checkpoint_dir": "checkpoints/embeddings/vegas-10n-10c-400s-avg",
     "generate_nodes_images_frequency": 1,
     "generate_global_images_frequency": 1,
     "generate_low_memomy_footprint": true,

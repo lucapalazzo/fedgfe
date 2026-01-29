@@ -101,6 +101,9 @@ class FedA2V(FedRewind):
         self.generate_global_images_average_text_embeddings = getattr(self.config.feda2v, 'generate_global_images_average_text_embeddings', False)
         self.images_output_dir = getattr(self.config.feda2v, 'images_output_dir', 'output_images')
         self.generate_images_frequency = self.generate_nodes_images_frequency
+        # Embeddings checkpoint settings
+        self.generate_embeddings_only = getattr(self.config.feda2v, 'generate_embeddings_only', False)
+        self.embeddings_checkpoint_dir = getattr(self.config.feda2v, 'embeddings_checkpoint_dir', 'checkpoints/embeddings')
         self.generate_from_clip_text_embeddings = getattr(self.config.feda2v, 'generate_from_clip_text_embeddings', False)
         self.generate_from_t5_text_embeddings = getattr(self.config.feda2v, 'generate_from_t5_text_embeddings', False)
 
@@ -590,9 +593,22 @@ class FedA2V(FedRewind):
                 self.client_round_ending_hook(node)
 
             if self.generate_images_frequency > 0 and self.round % self.generate_images_frequency == 0:
-                self._move_to_gpu(self.diffusion_device, models=['diffusion', 'zeroshot'])
-                self.generate_images(node)
-                self._move_to_cpu( models=['diffusion', 'zeroshot'] )
+                if self.generate_embeddings_only:
+                    # Save embeddings only (no image generation)
+                    self._move_to_gpu(self.diffusion_device, models=['ast','adapter'])
+                    node._move_to_gpu(node.device)
+                    logger.info(f"Saving embeddings for Node {node.id} to checkpoint (embeddings-only mode)")
+                    node.save_embeddings_to_checkpoint(
+                        split='all',
+                        checkpoint_dir=self.embeddings_checkpoint_dir,
+                        round_num=self.round
+                    )
+                    self._move_to_cpu(models=['ast','adapter'])
+                else:
+                    # Generate images as normal
+                    self._move_to_gpu(self.diffusion_device, models=['diffusion', 'zeroshot'])
+                    self.generate_images(node)
+                    self._move_to_cpu( models=['diffusion', 'zeroshot'] )
             node_index += 1
             node._move_to_cpu()
 
@@ -716,14 +732,44 @@ class FedA2V(FedRewind):
         self.baloon.deflate_if_inflated()
         generated_images = {}
         if self.generate_nodes_images_frequency > 0 and self.round % self.generate_nodes_images_frequency == 0:
-            self._move_to_gpu(self.diffusion_device, models=['diffusion', 'zeroshot'])
+            if self.generate_embeddings_only:
+                # Save embeddings only (no image generation)
+                logger.info(f"Saving embeddings for all nodes to checkpoints (embeddings-only mode)")
+                for node in self.clients:
+                    node._move_to_gpu(node.device)
+                    ### Disabilitata la metrica non potendo generare immagini
+                    # self.node_metrics_log(node, suffix="_post", train_splits = self.nodes_train_metrics_splits)
+                    # self.node_metrics_log(node,  test_splits = self.nodes_test_metrics_splits)
+                    checkpoint_path = node.save_embeddings_to_checkpoint(
+                        split='all',
+                        checkpoint_dir=self.embeddings_checkpoint_dir,
+                        round_num=self.round
+                    )
+                    logger.info(f"Node {node.id} embeddings saved to: {checkpoint_path}")
+                    node._move_to_cpu()
+            else:
+                # Generate images as normal
+                self._move_to_gpu(self.diffusion_device, models=['diffusion', 'zeroshot'])
 
-            for node in self.clients:
-                node._move_to_gpu(node.device)
-                self.node_metrics_log(node, suffix="_post", train_splits = self.nodes_train_metrics_splits)
-                self.node_metrics_log(node,  test_splits = self.nodes_test_metrics_splits)
-                generated_images[node.id] = self.generate_images(node)
-                node._move_to_cpu()
+                for node in self.clients:
+                    node._move_to_gpu(node.device)
+                    self.node_metrics_log(node, suffix="_post", train_splits = self.nodes_train_metrics_splits)
+                    self.node_metrics_log(node,  test_splits = self.nodes_test_metrics_splits)
+
+                    # Generate images using client's method (includes internal caching check)
+                    client_result = node.generate_images(split='all', round_num=self.round)
+
+                    # Convert from client format {'on_train': ..., 'on_val': ..., 'on_test': ...}
+                    # to server format {'train': ..., 'val': ..., 'test': ...}
+                    generated_images[node.id] = {}
+                    if client_result.get('on_train') is not None:
+                        generated_images[node.id]['train'] = client_result['on_train']
+                    if client_result.get('on_val') is not None:
+                        generated_images[node.id]['val'] = client_result['on_val']
+                    if client_result.get('on_test') is not None:
+                        generated_images[node.id]['test'] = client_result['on_test']
+
+                    node._move_to_cpu()
 
 
         use_pretrained_generators = getattr(self.config.feda2v, 'use_pretrained_generators', False)
@@ -798,12 +844,23 @@ class FedA2V(FedRewind):
         self.baloon.inflate_if_not_inflated()
 
         if self.generate_global_images_frequency > 0 and self.round % self.generate_global_images_frequency == 0:
-            generated_images['server'] = {}
-            # Generate server images for all configured server splits
-            for split_name in self.server_test_metrics_splits:
-                split_images = self.generate_global_images_with_aggregated_adapters(split=split_name)
-                if split_images is not None:
-                    generated_images['server'][split_name] = split_images
+            if self.generate_embeddings_only:
+                # Save server embeddings only (no image generation)
+                logger.info(f"Saving server embeddings to checkpoint (embeddings-only mode)")
+                checkpoint_path = self.save_server_embeddings_to_checkpoint(
+                    checkpoint_dir=self.embeddings_checkpoint_dir,
+                    round_num=self.round
+                )
+                logger.info(f"Server embeddings saved to: {checkpoint_path}")
+                generated_images['server'] = {}
+            else:
+                # Generate global images as normal
+                generated_images['server'] = {}
+                # Generate server images for all configured server splits
+                for split_name in self.server_test_metrics_splits:
+                    split_images = self.generate_global_images_with_aggregated_adapters(split=split_name)
+                    if split_images is not None:
+                        generated_images['server'][split_name] = split_images
 
         if self.optimize_memory_usage and self.global_model != None and self.global_model.diffusion_model != None:
                 self.global_model.diffusion_model.to(torch.device('cpu'))
@@ -835,7 +892,8 @@ class FedA2V(FedRewind):
             if not self.no_wandb:
                 for split, metric in node_metrics.items():
                     wandb_metrics = node.log_metrics(metric, round=self.round)
-                    wandb.log(wandb_metrics)
+                    # Include round for proper x-axis in wandb charts
+                    wandb.log({**wandb_metrics, "round": self.round})
 
         if 'server' in generated_images:
             server_metrics = self.test_node_metrics_from_images(None, generated_images['server'])    
@@ -844,7 +902,8 @@ class FedA2V(FedRewind):
             if not self.no_wandb:
                 for split, metric in server_metrics.items():
                     wandb_metrics = self.log_metrics(metric, round=self.round, suffix=f'_on_{split}')
-                    wandb.log(wandb_metrics)
+                    # Include round for proper x-axis in wandb charts
+                    wandb.log({**wandb_metrics, "round": self.round})
 
 
     def generate_global_images_average_text_embeddings_from_nodes(self):
@@ -860,7 +919,78 @@ class FedA2V(FedRewind):
 
         print ( f"Nodes text embeddings {nodes_classes_text_embeddings.keys()}")
         return
-    
+
+    def save_server_embeddings_to_checkpoint(self, checkpoint_dir='checkpoints/embeddings', round_num=None):
+        """
+        Save server's global text embeddings to checkpoint for later image generation.
+
+        Args:
+            checkpoint_dir: Directory to save checkpoint files
+            round_num: Optional round number for naming
+
+        Returns:
+            Path to saved checkpoint file
+        """
+        import datetime
+
+        # Create checkpoint directory
+        os.makedirs(checkpoint_dir, exist_ok=True)
+
+        # Prepare checkpoint data structure
+        checkpoint_data = {
+            'node_id': 'server',
+            'round': round_num if round_num is not None else -1,
+            'timestamp': datetime.datetime.now().isoformat(),
+            'embeddings': [],
+            'metadata': {
+                'diffusion_type': self.diffusion_type,
+                'federation_classes': self.federation_available_classes
+            }
+        }
+
+        # Collect embeddings from all nodes
+        logger.info("Collecting embeddings from all nodes for server checkpoint")
+
+        for node in self.clients:
+            node_dataset = node.node_data.dataset.dataset if isinstance(node.node_data.dataset, torch.utils.data.Subset) else node.node_data.dataset
+            node_classes = node_dataset.active_classes if hasattr(node_dataset, 'active_classes') else []
+
+            logger.info(f"Processing Node {node.id} with classes: {node_classes}")
+
+            for class_name in node_classes:
+                # Get text embeddings for this class
+                text_embs = node_dataset.get_text_embeddings(class_name) if hasattr(node_dataset, 'get_text_embeddings') else None
+
+                if text_embs and self.diffusion_type in text_embs:
+                    emb_data = text_embs[self.diffusion_type]
+
+                    # Prepare output path
+                    round_str = f"r{round_num}" if round_num is not None else "r0"
+                    image_filename = f"server_node{node.id}_{class_name}_{round_str}.png"
+                    image_path = os.path.join(self.images_output_dir, image_filename)
+
+                    # Store embedding data
+                    embedding_entry = {
+                        'split': 'global',
+                        'node_id': node.id,
+                        'class_name': class_name,
+                        'image_path': image_path,
+                        'image_filename': image_filename,
+                        't5_embedding': emb_data.get('pooled_prompt_embeds', None),
+                        'clip_embedding': emb_data.get('prompt_embeds', None),
+                    }
+
+                    checkpoint_data['embeddings'].append(embedding_entry)
+
+        # Save checkpoint
+        checkpoint_filename = f"server_embeddings_r{round_num if round_num is not None else 0}.pt"
+        checkpoint_path = os.path.join(checkpoint_dir, checkpoint_filename)
+
+        torch.save(checkpoint_data, checkpoint_path)
+        logger.info(f"Server: Saved {len(checkpoint_data['embeddings'])} embeddings to {checkpoint_path}")
+
+        return checkpoint_path
+
     def global_model_train_from_nodes_text_embeddings(self):
         self.global_model = self.global_model.to(self.device)
 
@@ -3701,6 +3831,16 @@ class FedA2V(FedRewind):
             if fed_dataset is None or len(fed_dataset) == 0:
                 print(f"Warning: Federation {split} dataset is empty")
                 return None
+            
+            if isinstance(fed_dataset, torch.utils.data.ConcatDataset):
+                print(f"Federation {split} dataset is a ConcatDataset with {len(fed_dataset.datasets)} datasets")
+                for ds_idx, ds in enumerate(fed_dataset.datasets):
+                    ds = ds.to(self.device)
+            elif isinstance(fed_dataset, VEGASDataset):
+                print(f"Federation {split} dataset is a VEGASDataset with length {len(fed_dataset.dataset)}")
+                fed_dataset = fed_dataset.to(self.device)
+            else:
+                print(f"Federation {split} dataset is a dataset with length {len(fed_dataset)}")
 
             # Ensure output directory exists
             if not os.path.exists(self.images_output_dir):
@@ -3708,7 +3848,8 @@ class FedA2V(FedRewind):
                     os.makedirs(self.images_output_dir)
                 except FileExistsError:
                     pass
-
+            
+            self._move_to_cpu( models=['diffusion'])
             self._move_to_gpu(self.device, models=['adapter', 'ast'])
 
             # Create dataloader for the federation dataset
@@ -3765,7 +3906,7 @@ class FedA2V(FedRewind):
                 # Generate images from adapted embeddings
                 for module_name in self.global_adapters.keys():
                     embeddings[module_name] = torch.stack(embeddings[module_name], dim=0)
-
+                self._move_to_cpu(models=['adapter', 'ast'])
                 self._move_to_gpu(self.diffusion_device, models=['diffusion']) 
 
                 if len(text_embs):
@@ -3778,6 +3919,16 @@ class FedA2V(FedRewind):
                 self._move_to_cpu(models=['diffusion', 'adapter', 'ast'])
 
                 print(f"Generated and saved {len(generated_images)} global images using aggregated adapters")
+
+            if isinstance(fed_dataset, torch.utils.data.ConcatDataset):
+                print(f"Federation {split} dataset is a ConcatDataset with {len(fed_dataset.datasets)} datasets")
+                for ds_idx, ds in enumerate(fed_dataset.datasets):
+                    ds = ds.to('cpu')
+            elif isinstance(fed_dataset, VEGASDataset):
+                print(f"Federation {split} dataset is a VEGASDataset with length {len(fed_dataset.dataset)}")
+                fed_dataset = fed_dataset.to('cpu')
+            else:
+                print(f"Federation {split} dataset is a dataset with length {len(fed_dataset)}")
 
         return saved_splits_images
 
@@ -4399,7 +4550,20 @@ class FedA2V(FedRewind):
         logger.info(f"[Server] Synthetic sample distribution complete\n")
 
     def define_metrics(self):
-        wandb.define_metric(f"round")
+        # Define round as the primary step metric
+        wandb.define_metric("round")
+
+        # Define generator-specific metrics only if generator training is enabled
+        if self.use_generator or self.global_model_train_from_nodes_adapters:
+            wandb.define_metric("server/generator_loss", step_metric="round")
+            wandb.define_metric("server/adapter_finetuning_loss", step_metric="round")
+            wandb.define_metric("server/generator_validation_similarity", step_metric="round")
+            wandb.define_metric("server/generator_validation_mse", step_metric="round")
+            wandb.define_metric("server/generator_validation_l1", step_metric="round")
+
+        # Define synthetic samples metrics (used in KD aggregation)
+        wandb.define_metric("server/synthetic_samples_total", step_metric="round")
+        wandb.define_metric("server/synthetic_samples_classes", step_metric="round")
 
         self.metrics_path = "server/"
         if self.global_model is not None:
@@ -4810,27 +4974,45 @@ def prepare_for_metrics(data_by_class):
 
     return all_images, all_class_names, all_filenames
 
-def audio_embeddings_dataset_cache( samples, outputs, dataloader = None):
+    def audio_embeddings_dataset_cache(self, samples, outputs, dataloader=None):
+        """
+        Cache audio embeddings from model outputs to dataset.
+        Used by server when it has fed_dataset (concatenated from all nodes).
+
+        Args:
+            samples: Batch samples
+            outputs: Model outputs containing audio embeddings
+            dataloader: DataLoader instance (optional)
+        """
         audio_embeddings_batch = outputs['audio_embeddings']
         file_ids = samples.get('file_id', None)
         classes = samples.get('class_name', 'unknown')
 
-        if dataloader == None:
-            train_dataset = self.node_data.train_dataset
+        # Determine the base dataset
+        if dataloader is None:
+            # Server uses fed_dataset (concatenated dataset from nodes)
+            if hasattr(self, 'fed_dataset'):
+                base_dataset = self.fed_dataset
+            else:
+                logger.warning("Server: No dataloader or fed_dataset available for caching")
+                return
         else:
             train_dataset = dataloader.dataset
-        
-        if hasattr(train_dataset, 'dataset'):
-            base_dataset = train_dataset.dataset
-        else:
-            base_dataset = train_dataset
-        if file_ids is not None:
+            if hasattr(train_dataset, 'dataset'):
+                base_dataset = train_dataset.dataset
+            else:
+                base_dataset = train_dataset
 
-            #  audio_embs se non esiste
+        if file_ids is not None:
+            # Initialize audio_embs if not exists
             if not hasattr(base_dataset, 'audio_embs') or base_dataset.audio_embs is None:
                 base_dataset.audio_embs = {}
 
-            for file_id, class_name, audio_emb in zip(file_ids,classes,audio_embeddings_batch):
+            # Cache embeddings with format: file_id:class_name
+            for file_id, class_name, audio_emb in zip(file_ids, classes, audio_embeddings_batch):
                 file_index = f'{file_id}:{class_name}'
-                base_dataset.audio_embs[file_index] = audio_emb.detach().cpu().to(self.model.device)
-        logger.debug(f"Node {self.id}: stored {len(file_ids)} audio embeddings int dataset  {len(base_dataset.audio_embs)})")
+                # Store on CPU to save memory
+                base_dataset.audio_embs[file_index] = audio_emb.detach().cpu()
+
+            logger.debug(f"Server: stored {len(file_ids)} audio embeddings in dataset "
+                        f"(total: {len(base_dataset.audio_embs)})")

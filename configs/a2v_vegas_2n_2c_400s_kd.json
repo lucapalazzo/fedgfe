@@ -1,0 +1,136 @@
+{
+  "experiment": {
+    "name": "federated_a2v_kd_vegas_2nodes",
+    "description": "Knowledge Distillation adapter aggregation with VEGAS dataset - 2 nodes, 2 classes, 400 samples per node",
+    "use_balooning": false,
+    "optimize_memory_usage": true
+  },
+  "federation": {
+    "algorithm": "FedA2V",
+    "diffusion_type": "flux",
+    "num_clients": 2,
+    "global_rounds": 10,
+    "local_epochs": 20,
+    "eval_gap": 1,
+    "model_aggregation": "none",
+    "use_saved_audio_embeddings": false
+  },
+  "training": {
+    "learning_rate": 0.001,
+    "optimizer": "AdamW",
+    "batch_size": 8,
+    "weight_decay": 0.0001
+  },
+  "feda2v": {
+    "_comment_generator": "=== PRETRAINED GENERATOR SETTINGS FOR KD ===",
+    "use_generator": true,
+    "generator_type": "vae",
+    "generator_training_mode": false,
+    "generator_only_mode": false,
+    "use_pretrained_generators": true,
+
+    "_comment_granularity_note": "One generator per class - Required for KD aggregation",
+    "generator_granularity": "per_class",
+    "generator_class_groups": null,
+
+    "generator_checkpoint_dir": "checkpoints/generators/vegas-10n-10c-400s",
+    "generator_checkpoint_base_name": "vae_perclass",
+    "generator_save_checkpoint": false,
+    "generator_load_checkpoint": true,
+    "generator_checkpoint_frequency": 1,
+    "generator_training_sequence_length": 1214,
+
+    "_comment_adapter_checkpoint": "=== ADAPTER CHECKPOINT SETTINGS ===",
+    "adapter_checkpoint_dir": "checkpoints/adapters/vegas-2n-2c-400s-kd",
+    "adapter_checkpoint_base_name": "vegas-2n-2c-400s-kd",
+    "adapter_save_checkpoint": false,
+    "adapter_load_checkpoint": false,
+    "adapter_checkpoint_frequency": 1,
+    "adapter_checkpoint_per_type": true,
+
+    "_comment_training": "=== GENERATOR TRAINING SETTINGS (disabled, using pretrained) ===",
+    "generator_training_epochs": 0,
+    "generator_augmentation": true,
+    "generator_augmentation_noise": 0.1,
+    "generator_validation_frequency": 5,
+
+    "_comment_adapter_kd": "=== KNOWLEDGE DISTILLATION ADAPTER AGGREGATION ===",
+    "adapter_aggregation_mode": "kd",
+
+    "_comment_kd_params": "KD-specific parameters for server-side adapter training",
+    "kd_training_epochs": 10,
+    "kd_learning_rate": 0.001,
+    "kd_samples_per_class": 100,
+
+    "_comment_adapter_client": "=== CLIENT ADAPTER TRAINING SETTINGS ===",
+    "global_model_train": false,
+    "global_model_train_epochs": 0,
+    "global_model_train_from_nodes_adapters": false,
+
+    "t5_adapter_learning_rate": 0.01,
+    "t5_adapter_weight_decay": 0.01,
+    "clip_adapter_learning_rate": 0.001,
+    "clip_adapter_weight_decay": 0.01,
+    "adapters_learning_rate": 0.001,
+    "adapters_weight_decay": 0.01,
+
+    "adapters_learning_rate_schedule": false,
+    "t5_adapter_learning_rate_schedule": false,
+    "clip_adapter_learning_rate_schedule": true,
+
+    "_comment_generation": "=== IMAGE GENERATION SETTINGS ===",
+    "generate_embeddings_only": false,
+    "embeddings_checkpoint_dir": "checkpoints/embeddings/vegas-2n-2c-400s-kd",
+    "generate_nodes_images_frequency": 1,
+    "generate_global_images_frequency": 1,
+    "generate_low_memomy_footprint": true,
+    "images_output_dir": "output_images/vegas-2n-2c-400s-kd",
+    "output_image_base_name": "2n_20le_10gr_kd",
+    "generate_from_clip_text_embeddings": false,
+    "generate_from_t5_text_embeddings": false,
+    "nodes_train_metrics_splits": ["train"],
+    "nodes_test_metrics_splits": ["val"],
+    "server_train_metrics_splits": ["train"],
+    "server_test_metrics_splits": ["test"],
+    "save_generated_images_splits": ["val", "test"],
+
+    "store_audio_embeddings": false,
+    "audio_embedding_file_name": null
+  },
+  "nodes": {
+    "0": {
+      "dataset": "VEGAS",
+      "selected_classes": ["dog"],
+      "node_split_id": 0,
+      "samples_per_node": 400,
+      "node_split_seed": 42,
+      "diffusion_type": "flux",
+      "train_ratio": 0.8,
+      "val_ratio": 0.1,
+      "test_ratio": 0.1
+    },
+    "1": {
+      "dataset": "VEGAS",
+      "selected_classes": ["drum"],
+      "node_split_id": 0,
+      "samples_per_node": 400,
+      "node_split_seed": 42,
+      "diffusion_type": "flux",
+      "train_ratio": 0.8,
+      "val_ratio": 0.1,
+      "test_ratio": 0.1
+    }
+  },
+  "model": {
+    "backbone": "a2v",
+    "backbone_model": "hf_vit",
+    "pretrained": false
+  },
+  "dataset": {
+    "name": "VEGAS",
+    "path": "./data"
+  },
+  "wandb": {
+    "disabled": false
+  }
+}

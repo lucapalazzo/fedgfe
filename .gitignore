@@ -2226,3 +2226,7 @@ project_TransUNet.zip
 R50+ViT-B_16.npz
 TransUnet_acdc_supplymentary.zip
 transunet_ACDC.zip
+*.err
+*.out
+cache/*
+memory_logs/*

@@ -245,6 +245,9 @@ class ConfigLoader:
             'adapter_load_checkpoint': False,
             'adapter_checkpoint_frequency': 5,
             'adapter_checkpoint_per_type': True,
+            # Embeddings checkpoint settings
+            'generate_embeddings_only': False,
+            'embeddings_checkpoint_dir': 'checkpoints/embeddings',
             # Generator settings
             'use_generator': False,
             'generator_type': 'vae',
@@ -765,6 +768,10 @@ class ConfigLoader:
         self._safe_set_attr(args, defaults, 'adapter_load_checkpoint', feda2v_config, 'adapter_load_checkpoint')
         self._safe_set_attr(args, defaults, 'adapter_checkpoint_frequency', feda2v_config, 'adapter_checkpoint_frequency')
         self._safe_set_attr(args, defaults, 'adapter_checkpoint_per_type', feda2v_config, 'adapter_checkpoint_per_type')
+
+        # Embeddings checkpoint settings
+        self._safe_set_attr(args, defaults, 'generate_embeddings_only', feda2v_config, 'generate_embeddings_only')
+        self._safe_set_attr(args, defaults, 'embeddings_checkpoint_dir', feda2v_config, 'embeddings_checkpoint_dir')
 
         # WandB settings for A2V
         self._safe_set_attr(args, defaults, 'project', feda2v_config, 'project')

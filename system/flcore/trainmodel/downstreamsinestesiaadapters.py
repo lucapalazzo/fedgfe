@@ -274,8 +274,7 @@ class DownstreamSinestesiaAdapters(DownstreamSinestesia):
         output = {}
         losses = {}
         targets = { 'clip': img_target_pooled_prompt_embeds, 't5': img_target_prompt_embeds}
-        x = x.detach()
-        output['audio_embeddings'] = x
+        output['audio_embeddings'] = x.detach().cpu()
         for adapter_name, adapter in self.adapters.items():
             output[adapter_name] = adapter(x)
 

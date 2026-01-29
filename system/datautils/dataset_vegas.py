@@ -81,7 +81,9 @@ class VEGASDataset(Dataset):
                  load_image: bool = False,
                  load_video: bool = False,
                  ast_cache_dir: Optional[str] = None,
-                 enable_ast_cache: bool = True):
+                 enable_ast_cache: bool = True,
+                 parent_ast_cache: Optional[Dict] = None,
+                 parent_audio_embs: Optional[Dict] = None):
         """
         Initialize VEGAS dataset.
 
@@ -94,6 +96,8 @@ class VEGASDataset(Dataset):
             num_samples_per_class: Maximum number of samples to load per class (None = all samples)
             ast_cache_dir: Directory for AST embedding cache files (None = root_dir/ast_cache)
             enable_ast_cache: Whether to enable AST embedding caching (default True)
+            parent_ast_cache: Reference to parent's _ast_cache (for split sharing, internal use)
+            parent_audio_embs: Reference to parent's audio_embs (for split sharing, internal use)
             split: 'train', 'val', 'test', 'all', or None (default).
                   - None: Auto-creates train/val/test splits accessible as .train, .val, .test
                   - 'train'/'val'/'test': Returns only specified split
@@ -206,7 +210,14 @@ class VEGASDataset(Dataset):
             self.text_embs = {k.lower(): v for k, v in self.text_embs.items()}
 
         self.audio_embs_from_file = None
-        self._audio_embs = {}
+
+        # Use parent's audio_embs (RAM cache) if provided (for splits)
+        # Otherwise create new empty dict
+        if parent_audio_embs is not None:
+            self._audio_embs = parent_audio_embs
+            logger.debug(f"Split '{split}': Sharing parent's RAM cache (audio_embs) - {len(parent_audio_embs)} entries")
+        else:
+            self._audio_embs = {}
 
         # Load captions if available
         self.captions = {}
@@ -280,8 +291,47 @@ class VEGASDataset(Dataset):
         if self.enable_cache:
             os.makedirs(self.cache_dir, exist_ok=True)
 
+        # Use parent's AST cache (DISK mmap cache) if provided (for splits)
+        # Otherwise initialize and load from disk
+        if parent_ast_cache is not None:
+            self._ast_cache = parent_ast_cache
+            logger.debug(f"Split '{split}': Sharing parent's DISK cache (_ast_cache) - {len(parent_ast_cache)} classes")
+        else:
+            # Initialize AST cache storage
+            self._ast_cache = {}
+
+            # Load AST embeddings cache if enabled and available
+            if self.enable_ast_cache and os.path.exists(self.ast_cache_dir):
+                try:
+                    # Try to load cache for active classes
+                    logger.debug(f"Attempting to load AST cache from {self.ast_cache_dir} for classes: {list(self.active_classes.keys())}")
+                    loaded_cache = self.load_ast_embeddings_from_cache(
+                        cache_dir=self.ast_cache_dir,
+                        classes=list(self.active_classes.keys())
+                    )
+                    if loaded_cache and len(loaded_cache) > 0:
+                        total_samples = sum(cache_info['manifest']['total_samples']
+                                          for cache_info in loaded_cache.values())
+                        logger.info(f"✓ AST cache loaded successfully: {len(loaded_cache)} classes, "
+                                  f"{total_samples} cached samples")
+                        logger.debug(f"Cache stored in self._ast_cache: {list(self._ast_cache.keys())}")
+                    else:
+                        logger.debug(f"No AST embeddings cache found at {self.ast_cache_dir}")
+                except Exception as e:
+                    logger.warning(f"Failed to load AST embeddings cache: {e}")
+                    import traceback
+                    logger.debug(f"Traceback: {traceback.format_exc()}")
+
         logger.info(f"VEGAS Dataset initialized: {len(self.samples)} samples, "
                    f"classes: {list(self.active_classes.keys())}, split: {split}")
+
+        # Calculate and log cache coverage after initialization
+        # Only log for parent dataset (not for splits that share parent's cache)
+        if self.enable_ast_cache and hasattr(self, '_ast_cache') and self._ast_cache:
+            if parent_ast_cache is None:  # Only log for parent, not for splits
+                self._log_cache_coverage()
+            else:
+                logger.debug(f"Split '{split}': Using shared cache, skipping coverage log")
 
     @property
     def selected_classes(self) -> Optional[List[str]]:
@@ -318,290 +368,54 @@ class VEGASDataset(Dataset):
         This method is called when split=None to auto-create all three splits.
         The splits are exposed as .train, .val, and .test attributes.
 
+        IMPORTANT: All splits share the same AST cache (both DISK mmap and RAM cache)
+        to avoid redundant cache loading and memory duplication.
+
         Args:
             ast_cache_dir: Directory for AST cache files
             enable_ast_cache: Whether to enable AST caching
             **kwargs: All other dataset initialization parameters
         """
-        logger.info("Creating train split...")
+        # Share cache references with all splits
+        # This prevents each split from reloading the cache
+        shared_ast_cache = self._ast_cache if hasattr(self, '_ast_cache') else None
+        shared_audio_embs = self._audio_embs if hasattr(self, '_audio_embs') else None
+
+        logger.info("Creating train split (sharing parent's cache)...")
         self.train = VEGASDataset(
             split='train',
             ast_cache_dir=ast_cache_dir,
             enable_ast_cache=enable_ast_cache,
+            parent_ast_cache=shared_ast_cache,
+            parent_audio_embs=shared_audio_embs,
             **kwargs
         )
 
-        logger.info("Creating validation split...")
+        logger.info("Creating validation split (sharing parent's cache)...")
         self.val = VEGASDataset(
             split='val',
             ast_cache_dir=ast_cache_dir,
             enable_ast_cache=enable_ast_cache,
+            parent_ast_cache=shared_ast_cache,
+            parent_audio_embs=shared_audio_embs,
             **kwargs
         )
 
-        logger.info("Creating test split...")
+        logger.info("Creating test split (sharing parent's cache)...")
         self.test = VEGASDataset(
             split='test',
             ast_cache_dir=ast_cache_dir,
             enable_ast_cache=enable_ast_cache,
+            parent_ast_cache=shared_ast_cache,
+            parent_audio_embs=shared_audio_embs,
             **kwargs
         )
 
         logger.info(f"Auto-split created: train={len(self.train)}, val={len(self.val)}, test={len(self.test)}")
-
-    def _get_ast_cache_config_hash(self, sample_rate: int, duration: float, model_name: str = "ast") -> str:
-        """
-        Generate hash for AST cache configuration.
-
-        Args:
-            sample_rate: Audio sample rate used for AST processing
-            duration: Audio duration in seconds
-            model_name: Name/version of AST model used
-
-        Returns:
-            Configuration hash string
-        """
-        config_str = f"{model_name}_{sample_rate}_{duration}"
-        return hashlib.md5(config_str.encode()).hexdigest()[:12]
-
-    def _get_ast_cache_filepath(self, sample_rate: int, duration: float, model_name: str = "ast") -> str:
-        """
-        Get the filepath for AST embeddings cache.
-
-        Args:
-            sample_rate: Audio sample rate used for AST processing
-            duration: Audio duration in seconds
-            model_name: Name/version of AST model used
-
-        Returns:
-            Full path to cache file
-        """
-        config_hash = self._get_ast_cache_config_hash(sample_rate, duration, model_name)
-        cache_filename = f"ast_embeddings_{config_hash}.pt"
-        return os.path.join(self.ast_cache_dir, cache_filename)
-
-    def _verify_ast_cache_compatibility(self, cache_file: str,
-                                       expected_sample_rate: int,
-                                       expected_duration: float,
-                                       expected_model: str = "ast") -> bool:
-        """
-        Verify that cached AST embeddings are compatible with current configuration.
-
-        Args:
-            cache_file: Path to cache file
-            expected_sample_rate: Expected audio sample rate
-            expected_duration: Expected audio duration
-            expected_model: Expected model name
-
-        Returns:
-            True if cache is compatible, False otherwise
-        """
-        if not os.path.exists(cache_file):
-            return False
-
-        try:
-            # Load only metadata to check compatibility (use mmap for efficiency)
-            cached_data = torch.load(cache_file, map_location='cpu', weights_only=False, mmap=True)
-
-            # Check if metadata exists
-            if 'metadata' not in cached_data:
-                logger.warning(f"AST cache missing metadata: {cache_file}")
-                return False
-
-            metadata = cached_data['metadata']
-
-            # Verify configuration match
-            config_match = (
-                metadata.get('sample_rate') == expected_sample_rate and
-                metadata.get('duration') == expected_duration and
-                metadata.get('model_name') == expected_model
-            )
-
-            if not config_match:
-                logger.info(f"AST cache config mismatch. Expected: {expected_sample_rate}Hz, {expected_duration}s, {expected_model}. "
-                          f"Got: {metadata.get('sample_rate')}Hz, {metadata.get('duration')}s, {metadata.get('model_name')}")
-                return False
-
-            # Verify embeddings structure
-            if 'embeddings' not in cached_data:
-                logger.warning(f"AST cache missing embeddings: {cache_file}")
-                return False
-
-            logger.info(f"AST cache verified: {cache_file} ({len(cached_data['embeddings'])} embeddings)")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error verifying AST cache {cache_file}: {e}")
-            return False
-
-    def load_ast_embeddings_from_cache(self, sample_rate: int = 16000,
-                                       duration: float = 5.0,
-                                       model_name: str = "ast") -> bool:
-        """
-        Load AST embeddings from cache if available and compatible.
-
-        Args:
-            sample_rate: Audio sample rate used for AST processing
-            duration: Audio duration in seconds
-            model_name: Name/version of AST model used
-
-        Returns:
-            True if loaded successfully, False if cache not found or incompatible
-        """
-        if not self.enable_ast_cache:
-            logger.info("AST cache disabled")
-            return False
-
-        cache_file = self._get_ast_cache_filepath(sample_rate, duration, model_name)
-
-        # Verify compatibility
-        if not self._verify_ast_cache_compatibility(cache_file, sample_rate, duration, model_name):
-            return False
-
-        try:
-            logger.info(f"Loading AST embeddings from cache: {cache_file}")
-
-            # Load with memory mapping for efficient access
-            cached_data = torch.load(cache_file, map_location='cpu', weights_only=False, mmap=True)
-
-            # Store embeddings
-            self.audio_embs_from_file = cached_data['embeddings']
-
-            logger.info(f"Loaded {len(self.audio_embs_from_file)} AST embeddings from cache")
-            logger.info(f"Cache metadata: {cached_data['metadata']}")
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Error loading AST cache {cache_file}: {e}")
-            return False
-
-    def save_ast_embeddings_to_cache(self, embeddings: Dict[str, torch.Tensor],
-                                    sample_rate: int = 16000,
-                                    duration: float = 5.0,
-                                    model_name: str = "ast",
-                                    embedding_shape: Optional[tuple] = None) -> bool:
-        """
-        Save AST embeddings to cache with metadata.
-
-        Args:
-            embeddings: Dictionary mapping file IDs to AST embeddings
-            sample_rate: Audio sample rate used for AST processing
-            duration: Audio duration in seconds
-            model_name: Name/version of AST model used
-            embedding_shape: Shape of embeddings (inferred if None)
-
-        Returns:
-            True if saved successfully, False otherwise
-        """
-        if not self.enable_ast_cache:
-            logger.info("AST cache disabled, skipping save")
-            return False
-
-        if not embeddings:
-            logger.warning("No embeddings to cache")
-            return False
-
-        try:
-            cache_file = self._get_ast_cache_filepath(sample_rate, duration, model_name)
-
-            # Infer embedding shape from first embedding
-            if embedding_shape is None:
-                first_emb = next(iter(embeddings.values()))
-                if isinstance(first_emb, torch.Tensor):
-                    embedding_shape = tuple(first_emb.shape)
-                elif isinstance(first_emb, dict) and 'embedding' in first_emb:
-                    embedding_shape = tuple(first_emb['embedding'].shape)
-
-            # Create cache data structure
-            cache_data = {
-                'embeddings': embeddings,
-                'metadata': {
-                    'sample_rate': sample_rate,
-                    'duration': duration,
-                    'model_name': model_name,
-                    'embedding_shape': embedding_shape,
-                    'num_embeddings': len(embeddings),
-                    'creation_time': pd.Timestamp.now().isoformat(),
-                    'dataset_root': self.root_dir
-                }
-            }
-
-            logger.info(f"Saving {len(embeddings)} AST embeddings to cache: {cache_file}")
-
-            # Save with atomic write (write to temp file then rename)
-            temp_file = cache_file + ".tmp"
-            torch.save(cache_data, temp_file)
-
-            # Atomic rename
-            if os.path.exists(cache_file):
-                os.remove(cache_file)
-            os.rename(temp_file, cache_file)
-
-            logger.info(f"AST embeddings cached successfully: {cache_file}")
-            logger.info(f"Cache metadata: {cache_data['metadata']}")
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Error saving AST cache: {e}")
-            # Clean up temp file if it exists
-            temp_file = self._get_ast_cache_filepath(sample_rate, duration, model_name) + ".tmp"
-            if os.path.exists(temp_file):
-                try:
-                    os.remove(temp_file)
-                except:
-                    pass
-            return False
-
-    def clear_ast_cache(self, sample_rate: Optional[int] = None,
-                       duration: Optional[float] = None,
-                       model_name: Optional[str] = None):
-        """
-        Clear AST embedding cache files.
-
-        Args:
-            sample_rate: If specified, only clear cache for this sample rate
-            duration: If specified, only clear cache for this duration
-            model_name: If specified, only clear cache for this model
-
-        If all args are None, clears all AST cache files.
-        """
-        if not self.enable_ast_cache:
-            logger.warning("AST cache disabled")
-            return
-
-        if not os.path.exists(self.ast_cache_dir):
-            logger.info("AST cache directory does not exist")
-            return
-
-        try:
-            if sample_rate is not None and duration is not None:
-                # Clear specific cache file
-                cache_file = self._get_ast_cache_filepath(
-                    sample_rate,
-                    duration,
-                    model_name or "ast"
-                )
-                if os.path.exists(cache_file):
-                    os.remove(cache_file)
-                    logger.info(f"Removed AST cache: {cache_file}")
-                else:
-                    logger.info(f"AST cache not found: {cache_file}")
-            else:
-                # Clear all AST cache files
-                cache_files = [f for f in os.listdir(self.ast_cache_dir)
-                             if f.startswith('ast_embeddings_') and f.endswith('.pt')]
-
-                for cache_file in cache_files:
-                    cache_path = os.path.join(self.ast_cache_dir, cache_file)
-                    os.remove(cache_path)
-                    logger.info(f"Removed AST cache: {cache_path}")
-
-                logger.info(f"Cleared {len(cache_files)} AST cache file(s)")
-
-        except Exception as e:
-            logger.error(f"Error clearing AST cache: {e}")
+        if shared_ast_cache:
+            logger.info(f"✓ All splits share the same AST cache: {len(shared_ast_cache)} classes (DISK mmap)")
+        if shared_audio_embs:
+            logger.info(f"✓ All splits share the same RAM cache: {len(shared_audio_embs)} entries")
 
     def load_audio_embeddings_from_file(self, embedding_file: str):
         if isfile(embedding_file):
@@ -613,10 +427,11 @@ class VEGASDataset(Dataset):
             # filter audio embeddings based on selected/excluded classes
             
     def filter_audio_embeddings_from_file(self):
-        self.audio_embs = {}
+        # Use .clear() to preserve reference (important for shared cache in splits)
+        self.audio_embs.clear()
         if self.audio_embs_from_file is None:
             logger.warning("Audio embeddings not loaded from file.")
-            return  
+            return
         for audio_filename, audio_data in self.audio_embs_from_file.items():
                 if 'class_name' in audio_data and  audio_data['class_name'] in self.active_classes:
                     self.audio_embs[audio_filename] = audio_data
@@ -1216,10 +1031,60 @@ class VEGASDataset(Dataset):
 
 
         # Load audio embedding from cache if available
+        # Cache hierarchy (fastest to slowest):
+        # 1. RAM cache (audio_embs) - in-memory, used within same round across epochs
+        # 2. Disk cache (_ast_cache) - mmap, persistent across rounds
+
+        audio_emb_loaded = False
         sample_id = f'{sample['file_id']}:{sample_class_name}'
+
+        # FIRST: Check RAM cache (fastest - in CPU/GPU memory)
         if self.audio_embs and sample_id in self.audio_embs:
             audio_emb = self.audio_embs[sample_id]
             output['audio_emb'] = audio_emb
+            audio_emb_loaded = True
+
+            # Log RAM cache hit (first time per class)
+            if not hasattr(self, '_ram_cache_hit_logged'):
+                self._ram_cache_hit_logged = set()
+            if sample['class_name'] not in self._ram_cache_hit_logged:
+                logger.info(f"🚀 RAM cache HIT: '{sample_id}' (shape: {audio_emb.shape}) - in-memory")
+                self._ram_cache_hit_logged.add(sample['class_name'])
+
+        # SECOND: Check disk cache (slower - mmap from disk)
+        if not audio_emb_loaded and self.enable_ast_cache:
+            cached_emb = self.get_cached_ast_embedding(
+                sample['class_name'],
+                sample['file_id']
+            )
+            if cached_emb is not None:
+                # Convert to torch tensor
+                audio_emb_tensor = torch.from_numpy(cached_emb)
+                output['audio_emb'] = audio_emb_tensor
+                audio_emb_loaded = True
+
+                # Promote to RAM cache for faster access in subsequent epochs
+                if not hasattr(self, 'audio_embs') or self.audio_embs is None:
+                    # This should not happen if parent_audio_embs was passed correctly
+                    logger.warning(f"audio_embs is None during cache promotion - creating new dict (this may break split sharing)")
+                    self._audio_embs = {}
+                self.audio_embs[sample_id] = audio_emb_tensor
+
+                # Log disk cache hit (first time per class)
+                if not hasattr(self, '_disk_cache_hit_logged'):
+                    self._disk_cache_hit_logged = set()
+                if sample['class_name'] not in self._disk_cache_hit_logged:
+                    logger.info(f"💾 DISK cache HIT: '{sample_id}' (shape: {cached_emb.shape}) - loaded from mmap → promoted to RAM")
+                    self._disk_cache_hit_logged.add(sample['class_name'])
+
+        # Log cache MISS (no embedding found in any cache)
+        if not audio_emb_loaded:
+            if not hasattr(self, '_cache_miss_logged'):
+                self._cache_miss_logged = set()
+            # Use sample_id which has the correct format: file_id:class_name
+            if sample_id not in self._cache_miss_logged and len(self._cache_miss_logged) < 5:
+                logger.warning(f"⚠️  CACHE MISS: '{sample_id}' - AST will be computed (RAM: {len(self.audio_embs) if self.audio_embs else 0}, Disk: {len(self._ast_cache) if hasattr(self, '_ast_cache') else 0} classes)")
+                self._cache_miss_logged.add(sample_id)
 
         # Create output dictionary
         output.update({
@@ -1383,36 +1248,36 @@ class VEGASDataset(Dataset):
         self.device = device
         logger.debug(f"Moving dataset tensors to device: {device}")
 
-        # # Move text embeddings
-        # if self.text_embs is not None:
-        #     for key in self.text_embs.keys():
-        #         if isinstance(self.text_embs[key], torch.Tensor):
-        #             self.text_embs[key] = self.text_embs[key].to(device)
-        #         elif isinstance(self.text_embs[key], dict):
-        #             # Handle nested dictionaries (e.g., {'sd': tensor, 'flux': tensor})
-        #             for subkey in self.text_embs[key].keys():
-        #                 if isinstance(self.text_embs[key][subkey], torch.Tensor):
-        #                     self.text_embs[key][subkey] = self.text_embs[key][subkey].to(device)
+        # Move text embeddings
+        if self.text_embs is not None:
+            for key in self.text_embs.keys():
+                if isinstance(self.text_embs[key], torch.Tensor):
+                    self.text_embs[key] = self.text_embs[key].to(device)
+                elif isinstance(self.text_embs[key], dict):
+                    # Handle nested dictionaries (e.g., {'sd': tensor, 'flux': tensor})
+                    for subkey in self.text_embs[key].keys():
+                        if isinstance(self.text_embs[key][subkey], torch.Tensor):
+                            self.text_embs[key][subkey] = self.text_embs[key][subkey].to(device)
 
         # Move audio embeddings from file
-        # if self.audio_embs_from_file is not None:
-        #     for key in self.audio_embs_from_file.keys():
-        #         if isinstance(self.audio_embs_from_file[key], torch.Tensor):
-        #             self.audio_embs_from_file[key] = self.audio_embs_from_file[key].to(device)
-        #         elif isinstance(self.audio_embs_from_file[key], dict):
-        #             for subkey in self.audio_embs_from_file[key].keys():
-        #                 if isinstance(self.audio_embs_from_file[key][subkey], torch.Tensor):
-        #                     self.audio_embs_from_file[key][subkey] = self.audio_embs_from_file[key][subkey].to(device)
+        if self.audio_embs_from_file is not None:
+            for key in self.audio_embs_from_file.keys():
+                if isinstance(self.audio_embs_from_file[key], torch.Tensor):
+                    self.audio_embs_from_file[key] = self.audio_embs_from_file[key].to(device)
+                elif isinstance(self.audio_embs_from_file[key], dict):
+                    for subkey in self.audio_embs_from_file[key].keys():
+                        if isinstance(self.audio_embs_from_file[key][subkey], torch.Tensor):
+                            self.audio_embs_from_file[key][subkey] = self.audio_embs_from_file[key][subkey].to(device)
 
         # Move filtered audio embeddings
-        # if self._audio_embs:
-        #     for key in self._audio_embs.keys():
-        #         if isinstance(self._audio_embs[key], torch.Tensor):
-        #             self._audio_embs[key] = self._audio_embs[key].to(device)
-        #         elif isinstance(self._audio_embs[key], dict):
-        #             for subkey in self._audio_embs[key].keys():
-        #                 if isinstance(self._audio_embs[key][subkey], torch.Tensor):
-        #                     self._audio_embs[key][subkey] = self._audio_embs[key][subkey].to(device)
+        if self._audio_embs:
+            for key in self._audio_embs.keys():
+                if isinstance(self._audio_embs[key], torch.Tensor):
+                    self._audio_embs[key] = self._audio_embs[key].to(device)
+                elif isinstance(self._audio_embs[key], dict):
+                    for subkey in self._audio_embs[key].keys():
+                        if isinstance(self._audio_embs[key][subkey], torch.Tensor):
+                            self._audio_embs[key][subkey] = self._audio_embs[key][subkey].to(device)
 
         # Move tensors in splits if they exist
         if hasattr(self, 'train') and self.train is not None:
@@ -1424,6 +1289,298 @@ class VEGASDataset(Dataset):
 
         logger.debug(f"Successfully moved all dataset tensors to {device}")
         return self
+
+    def save_ast_embeddings_to_cache(self, ast_outputs_dict, cache_dir=None):
+        """
+        Salva/appenda embeddings AST in cache usando numpy chunks + manifest.
+        Supporta append incrementale efficiente.
+
+        Struttura per classe:
+            class_name/
+            ├── embeddings_000.npy  # Chunk 0: (N, seq_len, hidden_dim)
+            ├── embeddings_001.npy  # Chunk 1: ...
+            └── manifest.json       # {file_id: (chunk_idx, offset), metadata}
+
+        Args:
+            ast_outputs_dict: Dictionary con embeddings organizzati per classe
+                Format: {
+                    'class_name': {
+                        'file_id': embedding_tensor/array (seq_len, hidden_dim),
+                        ...
+                    },
+                    ...
+                }
+            cache_dir: Directory base per cache (default: self.ast_cache_dir)
+
+        Returns:
+            dict: {class_name: num_new_embeddings_saved}
+        """
+        import json
+
+        cache_dir = cache_dir or self.ast_cache_dir
+        os.makedirs(cache_dir, exist_ok=True)
+
+        saved_counts = {}
+
+        for class_name, embeddings_dict in ast_outputs_dict.items():
+            if not embeddings_dict:
+                continue
+
+            class_dir = os.path.join(cache_dir, class_name)
+            os.makedirs(class_dir, exist_ok=True)
+
+            manifest_file = os.path.join(class_dir, 'manifest.json')
+
+            # Load existing manifest or create new
+            if os.path.exists(manifest_file):
+                with open(manifest_file, 'r') as f:
+                    manifest = json.load(f)
+            else:
+                manifest = {
+                    'file_id_to_index': {},  # {file_id: [chunk_idx, offset]}
+                    'chunks': [],  # [{file, num_samples, shape}]
+                    'embedding_shape': None,
+                    'total_samples': 0,
+                    'class_name': class_name,
+                    'created': pd.Timestamp.now().isoformat()
+                }
+
+            # Filter out duplicates
+            existing_file_ids = set(manifest['file_id_to_index'].keys())
+            new_data = {
+                fid: emb for fid, emb in embeddings_dict.items()
+                if fid not in existing_file_ids
+            }
+
+            if not new_data:
+                logger.info(f"Class '{class_name}': No new embeddings (all {len(embeddings_dict)} already cached)")
+                saved_counts[class_name] = 0
+                continue
+
+            # Prepare new chunk
+            new_file_ids = list(new_data.keys())
+            new_embeddings_list = []
+
+            for emb in new_data.values():
+                # Convert to numpy if tensor
+                if isinstance(emb, torch.Tensor):
+                    emb = emb.cpu().numpy()
+                new_embeddings_list.append(emb)
+
+            new_embeddings = np.stack(new_embeddings_list, axis=0)
+
+            # Save embedding shape if first time
+            if manifest['embedding_shape'] is None:
+                manifest['embedding_shape'] = list(new_embeddings.shape[1:])
+
+            # Create new chunk
+            chunk_idx = len(manifest['chunks'])
+            chunk_file = os.path.join(class_dir, f'embeddings_{chunk_idx:03d}.npy')
+            np.save(chunk_file, new_embeddings)
+
+            # Update manifest
+            manifest['chunks'].append({
+                'file': os.path.basename(chunk_file),
+                'num_samples': len(new_embeddings),
+                'shape': list(new_embeddings.shape)
+            })
+
+            # Update index
+            for offset, file_id in enumerate(new_file_ids):
+                manifest['file_id_to_index'][file_id] = [chunk_idx, offset]
+
+            manifest['total_samples'] += len(new_embeddings)
+            manifest['last_updated'] = pd.Timestamp.now().isoformat()
+
+            # Save manifest atomically (write to temp, then rename)
+            manifest_tmp = manifest_file + '.tmp'
+            with open(manifest_tmp, 'w') as f:
+                json.dump(manifest, f, indent=2)
+            os.replace(manifest_tmp, manifest_file)
+
+            saved_counts[class_name] = len(new_embeddings)
+            logger.info(f"Class '{class_name}': Appended {len(new_embeddings)} embeddings "
+                       f"(chunk {chunk_idx}, total: {manifest['total_samples']})")
+
+        return saved_counts
+
+    def load_ast_embeddings_from_cache(self, cache_dir=None, classes=None, close_previous=True):
+        """
+        Carica embeddings AST da cache usando memory mapping (lazy loading).
+
+        Args:
+            cache_dir: Directory base per cache (default: self.ast_cache_dir)
+            classes: Lista classi da caricare (None = tutte le classi attive)
+            close_previous: Se True, chiude eventuali cache precedentemente caricate
+
+        Returns:
+            dict: {class_name: cache_info}
+                cache_info: {
+                    'chunks': [mmap_array, ...],
+                    'manifest': manifest_dict,
+                    'index_map': {file_id: [chunk_idx, offset]}
+                }
+        """
+        import json
+
+        cache_dir = cache_dir or self.ast_cache_dir
+
+        # Close previous cache if requested
+        if close_previous and hasattr(self, '_ast_cache'):
+            # numpy mmap arrays don't need explicit closing
+            # Use .clear() instead of = {} to preserve reference (important for shared cache in splits)
+            self._ast_cache.clear()
+
+        # Determine which classes to load
+        classes_to_load = classes or list(self.active_classes.keys())
+
+        loaded_cache = {}
+
+        for class_name in classes_to_load:
+            class_dir = os.path.join(cache_dir, class_name)
+            manifest_file = os.path.join(class_dir, 'manifest.json')
+
+            if not os.path.exists(manifest_file):
+                logger.warning(f"No cache manifest found for class '{class_name}' at {manifest_file}")
+                continue
+
+            # Load manifest
+            with open(manifest_file, 'r') as f:
+                manifest = json.load(f)
+
+            # Load all chunks as mmap (lazy loading - not loaded into RAM)
+            chunks_mmap = []
+            for chunk_info in manifest['chunks']:
+                chunk_path = os.path.join(class_dir, chunk_info['file'])
+                if not os.path.exists(chunk_path):
+                    logger.error(f"Chunk file not found: {chunk_path}")
+                    continue
+
+                # Load as memory-mapped array (lazy)
+                mmap_array = np.load(chunk_path, mmap_mode='r')
+                chunks_mmap.append(mmap_array)
+
+            if not chunks_mmap:
+                logger.warning(f"No valid chunks found for class '{class_name}'")
+                continue
+
+            loaded_cache[class_name] = {
+                'chunks': chunks_mmap,
+                'manifest': manifest,
+                'index_map': manifest['file_id_to_index']
+            }
+
+            logger.info(f"Class '{class_name}': Loaded {manifest['total_samples']} embeddings "
+                       f"({len(chunks_mmap)} chunks, memory-mapped)")
+
+        # Store in instance variable for use in __getitem__
+        if not hasattr(self, '_ast_cache'):
+            self._ast_cache = {}
+        self._ast_cache.update(loaded_cache)
+
+        logger.info(f"Loaded AST embeddings cache for {len(loaded_cache)} classes")
+        return loaded_cache
+
+    def get_cached_ast_embedding(self, class_name, file_id):
+        """
+        Recupera embedding AST per un sample specifico dalla cache (O(1) access).
+
+        Args:
+            class_name: Nome della classe
+            file_id: File ID del sample (es. 'video_00001')
+
+        Returns:
+            numpy array or None: embedding (seq_len, hidden_dim) se trovato, None altrimenti
+        """
+        # Check if cache exists
+        if not hasattr(self, '_ast_cache'):
+            logger.debug(f"get_cached_ast_embedding: _ast_cache attribute does not exist")
+            return None
+
+        if len(self._ast_cache) == 0:
+            logger.debug(f"get_cached_ast_embedding: _ast_cache is empty")
+            return None
+
+        if class_name not in self._ast_cache:
+            # Log once per class
+            if not hasattr(self, '_missing_class_logged'):
+                self._missing_class_logged = set()
+            if class_name not in self._missing_class_logged:
+                logger.debug(f"get_cached_ast_embedding: class '{class_name}' not in cache "
+                           f"(available: {list(self._ast_cache.keys())})")
+                self._missing_class_logged.add(class_name)
+            return None
+
+        cache_data = self._ast_cache[class_name]
+        index_info = cache_data['index_map'].get(file_id)
+
+        if index_info is None:
+            logger.debug(f"get_cached_ast_embedding: file_id '{file_id}' not found in index_map for class '{class_name}'")
+            return None
+
+        chunk_idx, offset = index_info
+
+        # Memory-mapped access: loads ONLY this sample into RAM
+        embedding = cache_data['chunks'][chunk_idx][offset]
+
+        return embedding
+
+    def _log_cache_coverage(self):
+        """
+        Calculate and log cache coverage statistics to help debug partial cache issues.
+        Shows how many samples in the dataset have cached AST embeddings vs total samples.
+        """
+        if not hasattr(self, '_ast_cache') or not self._ast_cache:
+            logger.info("📊 Cache Coverage: 0% (no cache loaded)")
+            return
+
+        # Count samples with cache
+        cached_samples = 0
+        total_samples = len(self.samples)
+
+        # Build a set of cached (class_name, file_id) pairs for fast lookup
+        cached_pairs = set()
+        for class_name, cache_data in self._ast_cache.items():
+            for file_id in cache_data['index_map'].keys():
+                cached_pairs.add((class_name, file_id))
+
+        # Check each sample
+        for sample in self.samples:
+            class_name = sample['class_name']
+            file_id = sample['file_id']
+            if (class_name, file_id) in cached_pairs:
+                cached_samples += 1
+
+        coverage_pct = (cached_samples / total_samples * 100) if total_samples > 0 else 0
+
+        # Log with appropriate emoji and warning level
+        if coverage_pct == 100:
+            logger.info(f"📊 Cache Coverage: {coverage_pct:.1f}% ({cached_samples}/{total_samples}) - ✅ FULL coverage, batches will use cache!")
+        elif coverage_pct > 0:
+            logger.warning(f"📊 Cache Coverage: {coverage_pct:.1f}% ({cached_samples}/{total_samples}) - ⚠️  PARTIAL coverage!")
+            logger.warning(f"    ⚠️  Batches with mixed cached/uncached samples will recompute ALL embeddings!")
+            logger.warning(f"    💡 Use scripts/pregenerate_ast_cache.sh to cache all samples")
+        else:
+            logger.warning(f"📊 Cache Coverage: {coverage_pct:.1f}% ({cached_samples}/{total_samples}) - ❌ No samples cached")
+
+        # Per-class breakdown (DEBUG level)
+        logger.debug("Cache coverage per class:")
+        for class_name in self.active_classes.keys():
+            class_samples = [s for s in self.samples if s['class_name'] == class_name]
+            class_cached = sum(1 for s in class_samples
+                             if (s['class_name'], s['file_id']) in cached_pairs)
+            class_total = len(class_samples)
+            class_pct = (class_cached / class_total * 100) if class_total > 0 else 0
+            logger.debug(f"  {class_name}: {class_pct:.1f}% ({class_cached}/{class_total})")
+
+    def close_ast_cache(self):
+        """
+        Chiude la cache AST (libera riferimenti ai mmap arrays).
+        Numpy mmap arrays vengono rilasciati automaticamente quando non più referenziati.
+        """
+        if hasattr(self, '_ast_cache'):
+            self._ast_cache = {}
+            logger.debug("AST cache closed")
 
 
 def create_vegas_dataloader(dataset: VEGASDataset,
@@ -1466,10 +1623,35 @@ def _vegas_collate_fn(batch):
         text_embs = batch[0]['text_emb']  # Dict with sd/flux keys
         output['text_emb'] = text_embs
 
-    # Stack audio embeddings if available
+    # Stack audio embeddings if available (check all items have it)
     if 'audio_emb' in batch[0]:
-        audio_emb = torch.stack([item['audio_emb'] for item in batch])
-        output['audio_emb'] = audio_emb
+        # Check if all items have audio_emb (partial cache scenario)
+        has_all_embeddings = all('audio_emb' in item for item in batch)
+        if has_all_embeddings:
+            audio_emb = torch.stack([item['audio_emb'] for item in batch])
+            output['audio_emb'] = audio_emb
+            # Log successful batch cache usage (only once per session)
+            if not hasattr(_vegas_collate_fn, '_batch_cache_logged'):
+                _vegas_collate_fn._batch_cache_logged = True
+                logger.info(f"✅ Collate: ALL samples in batch have audio_emb (batch size: {len(batch)}) - passing to model")
+        else:
+            # Partial cache - some have embeddings, others don't
+            # In this case, skip audio_emb and let the model compute all of them
+            num_with_emb = sum(1 for item in batch if 'audio_emb' in item)
+            # Get sample identifiers for debugging (using correct format: file_id:class_name)
+            samples_with_cache = [f"{item.get('file_id', '?')}:{item.get('class_name', '?')}"
+                                 for item in batch if 'audio_emb' in item][:3]  # First 3
+            samples_without_cache = [f"{item.get('file_id', '?')}:{item.get('class_name', '?')}"
+                                    for item in batch if 'audio_emb' not in item][:3]  # First 3
+
+            # Log partial cache at WARNING level (only first occurrence)
+            if not hasattr(_vegas_collate_fn, '_partial_cache_logged'):
+                _vegas_collate_fn._partial_cache_logged = True
+                logger.warning(f"⚠️  Collate: PARTIAL cache detected! {num_with_emb}/{len(batch)} samples have audio_emb. "
+                             f"Dropping ALL cached embeddings - model will compute for entire batch.")
+                logger.warning(f"    Examples WITH cache: {samples_with_cache}")
+                logger.warning(f"    Examples WITHOUT cache: {samples_without_cache}")
+                logger.warning(f"    💡 Solution: Pre-generate cache for all samples to avoid recomputation!")
 
     # Handle videos (conditionally, some might be None)
     if 'video' in batch[0]:

@@ -79,6 +79,8 @@
     "clip_adapter_learning_rate_schedule": true,
 
     "_comment_generation": "=== IMAGE GENERATION SETTINGS ===",
+    "generate_embeddings_only": false,
+    "embeddings_checkpoint_dir": "checkpoints/embeddings/vegas-10n-10c-400s-kd",
     "generate_nodes_images_frequency": 1,
     "generate_global_images_frequency": 1,
     "generate_low_memomy_footprint": true,
