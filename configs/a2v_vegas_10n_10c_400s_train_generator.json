@@ -71,6 +71,8 @@
     "clip_adapter_learning_rate_schedule": true,
 
     "_comment_generation": "=== IMAGE GENERATION (disabled in training mode) ===",
+    "generate_embeddings_only": false,
+    "embeddings_checkpoint_dir": "checkpoints/embeddings/vegas-10n-10c-400s-train-generator",
     "generate_nodes_images_frequency": 0,
     "generate_global_images_frequency": 0,
     "generate_low_memomy_footprint": true,

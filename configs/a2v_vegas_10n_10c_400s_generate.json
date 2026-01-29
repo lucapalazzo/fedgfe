@@ -75,6 +75,8 @@
 
     "_comment_generation": "=== IMAGE GENERATION SETTINGS ===",
     "_comment_generation_desc": "Generate N images per node where N = samples_per_node (400)",
+    "generate_embeddings_only": false,
+    "embeddings_checkpoint_dir": "checkpoints/embeddings/vegas-10n-10c-400s-generate",
     "generate_nodes_images_frequency": 1,
     "generate_global_images_frequency": 0,
     "generate_low_memomy_footprint": true,

@@ -39,9 +39,9 @@
     "generator_checkpoint_frequency": 1,
 
     "_comment_adapter_checkpoint": "=== ADAPTER CHECKPOINT SETTINGS ===",
-    "adapter_checkpoint_dir": "checkpoints/adapters/vegas-10n-10c-400s-avg",
-    "adapter_checkpoint_base_name": "vegas-10n-10c-400s-avg",
-    "adapter_save_checkpoint": false,
+    "adapter_checkpoint_dir": "checkpoints/adapters/vegas-10n-10c-400s-sa",
+    "adapter_checkpoint_base_name": "vegas-10n-10c-400s-sa",
+    "adapter_save_checkpoint": true,
     "adapter_load_checkpoint": false,
     "adapter_checkpoint_frequency": 1,
     "adapter_checkpoint_per_type": true,
@@ -59,7 +59,7 @@
     "global_model_train_epochs": 0,
     "global_model_train_from_nodes_adapters": false,
 
-    "t5_adapter_learning_rate": 0.01,
+    "t5_adapter_learning_rate": 0.003,
     "t5_adapter_weight_decay": 0.01,
     "clip_adapter_learning_rate": 0.001,
     "clip_adapter_weight_decay": 0.01,
@@ -71,8 +71,10 @@
     "clip_adapter_learning_rate_schedule": true,
 
     "_comment_generation": "=== IMAGE GENERATION (disabled in training mode) ===",
+    "generate_embeddings_only": false,
+    "embeddings_checkpoint_dir": "checkpoints/embeddings/vegas-10n-10c-400s-sa",
     "generate_nodes_images_frequency": 1,
-    "generate_global_images_frequency": 1,
+    "generate_global_images_frequency": 0,
     "generate_low_memomy_footprint": true,
     "images_output_dir": "output_images/vegas-10n-10c-400s-sa",
     "output_image_base_name": "10le_20gr",

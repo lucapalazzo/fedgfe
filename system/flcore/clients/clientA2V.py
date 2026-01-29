@@ -221,6 +221,15 @@ class clientA2V(Client):
         self.model.ast_model = self.global_model.ast_model
         self.model.ast_feature_extractor = self.global_model.ast_feature_extractor
 
+        # Debug: Verify adapters were created
+        print(f"[DEBUG] Node {node_id}: Model diffusion_type = {self.model.diffusion_type}")
+        print(f"[DEBUG] Node {node_id}: Adapters created: {list(self.model.adapters.keys())}")
+        for adapter_name, adapter in self.model.adapters.items():
+            params = list(adapter.parameters())
+            trainable = sum(p.numel() for p in params if p.requires_grad)
+            total = sum(p.numel() for p in params)
+            print(f"[DEBUG] Node {node_id}: Adapter '{adapter_name}': {len(params)} tensors, {total:,} total params, {trainable:,} trainable")
+
         if 'data_log' in kwargs:
             self.data_log = kwargs['data_log']
         else:
@@ -373,6 +382,10 @@ class clientA2V(Client):
         # Storage for synthetic samples received from server (used in KD aggregation mode)
         self.server_synthetic_samples = None
 
+        # Track generated images per round to avoid regeneration
+        # Structure: {round_num: {'splits': {split_name: [image_paths]}, 'timestamp': ...}}
+        self.last_generated_images = {}
+
 
     def define_metrics(self, split = ""):
         self.metrics_path = "node_" + str(self.id) + "/"
@@ -483,6 +496,10 @@ class clientA2V(Client):
 
         # self.update_per_class_mean_output(use_train=True, device=device)
 
+        # Save AST embeddings to disk cache at the end of first round
+        if self.round == 1:
+            self._save_ast_embeddings_to_disk_cache()
+
         self.train_time_cost['num_rounds'] += 1
         self.train_time_cost['total_cost'] += time.time() - start_time
 
@@ -524,9 +541,11 @@ class clientA2V(Client):
 
         if file_ids is not None:
 
-            #  audio_embs se non esiste
+            # Initialize audio_embs se non esiste
             if not hasattr(base_dataset, 'audio_embs') or base_dataset.audio_embs is None:
-                base_dataset.audio_embs = {}
+                # This should not happen if dataset was initialized correctly
+                logger.warning(f"Node {self.id}: base_dataset.audio_embs is None - creating new dict (may break split sharing)")
+                base_dataset._audio_embs = {}
 
             for file_id, class_name, audio_emb in zip(file_ids,classes,audio_embeddings_batch):
                 file_index = f'{file_id}:{class_name}'
@@ -569,9 +588,75 @@ class clientA2V(Client):
                 if all_cached:
                     # Usa gli embeddings dalla cache
                     audio_embedding = torch.stack(cached_embeddings)
-                    # print(f"Node {self.id} Epoch {epoch+1} 
+                    # print(f"Node {self.id} Epoch {epoch+1}
         return audio_embedding
-        
+
+    def _save_ast_embeddings_to_disk_cache(self):
+        """
+        Salva gli AST embeddings dal RAM cache (base_dataset.audio_embs) su disco.
+        Questo metodo dovrebbe essere chiamato alla fine del training per persistere
+        gli embeddings calcolati durante la prima epoca.
+        """
+        train_dataset = self.node_data.train_dataset
+        if hasattr(train_dataset, 'dataset'):
+            base_dataset = train_dataset.dataset
+        else:
+            base_dataset = train_dataset
+
+        # Check if there are embeddings to save
+        if not hasattr(base_dataset, 'audio_embs') or base_dataset.audio_embs is None:
+            logger.debug(f"Node {self.id}: No audio embeddings to save")
+            return
+
+        if len(base_dataset.audio_embs) == 0:
+            logger.debug(f"Node {self.id}: Audio embeddings cache is empty")
+            return
+
+        # Check if dataset supports AST cache
+        if not hasattr(base_dataset, 'enable_ast_cache') or not base_dataset.enable_ast_cache:
+            logger.debug(f"Node {self.id}: AST cache not enabled in dataset")
+            return
+
+        # Get cache directory from dataset
+        cache_dir = getattr(base_dataset, 'ast_cache_dir', None)
+        if cache_dir is None:
+            logger.debug(f"Node {self.id}: No AST cache directory configured")
+            return
+
+        # Organize embeddings by class: {class_name: {file_id: embedding}}
+        ast_outputs_by_class = {}
+        for key, embedding in base_dataset.audio_embs.items():
+            # Key format: "file_id:class_name"
+            if ':' in key:
+                file_id, class_name = key.split(':', 1)
+                if class_name not in ast_outputs_by_class:
+                    ast_outputs_by_class[class_name] = {}
+                ast_outputs_by_class[class_name][file_id] = embedding
+
+        if len(ast_outputs_by_class) == 0:
+            logger.debug(f"Node {self.id}: No embeddings to save (invalid format)")
+            return
+
+        try:
+            saved_counts = base_dataset.save_ast_embeddings_to_cache(
+                ast_outputs_dict=ast_outputs_by_class,
+                cache_dir=cache_dir
+            )
+            total_saved = sum(saved_counts.values())
+            logger.info(f"Node {self.id}: Saved {total_saved} AST embeddings to disk cache: {saved_counts}")
+
+            # Reload cache into dataset immediately after saving (round 1 only)
+            # This makes the cache available for subsequent rounds
+            # The dataset was created before cache existed, so we need to reload it
+            classes = list(base_dataset.active_classes.keys()) if hasattr(base_dataset, 'active_classes') else None
+            base_dataset.load_ast_embeddings_from_cache(
+                cache_dir=cache_dir,
+                classes=classes
+            )
+            logger.info(f"Node {self.id}: Cache reloaded into dataset for future rounds")
+        except Exception as e:
+            logger.warning(f"Node {self.id}: Failed to save/reload AST embeddings cache: {e}")
+
     def train_a2v(self, epochs, dataloader, client_device=None):
         device = client_device if client_device is not None else self.device
 
@@ -642,6 +727,13 @@ class clientA2V(Client):
 
                 audio_embedding = samples.get('audio_emb', None)
 
+                # Log cache usage at the beginning of first epoch, first round
+                if batch_idx == 0 and epoch == 0 and self.round == 1:
+                    if audio_embedding is not None:
+                        logger.info(f"Node {self.id} R:{self.round} E:{epoch+1} Batch {batch_idx}: ✓ audio_emb from dataset __getitem__ (shape: {audio_embedding.shape})")
+                    else:
+                        logger.info(f"Node {self.id} R:{self.round} E:{epoch+1} Batch {batch_idx}: ✗ No audio_emb from dataset (collate_fn may have filtered partial cache)")
+
                 if audio_embedding is not None:
                     # CRITICAL: Detach cached embeddings to prevent computation graph accumulation
                     audio_embedding = audio_embedding.detach().to(device)
@@ -651,6 +743,8 @@ class clientA2V(Client):
                     if audio_embedding is not None:
                         # CRITICAL: Detach loaded embeddings to prevent memory leaks
                         audio_embedding = audio_embedding.detach().to(device)
+                        if batch_idx == 0:
+                            logger.info(f"Node {self.id} R:{self.round} E:{epoch+1} Batch {batch_idx}: ✓ audio_emb from RAM cache (shape: {audio_embedding.shape})")
                
 
                 # CRITICAL: Use set_to_none=True to fully release gradient memory
@@ -663,8 +757,14 @@ class clientA2V(Client):
                 if audio_embedding is None:
                     if isinstance(audio_data, torch.Tensor) and isinstance(self.model.ast_feature_extractor, ASTFeatureExtractor):
                         audio_data = audio_data.to('cpu').numpy()
+                    # Log AST computation for first batch
+                    if batch_idx == 0:
+                        logger.info(f"Node {self.id} R:{self.round} E:{epoch+1} Batch {batch_idx}: ⚙️  Will compute AST embeddings (no cache available)")
                 else:
                     audio_data = None
+                    # Log cache usage for first batch
+                    if batch_idx == 0:
+                        logger.info(f"Node {self.id} R:{self.round} E:{epoch+1} Batch {batch_idx}: ✅ Using cached audio_emb (shape: {audio_embedding.shape}) - AST will NOT be computed")
 
                 classes = samples.get('class_name', None)
 
@@ -1083,10 +1183,16 @@ class clientA2V(Client):
         return 0.0
 
     def print_optimizer_info(self, client_id):
-        if self.train_optimizer is None:
-            print(f"Node {client_id}: No optimizer initialized")
+        if len(self.train_optimizers) == 0:
+            print(f"Node {client_id}: ❌ ERROR: No optimizers in self.train_optimizers!")
+            print(f"Node {client_id}: Adapter dict keys: {list(self.adapters.keys())}")
+            print(f"Node {client_id}: Number of adapters: {len(self.adapters)}")
+            for adapter_name, adapter in self.adapters.items():
+                params = list(adapter.parameters())
+                trainable = sum(p.numel() for p in params if p.requires_grad)
+                print(f"Node {client_id}: Adapter '{adapter_name}' has {len(params)} params, {trainable:,} trainable")
             return
-        
+
         for optimizer_name, optimizer in self.train_optimizers.items():
             print(f"Node {client_id} optimizer '{optimizer_name}': {optimizer}")
 
@@ -1103,11 +1209,19 @@ class clientA2V(Client):
         trainable_params.extend(self.model.parameters())
         trainable_params_dict = {}
 
+        print(f"[DEBUG] Node {self.id}: setup_optimizer called")
+        print(f"[DEBUG] Node {self.id}: self.adapters has {len(self.adapters)} adapters: {list(self.adapters.keys())}")
+
         for adapter_name, adapter in self.adapters.items():
             trainable_params_dict[adapter_name] = adapter.parameters()
 
+        print(f"[DEBUG] Node {self.id}: trainable_params_dict has {len(trainable_params_dict)} entries")
+
         if len(trainable_params) == 0:
             raise ValueError(f"Node {self.id}: No trainable parameters found in local adapters!")
+
+        if len(trainable_params_dict) == 0:
+            raise ValueError(f"Node {self.id}: No adapters found! self.adapters is empty!")
 
         # Create optimizer
         if self.model_optimizer.lower() == "adamw":
@@ -1575,10 +1689,16 @@ class clientA2V(Client):
             self.adapters[module_name] = self.adapters[module_name].to(self.device)
 
         total_batches = len(dataloader)
-        print(f"Node {self.id} - Processing {total_batches} batches from dataset...")
 
         with torch.no_grad():
-            for batch_idx, samples in enumerate(dataloader):
+            # Progress bar for batch processing
+            batch_pbar = tqdm(enumerate(dataloader),
+                            total=total_batches,
+                            desc=f"Node {self.id}: Extracting embeddings",
+                            unit="batch",
+                            leave=False)
+
+            for batch_idx, samples in batch_pbar:
                 # Variables to cleanup in finally block
                 audio_data = None
                 audio_data_np = None
@@ -4560,7 +4680,15 @@ class clientA2V(Client):
             return []
 
         imgs = []
-        for pe, ppe in zip(prompt_embeds, pooled_prompt_embeds):
+
+        # Progress bar for single image generation (low memory mode)
+        img_pbar = tqdm(zip(prompt_embeds, pooled_prompt_embeds),
+                       total=len(prompt_embeds),
+                       desc=f"Node {self.id}: Generating images (low-mem)",
+                       unit="img",
+                       leave=False)
+
+        for pe, ppe in img_pbar:
             pe = pe.unsqueeze(0)
             ppe = ppe.unsqueeze(0)
             img = self.server.global_model.diffusion_model(
@@ -4700,6 +4828,41 @@ class clientA2V(Client):
 
         return saved_files
 
+    def has_generated_images_for_round(self, round_num):
+        """
+        Check if images have already been generated for the given round.
+
+        Args:
+            round_num: Round number to check
+
+        Returns:
+            bool: True if images exist for this round, False otherwise
+        """
+        if round_num is None:
+            return False
+
+        if round_num in self.last_generated_images:
+            splits_data = self.last_generated_images[round_num].get('splits', {})
+            # Check if at least one split has generated images
+            has_images = any(len(paths) > 0 for paths in splits_data.values() if paths is not None)
+            return has_images
+
+        return False
+
+    def get_generated_images_for_round(self, round_num):
+        """
+        Get previously generated images for a specific round.
+
+        Args:
+            round_num: Round number
+
+        Returns:
+            Dict with split names as keys and image paths as values, or None if not found
+        """
+        if round_num in self.last_generated_images:
+            return self.last_generated_images[round_num].get('splits', None)
+        return None
+
     def generate_images(self, split='test', round_num=None, audio_embeddings=None):
         """
         Generate images for this client using local data splits.
@@ -4714,6 +4877,18 @@ class clientA2V(Client):
         if self.server is None:
             logger.error(f"Client {self.id}: Server reference not set. Cannot generate images.")
             return {}
+
+        # Check if images were already generated for this round
+        if round_num is not None and self.has_generated_images_for_round(round_num):
+            logger.info(f"Node {self.id}: Images already generated for round {round_num}, skipping regeneration")
+            cached_results = self.get_generated_images_for_round(round_num)
+            # Convert to expected format
+            result = {
+                'on_train': cached_results.get('train'),
+                'on_test': cached_results.get('test'),
+                'on_val': cached_results.get('val')
+            }
+            return result
 
 
 
@@ -4763,6 +4938,16 @@ class clientA2V(Client):
                         result['from_pretrained_generators'] = []
                     result['from_pretrained_generators'].extend(saved_files)
 
+            # Store generated images for this round to avoid regeneration
+            if round_num is not None and 'from_pretrained_generators' in result:
+                import datetime
+                self.last_generated_images[round_num] = {
+                    'splits': {'from_pretrained_generators': result['from_pretrained_generators']},
+                    'timestamp': datetime.datetime.now().isoformat()
+                }
+                logger.info(f"Node {self.id}: Stored {len(result['from_pretrained_generators'])} "
+                           f"generated images (from pretrained generators) for round {round_num}")
+
             return result
 
         print(f"\nClient {self.id}: Generating images from {split} split using server's diffusion model")
@@ -4779,9 +4964,15 @@ class clientA2V(Client):
         else:
             splits_to_process = [split]
 
-        for split_name in splits_to_process:
+        # Progress bar for splits
+        splits_pbar = tqdm(splits_to_process, desc=f"Node {self.id}: Processing splits", unit="split")
+
+        for split_name in splits_pbar:
             dataset = None
             suffix = ''
+
+            # Update progress bar description
+            splits_pbar.set_description(f"Node {self.id}: Processing {split_name} split")
 
             if split_name == 'val':
                 dataset = self.node_data.get_val_dataset()
@@ -4801,19 +4992,242 @@ class clientA2V(Client):
 
             if dataset is not None and len(dataset) > 0:
                 text_embs = dataset.text_embs if hasattr(dataset, 'text_embs') else None
+
+                # Extract audio embeddings with progress tracking
+                splits_pbar.set_postfix_str("Extracting audio embeddings...")
                 embeddings = self.get_audio_embeddings_from_dataset(dataset)
 
+                # Generate images with progress tracking
+                splits_pbar.set_postfix_str("Generating images...")
                 imgs = self.generate_images_from_diffusion(embeddings, base_embeddings=text_embs)
 
                 # Save images (always save for metrics computation)
+                splits_pbar.set_postfix_str("Saving images...")
                 saved_files = self.save_generated_images(imgs, embeddings, suffix=suffix, round_num=round_num)
                 result[result_key] = saved_files
 
-                print(f"Client {self.id}: Generated {len(imgs)} images from {split_name} split")
+                splits_pbar.set_postfix_str(f"✓ Generated {len(imgs)} images")
             else:
                 logger.info(f"Client {self.id}: No {split_name} dataset available or dataset is empty")
+                splits_pbar.set_postfix_str("⊘ No dataset")
+
+        # Store generated images for this round to avoid regeneration
+        if round_num is not None:
+            import datetime
+
+            # Convert result format to internal storage format
+            splits_data = {}
+            if result['on_train'] is not None:
+                splits_data['train'] = result['on_train']
+            if result['on_val'] is not None:
+                splits_data['val'] = result['on_val']
+            if result['on_test'] is not None:
+                splits_data['test'] = result['on_test']
+
+            # Store with timestamp
+            self.last_generated_images[round_num] = {
+                'splits': splits_data,
+                'timestamp': datetime.datetime.now().isoformat()
+            }
+
+            total_images = sum(len(paths) for paths in splits_data.values() if paths is not None)
+            logger.info(f"Node {self.id}: Stored {total_images} generated images for round {round_num} "
+                       f"(splits: {list(splits_data.keys())})")
 
         return result
+
+    def save_embeddings_to_checkpoint(self, split='all', checkpoint_dir='checkpoints/embeddings', round_num=None):
+        """
+        Save text embeddings (T5 and CLIP) to checkpoint for later image generation.
+
+        This function now integrates with AST embeddings cache:
+        - Uses cached AST embeddings when available (fast path)
+        - Computes and caches new AST embeddings when needed
+        - Saves new AST embeddings to disk cache at the end
+
+        Args:
+            split: Which split to process - 'test', 'val', 'train', or 'all' (default: 'all')
+            checkpoint_dir: Directory to save checkpoint files
+            round_num: Optional round number for naming
+
+        Returns:
+            Path to saved checkpoint file
+        """
+        import datetime
+
+        # Create checkpoint directory
+        os.makedirs(checkpoint_dir, exist_ok=True)
+
+        # Prepare checkpoint data structure
+        checkpoint_data = {
+            'node_id': self.id,
+            'round': round_num if round_num is not None else -1,
+            'timestamp': datetime.datetime.now().isoformat(),
+            'embeddings': [],
+            'metadata': {
+                'diffusion_type': self.diffusion_type,
+                'selected_classes': list(self.node_data.dataset.active_classes) if hasattr(self.node_data.dataset, 'active_classes') else []
+            }
+        }
+
+        # Accumulator for new AST embeddings to cache
+        # Format: {class_name: {file_id: embedding_tensor}}
+        new_ast_embeddings = {}
+        cache_hits = 0
+        cache_misses = 0
+
+        # Determine splits to process
+        splits_to_process = []
+        if split == 'all':
+            splits_to_process = ['train', 'val', 'test']
+        else:
+            splits_to_process = [split]
+
+        # Process each split
+        for split_name in splits_to_process:
+            dataloader = None
+
+            if split_name == 'val':
+                dataloader = self.node_data.load_val_data(batch_size=self.batch_size)
+            elif split_name == 'test':
+                dataloader = self.node_data.load_test_data(batch_size=self.batch_size)
+            elif split_name == 'train':
+                dataloader = self.node_data.load_train_data(batch_size=self.batch_size)
+
+            if dataloader is None or len(dataloader.dataset) == 0:
+                logger.info(f"Client {self.id}: No data in {split_name} split, skipping")
+                continue
+
+            logger.info(f"Client {self.id}: Processing {len(dataloader)} samples from {split_name} split")
+
+            # Process dataset in batches to save memory
+            pbar = tqdm(enumerate(dataloader),
+                       total=len(dataloader),
+                       desc=f"Client {self.id}: Extracting embeddings from {split_name}",
+                       unit="batch",
+                       leave=False)
+            for batch_idx, batch in pbar:
+                # DataLoader returns batches, so we need to handle lists
+                batch_size = len(batch['class_name']) if isinstance(batch['class_name'], list) else 1
+                class_names = batch.get('class_name', ['unknown'] * batch_size)
+                file_ids = batch.get('file_id', [None] * batch_size)
+
+                # Check if audio_emb is already available (from AST cache)
+                audio_embedding_batch = batch.get('audio_emb', None)
+                audio_data = None
+
+                if audio_embedding_batch is not None:
+                    # Cache hit - use cached AST embeddings
+                    cache_hits += batch_size
+                    audio_embedding_batch = audio_embedding_batch.to(self.device)
+                    pbar.set_postfix_str(f"Cache: {cache_hits}/{cache_hits+cache_misses}")
+                else:
+                    # Cache miss - need to compute AST embeddings
+                    cache_misses += batch_size
+
+                    # Extract audio from batch
+                    audio_data = batch.get('audio', None)
+                    if audio_data is None:
+                        logger.warning(f"Client {self.id}: No audio found in batch {batch_idx} of {split_name} split, skipping")
+                        continue
+
+                    # Prepare audio data for AST model
+                    if isinstance(self.model.ast_feature_extractor, ASTFeatureExtractor):
+                        audio_data = audio_data.numpy()
+                    else:
+                        audio_data = audio_data.to(self.device)
+
+                    pbar.set_postfix_str(f"Computing AST... Cache: {cache_hits}/{cache_hits+cache_misses}")
+
+                # Get text embeddings from model
+                # Pass audio_embedding if available, otherwise pass audio_data
+                with torch.no_grad():
+                    text_embeddings = self.model(
+                        audio_data,
+                        audio_embedding=audio_embedding_batch,
+                        return_loss=False
+                    )
+
+                # If we computed new AST embeddings, accumulate them for caching
+                if audio_embedding_batch is None and 'audio_embeddings' in text_embeddings:
+                    # Iterate over batch elements
+                    for i, (class_name, file_id) in enumerate(zip(class_names, file_ids)):
+                        if file_id is not None:
+                            # Store for later cache save
+                            if class_name not in new_ast_embeddings:
+                                new_ast_embeddings[class_name] = {}
+                            new_ast_embeddings[class_name][file_id] = text_embeddings['audio_embeddings'][i].cpu()
+
+                # Process each sample in the batch for checkpoint storage
+                for i in range(batch_size):
+                    class_name = class_names[i] if isinstance(class_names, list) else class_names
+
+                    # Prepare output path for future image generation
+                    round_str = f"r{round_num}" if round_num is not None else "r0"
+                    sample_idx = batch_idx * self.batch_size + i
+                    image_filename = f"node_{self.id}_{split_name}_{class_name}_{sample_idx}_{round_str}.png"
+                    image_path = os.path.join(self.server.images_output_dir if self.server else 'output_images', image_filename)
+
+                    # Extract embeddings for this sample
+                    t5_emb = text_embeddings['t5_text_embeddings'][i].cpu() if 't5_text_embeddings' in text_embeddings else None
+                    clip_emb = text_embeddings['clip_text_embeddings'][i].cpu() if 'clip_text_embeddings' in text_embeddings else None
+
+                    # Store embedding data
+                    embedding_entry = {
+                        'split': split_name,
+                        'index': sample_idx,
+                        'class_name': class_name,
+                        'image_path': image_path,
+                        'image_filename': image_filename,
+                        't5_embedding': t5_emb,
+                        'clip_embedding': clip_emb,
+                        'sample_metadata': {
+                            'sample_id': f'{split_name}_{sample_idx}',
+                            'file_id': file_ids[i] if isinstance(file_ids, list) else file_ids
+                        }
+                    }
+
+                    checkpoint_data['embeddings'].append(embedding_entry)
+
+        # Save newly computed AST embeddings to disk cache
+        if len(new_ast_embeddings) > 0:
+            logger.info(f"Client {self.id}: Saving {sum(len(v) for v in new_ast_embeddings.values())} new AST embeddings to cache")
+            logger.info(f"  Cache stats: {cache_hits} hits, {cache_misses} misses ({cache_hits/(cache_hits+cache_misses)*100:.1f}% hit rate)")
+
+            # Get base dataset to access cache methods
+            train_dataset = self.node_data.train_dataset
+            if hasattr(train_dataset, 'dataset'):
+                base_dataset = train_dataset.dataset
+            else:
+                base_dataset = train_dataset
+
+            # Save to cache if dataset supports it
+            if hasattr(base_dataset, 'save_ast_embeddings_to_cache') and hasattr(base_dataset, 'enable_ast_cache'):
+                if base_dataset.enable_ast_cache:
+                    try:
+                        saved_counts = base_dataset.save_ast_embeddings_to_cache(
+                            ast_outputs_dict=new_ast_embeddings,
+                            cache_dir=base_dataset.ast_cache_dir
+                        )
+                        logger.info(f"Client {self.id}: AST cache updated: {saved_counts}")
+                    except Exception as e:
+                        logger.warning(f"Client {self.id}: Failed to save AST embeddings to cache: {e}")
+                else:
+                    logger.debug(f"Client {self.id}: AST cache disabled, skipping cache save")
+        else:
+            if cache_hits > 0:
+                logger.info(f"Client {self.id}: All AST embeddings loaded from cache ({cache_hits} hits, 100% hit rate)")
+            else:
+                logger.debug(f"Client {self.id}: No new AST embeddings to cache")
+
+        # Save checkpoint
+        checkpoint_filename = f"node_{self.id}_embeddings_r{round_num if round_num is not None else 0}.pt"
+        checkpoint_path = os.path.join(checkpoint_dir, checkpoint_filename)
+
+        torch.save(checkpoint_data, checkpoint_path)
+        logger.info(f"Client {self.id}: Saved {len(checkpoint_data['embeddings'])} embeddings to {checkpoint_path}")
+
+        return checkpoint_path
 
     def test_node_metrics_from_images(self, generated_images):
         """

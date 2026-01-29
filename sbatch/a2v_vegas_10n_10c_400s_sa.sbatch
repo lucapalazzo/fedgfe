@@ -16,23 +16,9 @@ conda activate flvit
 
 # Step 1: SA (Stand-Alone) - No aggregation
 echo "=========================================="
-echo "Step 1/3: SA - No Aggregation"
+echo "Step 1/1: SA - No Aggregation"
 echo "=========================================="
 python -u system/main.py --config configs/a2v_vegas_10n_10c_400s_sa.json
-date
-
-# Step 2: FedAvg aggregation
-echo "=========================================="
-echo "Step 2/3: FedAvg Aggregation"
-echo "=========================================="
-python -u system/main.py --config configs/a2v_vegas_10n_10c_400s_avg.json
-date
-
-# Step 3: Train adapters
-echo "=========================================="
-echo "Step 3/3: Training Adapters"
-echo "=========================================="
-python -u system/main.py --config configs/a2v_vegas_10n_10c_400s_train_adapters.json
 date
 
 echo "=========================================="
