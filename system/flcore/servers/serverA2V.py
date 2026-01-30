@@ -2127,6 +2127,10 @@ class FedA2V(FedRewind):
                     # Keep in CPU
                     generator = generator.to('cpu')
 
+                    # #FIX ME
+                    # logger.warn( "SKIPPING GENRATOR LOAD STATE DICT FOR DEBUGGING PURPOSES")
+                    # loaded_count += 1
+                    # continue
                     # Load state dict
                     if 'generator_state_dict' in checkpoint:
                         generator.load_state_dict(checkpoint['generator_state_dict'])
@@ -3181,6 +3185,7 @@ class FedA2V(FedRewind):
 
         # Step 1: Freeze node adapters and collect target generator function
         logger.info("[KD Aggregation] Step 1: Freezing node adapters")
+        self._move_to_gpu(self.device, models=['global_adapters'])
         self._freeze_nodes_adapters()
 
         # Step 2: Collect classes present in nodes
@@ -3191,13 +3196,13 @@ class FedA2V(FedRewind):
         logger.info(f"[KD Aggregation] Classes to train on: {classes_to_train}")
 
         # Step 3: Create single server adapter
-        logger.info("[KD Aggregation] Step 2: Creating single server adapter")
-        server_adapter = self._create_single_server_adapter()
+        # logger.info("[KD Aggregation] Step 2: Creating single server adapter")
+        # server_adapter = self._create_single_server_adapter()
 
         # Step 4: Train server adapter with KD on all classes
         logger.info("[KD Aggregation] Step 3: Training server adapter with Knowledge Distillation")
         self._train_single_adapter_kd(
-            server_adapter=server_adapter,
+            server_adapter=self.global_adapters,
             classes_to_train=classes_to_train,
             epochs=kd_epochs,
             batch_size=kd_batch_size,
@@ -3206,8 +3211,8 @@ class FedA2V(FedRewind):
         )
 
         # Step 5: Load trained adapter into global_adapters_modules
-        logger.info("[KD Aggregation] Step 4: Loading trained adapter into global_adapters_modules")
-        self.global_adapters_modules.load_state_dict(server_adapter.state_dict())
+        # logger.info("[KD Aggregation] Step 4: Loading trained adapter into global_adapters_modules")
+        # self.global_adapters_modules.load_state_dict(server_adapter.state_dict())
 
         # Step 6: Generate and distribute synthetic samples to nodes (for image generation)
         logger.info("[KD Aggregation] Step 5: Generating synthetic samples for nodes")
@@ -3223,8 +3228,10 @@ class FedA2V(FedRewind):
 
         # Step 7: Cleanup
         logger.info("[KD Aggregation] Step 6: Cleaning up intermediate data")
-        del server_adapter
-        torch.cuda.empty_cache()
+        # del server_adapter
+        # torch.cuda.empty_cache()
+        self._move_to_cpu(models=['global_adapters'])
+        self._unfreeze_nodes_adapters()
 
         logger.info("[KD Aggregation] Knowledge Distillation aggregation completed successfully")
 
@@ -3232,12 +3239,51 @@ class FedA2V(FedRewind):
         """
         Set all node adapters to eval mode and freeze their parameters.
         """
-        for node_id, node_adapter in self.nodes_adapters_modules.items():
-            if node_adapter is not None:
-                node_adapter.eval()
-                for param in node_adapter.parameters():
-                    param.requires_grad = False
+        for node in self.clients:
+            node_id = node.id
+            self._freeze_node_adapter(node_id)
         logger.info(f"[KD] Frozen {len(self.nodes_adapters_modules)} node adapters")
+    
+    def _freeze_node_adapter(self, node_id):
+        """
+        Set a specific node's adapter to eval mode and freeze its parameters.
+
+        Args:
+            node_id: ID of the node whose adapter to freeze
+        """
+        node_adapter = self.nodes_adapters_modules.get(node_id)
+        if node_adapter is not None:
+            node_adapter.eval()
+            for param in node_adapter.parameters():
+                param.requires_grad = False
+            logger.info(f"[KD] Frozen adapter for node {node_id}")
+        else:
+            logger.warning(f"[KD] No adapter found for node {node_id} to freeze")
+
+    def _unfreeze_nodes_adapters(self):
+        """
+        Unfreeze all node adapters' parameters.
+        """
+        for node in self.clients:
+            node_id = node.id
+            self._unfreeze_node_adapter(node_id)
+        logger.info(f"[KD] Unfrozen {len(self.nodes_adapters_modules)} node adapters")
+
+    def _unfreeze_node_adapter(self, node_id):
+        """
+        Unfreeze a specific node's adapter parameters.
+
+        Args:
+            node_id: ID of the node whose adapter to unfreeze
+        """
+        node_adapter = self.nodes_adapters_modules.get(node_id)
+        if node_adapter is not None:
+            node_adapter.train()
+            for param in node_adapter.parameters():
+                param.requires_grad = True
+            logger.info(f"[KD] Unfrozen adapter for node {node_id}")
+        else:
+            logger.warning(f"[KD] No adapter found for node {node_id} to unfreeze")
 
     def _get_classes_from_nodes(self):
         """
@@ -3248,11 +3294,9 @@ class FedA2V(FedRewind):
         """
         all_classes = set()
         for node in self.clients:
-            if hasattr(node.node_data, 'selected_classes') and node.node_data.selected_classes:
-                all_classes.update(node.node_data.selected_classes)
-            elif hasattr(node.node_data, 'class_names') and node.node_data.class_names:
-                all_classes.update(node.node_data.class_names)
-
+            if hasattr(node.node_data.dataset, 'active_classes') and node.node_data.dataset.active_classes:
+                all_classes.update(node.node_data.dataset.active_classes)
+          
         # Filter classes that have generators
         classes_with_generators = [c for c in all_classes if c in self.prompt_generators]
 
@@ -3298,134 +3342,142 @@ class FedA2V(FedRewind):
         device = self.device if hasattr(self, 'device') else 'cuda' if torch.cuda.is_available() else 'cpu'
         mse_loss = nn.MSELoss()
 
+
+        optimizer = self.global_optimizers
         # Create single optimizer for the server adapter
-        optimizer = torch.optim.AdamW(
-            server_adapter.parameters(),
-            lr=learning_rate,
-            weight_decay=getattr(self.config.feda2v, 'adapters_weight_decay', 0.0001)
-        )
+        # optimizer = torch.optim.AdamW(
+        #     server_adapter.parameters(),
+        #     lr=learning_rate,
+        #     weight_decay=getattr(self.config.feda2v, 'adapters_weight_decay', 0.0001)
+        # )
 
         # Collect which nodes have which classes
         node_classes = {}
         for node in self.clients:
-            if hasattr(node.node_data, 'selected_classes') and node.node_data.selected_classes:
-                node_classes[node.id] = node.node_data.selected_classes
-            elif hasattr(node.node_data, 'class_names') and node.node_data.class_names:
-                node_classes[node.id] = node.node_data.class_names
+            if hasattr(node.node_data.dataset, 'selected_classes') and node.node_data.dataset.selected_classes:
+                node_classes[node.id] = node.node_data.dataset.selected_classes
 
         logger.info(f"[KD Training] Node classes mapping: {node_classes}")
         logger.info(f"[KD Training] Training single adapter on {len(classes_to_train)} classes")
 
         # Training loop
         for epoch in range(epochs):
-            server_adapter.train()
             epoch_total_loss = 0.0
             epoch_class_losses = {}
             total_batches = 0
 
             # Iterate over all classes
-            for class_name in classes_to_train:
-                if class_name not in self.prompt_generators:
-                    logger.warning(f"[KD Training] No generator for class '{class_name}', skipping")
-                    continue
-
-                generator = self.prompt_generators[class_name]
-                generator.eval()  # Keep generator frozen
-
-                # Generate synthetic samples for this class
-                with torch.no_grad():
-                    try:
-                        synthetic_samples = generator.sample(num_samples=samples_per_class, device=device)
-                    except Exception as e:
-                        logger.error(f"[KD Training] Failed to generate samples for class '{class_name}': {e}")
+            for node_id, node_active_classes in node_classes.items():
+                logger.info(f"[KD Training] Node {node_id} has classes: {node_classes}")
+                for class_name in node_active_classes:
+                    if class_name not in self.prompt_generators:
+                        logger.warning(f"[KD Training] No generator for class '{class_name}', skipping")
                         continue
 
-                # Get target outputs from nodes that have this class (frozen adapters)
-                class_clip_targets = []
-                class_t5_targets = []
+                    generator = self.prompt_generators[class_name]
+                    generator.eval()  # Keep generator frozen
 
-                with torch.no_grad():
-                    for node_id, classes in node_classes.items():
-                        if class_name not in classes:
+                    # Generate synthetic samples for this class
+                    with torch.no_grad():
+                        try:
+                            if self.synthetic_samples_per_class is not None:
+                                synthetic_samples = self.synthetic_samples_per_node[node_id][class_name].to(self.device)
+                                # if synthetic_samples is None or synthetic_samples.size(0) < samples_per_class:
+                                #     logger.warning(f"[KD Training] Not enough pre-generated samples for class '{class_name}', generating new samples")
+                                #     synthetic_samples = generator.sample(num_samples=self.synthetic_samples_per_class, device=device)
+                                
+                                # synthetic_samples = synthetic_samples[:samples_per_class].to(device)
+                        except Exception as e:
+                            logger.error(f"[KD Training] Failed to generate samples for class '{class_name}': {e}")
                             continue
 
-                        node_adapter = self.nodes_adapters_modules.get(node_id)
-                        if node_adapter is None:
-                            continue
+                    # Get target outputs from nodes that have this class (frozen adapters)
+                    class_targets = {}
+
+                    with torch.no_grad():
+                        for node_id, node_class in node_classes.items():
+                            
+                            self.nodes_adapters[node_id] = {k: v.to(self.device) for k, v in self.nodes_adapters[node_id].items()}
+                            node_adapter = self.nodes_adapters[node_id]
+                            if node_adapter is None:
+                                continue
+                            for adapter_name in node_adapter.keys():
+                                if adapter_name not in class_targets:
+                                    class_targets[adapter_name] = []
+                            
+                            try:
+                                for adapter_name, adapter_module in node_adapter.items():
+                                    class_targets[adapter_name].append(adapter_module(synthetic_samples.to(device)).detach())
+
+                            except Exception as e:
+                                logger.error(f"[KD Training] Failed to get target outputs for node {node_id}, class '{class_name}': {e}")
+                                continue
+
+                    # Average targets across nodes for this class
+                    # if not class_clip_targets and not class_t5_targets:
+                    #     logger.warning(f"[KD Training] No target outputs for class '{class_name}', skipping")
+                    #     continue
+                    targets = {}
+                    for adapter_name, outputs in class_targets.items():
+                        if outputs:
+                            targets[adapter_name] = torch.stack(class_targets[adapter_name]).mean(dim=0)
+                        else:
+                            targets[adapter_name] = None
+                    # clip_target = torch.stack(class_targets['clip']).mean(dim=0) if 'clip' in class_targets else None
+                    # t5_target = torch.stack(class_targets['t5']).mean(dim=0) if 't5' in class_targets else None
+
+                    # Train on batches for this class
+                    num_batches = (samples_per_class + batch_size - 1) // batch_size
+                    class_loss = 0.0
+
+                    for batch_idx in range(num_batches):
+                        start_idx = batch_idx * batch_size
+                        end_idx = min(start_idx + batch_size, samples_per_class)
+
+                        batch_samples = synthetic_samples[start_idx:end_idx]
+
+                        for optimizer_name, optimizer in self.global_optimizers.items():
+                            optimizer.zero_grad()
+
+                        # Forward pass through server adapter
+                        batch_loss = { adapter_name: 0.0 for adapter_name in server_adapter.keys() }
 
                         try:
-                            if hasattr(node_adapter, 'clip'):
-                                clip_output = node_adapter.clip(synthetic_samples.to(device))
-                                class_clip_targets.append(clip_output.detach())
-
-                            if hasattr(node_adapter, 't5'):
-                                t5_output = node_adapter.t5(synthetic_samples.to(device))
-                                class_t5_targets.append(t5_output.detach())
+                            for adapter_name, adapter_module in server_adapter.items():
+                                if adapter_name in targets and targets[adapter_name] is not None:
+                                    adapter_output = adapter_module(batch_samples)
+                                    batch_target = targets[adapter_name][start_idx:end_idx]
+                                    batch_loss[adapter_name] += mse_loss(adapter_output, batch_target)
+                          
+                                    if batch_loss[adapter_name] > 0:
+                                        batch_loss[adapter_name].backward()
+                                        for optimizer_name, optimizer in self.global_optimizers.items():
+                                            optimizer.step()
+                                        class_loss += batch_loss.item()
+                                        epoch_total_loss += batch_loss.item()
+                                        total_batches += 1
                         except Exception as e:
-                            logger.error(f"[KD Training] Failed to get target outputs for node {node_id}, class '{class_name}': {e}")
+                            logger.error(f"[KD Training] Error during training for class '{class_name}', batch {batch_idx}: {e}")
                             continue
 
-                # Average targets across nodes for this class
-                if not class_clip_targets and not class_t5_targets:
-                    logger.warning(f"[KD Training] No target outputs for class '{class_name}', skipping")
-                    continue
+                    # Track per-class loss
+                    avg_class_loss = class_loss / num_batches if num_batches > 0 else 0.0
+                    epoch_class_losses[class_name] = avg_class_loss
 
-                clip_target = torch.stack(class_clip_targets).mean(dim=0) if class_clip_targets else None
-                t5_target = torch.stack(class_t5_targets).mean(dim=0) if class_t5_targets else None
+                self.nodes_adapters[node_id] = {k: v.to('cpu') for k, v in self.nodes_adapters[node_id].items()}
 
-                # Train on batches for this class
-                num_batches = (samples_per_class + batch_size - 1) // batch_size
-                class_loss = 0.0
+                # Log epoch progress
+                avg_epoch_loss = epoch_total_loss / total_batches if total_batches > 0 else 0.0
 
-                for batch_idx in range(num_batches):
-                    start_idx = batch_idx * batch_size
-                    end_idx = min(start_idx + batch_size, samples_per_class)
+                if epoch % max(1, epochs // 5) == 0 or epoch == epochs - 1:
+                    loss_str = ", ".join([f"{cls}: {loss:.6f}" for cls, loss in epoch_class_losses.items()])
+                    logger.info(f"[KD Training] Epoch {epoch+1}/{epochs} - Total Loss: {avg_epoch_loss:.6f}")
+                    logger.info(f"[KD Training] Epoch {epoch+1}/{epochs} - Per-class Losses: {loss_str}")
 
-                    batch_samples = synthetic_samples[start_idx:end_idx]
-
-                    optimizer.zero_grad()
-
-                    # Forward pass through server adapter
-                    batch_loss = 0.0
-
-                    try:
-                        if clip_target is not None and hasattr(server_adapter, 'clip'):
-                            clip_output = server_adapter.clip(batch_samples)
-                            batch_clip_target = clip_target[start_idx:end_idx]
-                            batch_loss += mse_loss(clip_output, batch_clip_target)
-
-                        if t5_target is not None and hasattr(server_adapter, 't5'):
-                            t5_output = server_adapter.t5(batch_samples)
-                            batch_t5_target = t5_target[start_idx:end_idx]
-                            batch_loss += mse_loss(t5_output, batch_t5_target)
-
-                        # Backward pass
-                        if batch_loss > 0:
-                            batch_loss.backward()
-                            optimizer.step()
-                            class_loss += batch_loss.item()
-                            epoch_total_loss += batch_loss.item()
-                            total_batches += 1
-                    except Exception as e:
-                        logger.error(f"[KD Training] Error during training for class '{class_name}', batch {batch_idx}: {e}")
-                        continue
-
-                # Track per-class loss
-                avg_class_loss = class_loss / num_batches if num_batches > 0 else 0.0
-                epoch_class_losses[class_name] = avg_class_loss
-
-            # Log epoch progress
-            avg_epoch_loss = epoch_total_loss / total_batches if total_batches > 0 else 0.0
-
-            if epoch % max(1, epochs // 5) == 0 or epoch == epochs - 1:
-                loss_str = ", ".join([f"{cls}: {loss:.6f}" for cls, loss in epoch_class_losses.items()])
-                logger.info(f"[KD Training] Epoch {epoch+1}/{epochs} - Total Loss: {avg_epoch_loss:.6f}")
-                logger.info(f"[KD Training] Epoch {epoch+1}/{epochs} - Per-class Losses: {loss_str}")
-
-                # Memory tracking
-                if torch.cuda.is_available():
-                    mem_allocated = torch.cuda.memory_allocated() / 1024**2
-                    logger.debug(f"[KD Training] GPU Memory: {mem_allocated:.2f} MB")
+                    # Memory tracking
+                    if torch.cuda.is_available():
+                        mem_allocated = torch.cuda.memory_allocated() / 1024**2
+                        logger.debug(f"[KD Training] GPU Memory: {mem_allocated:.2f} MB")
 
         logger.info(f"[KD Training] Completed training single adapter over {epochs} epochs")
 
@@ -4217,7 +4269,6 @@ class FedA2V(FedRewind):
         # Load generator checkpoints after clients are created and federation classes are collected
         if self.use_generator and self.generator_load_checkpoint:
             logger.info("Loading generator checkpoints now that federation classes are available **TEMPORARY DISABLED**")
-            # success = False
             success = self.load_generator_checkpoint()
             if success:
                 logger.info("Successfully loaded generator checkpoint")
@@ -4422,6 +4473,7 @@ class FedA2V(FedRewind):
 
                         # Store directly in self.synthetic_samples_per_node[node_id][class_name]
                         self.synthetic_samples_per_node[node_id][class_name] = synthetic_audio_embs
+                        self.synthetic_samples_per_node[class_name] = synthetic_audio_embs
                         node_generated += 1
                         total_samples_generated += num_samples_for_class
                         logger.info(f"  ✓ Generated {num_samples_for_class} samples for '{class_name}' {seq_info}")
@@ -4765,6 +4817,17 @@ class FedA2V(FedRewind):
 
         if 'generator' in models and hasattr(self, 'prompt_generator_t5') and self.prompt_generator_t5 is not None:
             self.prompt_generator_t5 = self.prompt_generator_t5.to(device)
+        
+        if 'nodes_adapters' in models:
+            for client in self.clients:
+                client._move_to_device(device, models=['adapter'])
+
+        if 'global_adapters' in models:
+            for adapter_name, adapter in self.global_model.adapters.items():
+                adapter = adapter.to(device)
+                if adapter_name in self.global_optimizers:
+                    optimizer = self.global_optimizers[adapter_name]
+                    move_optimizer_state(optimizer, device)
 
         # Move generator optimizer if it exists
         if hasattr(self, 'generator_optimizer') and self.generator_optimizer is not None:
