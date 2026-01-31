@@ -10,7 +10,7 @@
     "diffusion_type": "flux",
     "num_clients": 2,
     "global_rounds": 10,
-    "local_epochs": 1,
+    "local_epochs": 20,
     "eval_gap": 1,
     "model_aggregation": "none",
     "use_saved_audio_embeddings": false
@@ -58,7 +58,7 @@
     "adapter_aggregation_mode": "kd",
 
     "_comment_kd_params": "KD-specific parameters for server-side adapter training",
-    "kd_training_epochs": 1,
+    "kd_training_epochs": 10,
     "kd_learning_rate": 0.001,
     "kd_samples_per_class": 100,
 
@@ -80,11 +80,11 @@
 
     "_comment_generation": "=== IMAGE GENERATION SETTINGS ===",
     "generate_embeddings_only": true,
-    "embeddings_checkpoint_dir": "checkpoints/embeddings/vegas-2n-2c-400s-kd-debug",
-    "generate_nodes_images_frequency": 0,
+    "embeddings_checkpoint_dir": "checkpoints/embeddings/vegas-2n-2c-400s-kd",
+    "generate_nodes_images_frequency": 1,
     "generate_global_images_frequency": 1,
     "generate_low_memomy_footprint": true,
-    "images_output_dir": "output_images/vegas-2n-2c-400s-kd-debug",
+    "images_output_dir": "output_images/vegas-2n-2c-400s-kd",
     "output_image_base_name": "2n_20le_10gr_kd",
     "generate_from_clip_text_embeddings": false,
     "generate_from_t5_text_embeddings": false,
@@ -131,6 +131,6 @@
     "path": "./data"
   },
   "wandb": {
-    "disabled": true
+    "disabled": false
   }
 }

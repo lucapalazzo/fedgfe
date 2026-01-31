@@ -598,11 +598,12 @@ class FedA2V(FedRewind):
                     self._move_to_gpu(self.diffusion_device, models=['ast','adapter'])
                     node._move_to_gpu(node.device)
                     logger.info(f"Saving embeddings for Node {node.id} to checkpoint (embeddings-only mode)")
-                    node.save_embeddings_to_checkpoint(
-                        split='all',
-                        checkpoint_dir=self.embeddings_checkpoint_dir,
-                        round_num=self.round
-                    )
+                    for split in self.save_generated_images_splits:
+                        node.save_embeddings_to_checkpoint(
+                            split=split,
+                            checkpoint_dir=self.embeddings_checkpoint_dir,
+                            round_num=self.round
+                        )
                     self._move_to_cpu(models=['ast','adapter'])
                 else:
                     # Generate images as normal
@@ -922,7 +923,8 @@ class FedA2V(FedRewind):
 
     def save_server_embeddings_to_checkpoint(self, checkpoint_dir='checkpoints/embeddings', round_num=None):
         """
-        Save server's global text embeddings to checkpoint for later image generation.
+        Save server's global embeddings to checkpoint by processing federation dataset splits
+        using global adapters, similar to how nodes process their data.
 
         Args:
             checkpoint_dir: Directory to save checkpoint files
@@ -932,6 +934,7 @@ class FedA2V(FedRewind):
             Path to saved checkpoint file
         """
         import datetime
+        from torch.utils.data import DataLoader
 
         # Create checkpoint directory
         os.makedirs(checkpoint_dir, exist_ok=True)
@@ -948,39 +951,153 @@ class FedA2V(FedRewind):
             }
         }
 
-        # Collect embeddings from all nodes
-        logger.info("Collecting embeddings from all nodes for server checkpoint")
+        logger.info("Collecting embeddings from federation dataset using global adapters")
 
-        for node in self.clients:
-            node_dataset = node.node_data.dataset.dataset if isinstance(node.node_data.dataset, torch.utils.data.Subset) else node.node_data.dataset
-            node_classes = node_dataset.active_classes if hasattr(node_dataset, 'active_classes') else []
+        # Move models to device
+        self._move_to_gpu(self.device, models=['adapter', 'ast'])
 
-            logger.info(f"Processing Node {node.id} with classes: {node_classes}")
+        try:
+            # Process each split in server_node_data_splits
+            if not hasattr(self, 'server_node_data_splits') or not self.server_node_data_splits:
+                logger.warning("Server: No federation dataset available for embedding extraction")
+                return None
 
-            for class_name in node_classes:
-                # Get text embeddings for this class
-                text_embs = node_dataset.get_text_embeddings(class_name) if hasattr(node_dataset, 'get_text_embeddings') else None
+            for split_name, node_data in self.server_node_data_splits.items():
+                if node_data is None:
+                    logger.warning(f"Server: No dataset available for split '{split_name}'")
+                    continue
 
-                if text_embs and self.diffusion_type in text_embs:
-                    emb_data = text_embs[self.diffusion_type]
+                # Get dataset for this split
+                if split_name == 'train':
+                    dataset = node_data.get_train_dataset()
+                elif split_name == 'val':
+                    dataset = node_data.get_val_dataset()
+                elif split_name == 'test':
+                    dataset = node_data.get_test_dataset()
+                else:
+                    logger.warning(f"Server: Unknown split name '{split_name}'")
+                    continue
 
-                    # Prepare output path
-                    round_str = f"r{round_num}" if round_num is not None else "r0"
-                    image_filename = f"server_node{node.id}_{class_name}_{round_str}.png"
-                    image_path = os.path.join(self.images_output_dir, image_filename)
+                if dataset is None or len(dataset) == 0:
+                    logger.warning(f"Server: Dataset for split '{split_name}' is empty")
+                    continue
 
-                    # Store embedding data
-                    embedding_entry = {
-                        'split': 'global',
-                        'node_id': node.id,
-                        'class_name': class_name,
-                        'image_path': image_path,
-                        'image_filename': image_filename,
-                        't5_embedding': emb_data.get('pooled_prompt_embeds', None),
-                        'clip_embedding': emb_data.get('prompt_embeds', None),
-                    }
+                logger.info(f"Processing federation split '{split_name}' with {len(dataset)} samples")
 
-                    checkpoint_data['embeddings'].append(embedding_entry)
+                # Create DataLoader
+                dataloader = DataLoader(
+                    dataset,
+                    batch_size=self.args.batch_size if hasattr(self.args, 'batch_size') else 8,
+                    shuffle=False,
+                    num_workers=0
+                )
+
+                # Process batches
+                embeddings_by_class = {}
+                
+                with torch.no_grad():
+                    for batch_idx, batch in enumerate(dataloader):
+                        # Extract audio data
+                        if 'audio' not in batch or not isinstance(batch['audio'], torch.Tensor):
+                            logger.warning(f"Server: Audio data not found in {split_name} batch {batch_idx}")
+                            continue
+
+                        audio_data = batch['audio'].to(self.device)
+                        class_names = batch.get('class_name', [])
+
+                        # Extract audio embeddings using AST model
+                        if self.global_model.ast_model is None or self.global_model.ast_feature_extractor is None:
+                            logger.warning("Server: AST model not initialized, skipping audio processing")
+                            continue
+
+                        # Convert audio to numpy if needed
+                        if isinstance(audio_data, torch.Tensor):
+                            audio_data_np = audio_data.to('cpu').numpy()
+                        else:
+                            audio_data_np = audio_data
+
+                        # Extract features
+                        audio_inputs = self.global_model.ast_feature_extractor(
+                            audio_data_np,
+                            sampling_rate=16000,
+                            return_tensors="pt",
+                            padding=True
+                        ).input_values.to(self.device, self.global_model.torch_dtype)
+
+                        self.global_model.ast_model.eval()
+                        audio_embeddings = self.global_model.ast_model(audio_inputs).last_hidden_state
+
+                        # Process through global adapters
+                        adapter_outputs = {}
+                        for adapter_name, adapter_module in self.global_adapters.items():
+                            adapter_module.eval()
+                            adapter_outputs[adapter_name] = adapter_module(audio_embeddings).detach().cpu()
+
+                        # Group by class
+                        for idx, class_name in enumerate(class_names):
+                            if class_name not in embeddings_by_class:
+                                embeddings_by_class[class_name] = {
+                                    'clip': [],
+                                    't5': [],
+                                    'audio_embeddings': []
+                                }
+
+                            # Collect outputs from each adapter
+                            if 'clip' in adapter_outputs:
+                                embeddings_by_class[class_name]['clip'].append(
+                                    adapter_outputs['clip'][idx].unsqueeze(0)
+                                )
+                            if 't5' in adapter_outputs:
+                                embeddings_by_class[class_name]['t5'].append(
+                                    adapter_outputs['t5'][idx].unsqueeze(0)
+                                )
+
+                            embeddings_by_class[class_name]['audio_embeddings'].append(
+                                audio_embeddings[idx].detach().cpu().unsqueeze(0)
+                            )
+
+                # Store all embeddings per class (not just the mean)
+                for class_name, emb_dict in embeddings_by_class.items():
+                    try:
+                        # Stack all embeddings for each type (keep all samples, not mean)
+                        embedding_entry = {
+                            'split': split_name,
+                            'class_name': class_name,
+                            'node_id': 'server',
+                        }
+
+                        for module_name in self.global_adapters.keys():
+                            if module_name not in emb_dict:
+                                continue
+                            module_tensor = torch.cat(emb_dict[module_name], dim=0)
+                            embedding_entry[module_name] = module_tensor.cpu()  # Initialize
+
+                        if emb_dict['audio_embeddings']:
+                            audio_tensor = torch.cat(emb_dict['audio_embeddings'], dim=0)
+                            embedding_entry['audio_embeddings'] = audio_tensor.cpu()  # Keep all samples, not mean
+
+                        checkpoint_data['embeddings'].append(embedding_entry)
+
+                        logger.debug(f"Server: Processed class '{class_name}' for split '{split_name}' "
+                                   f"(clip: {embedding_entry['clip'].shape if 'clip' in embedding_entry else 'N/A'}, "
+                                   f"t5: {embedding_entry['t5'].shape if 't5' in embedding_entry else 'N/A'}, "
+                                   f"audio: {embedding_entry['audio_embeddings'].shape if 'audio_embeddings' in embedding_entry else 'N/A'})")
+
+                    except Exception as e:
+                        logger.error(f"Server: Error processing class '{class_name}' for split '{split_name}': {e}")
+                        continue
+
+                logger.info(f"Server: Extracted embeddings for {len(embeddings_by_class)} classes from split '{split_name}'")
+
+        except Exception as e:
+            logger.error(f"Server: Error during embedding extraction: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+        finally:
+            # Move models back to CPU
+            self._move_to_cpu(models=['adapter', 'ast'])
 
         # Save checkpoint
         checkpoint_filename = f"server_embeddings_r{round_num if round_num is not None else 0}.pt"
@@ -3413,7 +3530,7 @@ class FedA2V(FedRewind):
                                     class_targets[adapter_name].append(adapter_module(synthetic_samples.to(device)).detach())
 
                             except Exception as e:
-                                logger.error(f"[KD Training] Failed to get target outputs for node {node_id}, class '{class_name}': {e}")
+                                logger.error(f"[KD Training] Failed to get target outputs for node {node_id} adapter {adapter_name}, class '{class_name}': {e}")
                                 continue
 
                     # Average targets across nodes for this class
@@ -3431,7 +3548,7 @@ class FedA2V(FedRewind):
 
                     # Train on batches for this class
                     num_batches = (samples_per_class + batch_size - 1) // batch_size
-                    class_loss = 0.0
+                    class_loss = {adapter_name: 0.0 for adapter_name in server_adapter.keys() }
 
                     for batch_idx in range(num_batches):
                         start_idx = batch_idx * batch_size
@@ -3472,7 +3589,8 @@ class FedA2V(FedRewind):
                             continue
 
                     # Track per-class loss
-                    avg_class_loss = class_loss / num_batches if num_batches > 0 else 0.0
+                    avg_class_loss = {}
+                    avg_class_loss = {adapter_name: class_loss[adapter_name] / num_batches if num_batches > 0 else 0.0 for adapter_name in class_loss}
                     epoch_class_losses[class_name] = avg_class_loss
 
                 self.nodes_adapters[node_id] = {k: v.to('cpu') for k, v in self.nodes_adapters[node_id].items()}
@@ -3893,11 +4011,12 @@ class FedA2V(FedRewind):
         saved_splits_images = {} 
         for split,node_data in self.server_node_data_splits.items():
             if split == 'val':
-                fed_dataset = node_data.val_dataset
+                fed_dataset = self.federation_val_data
             if split == 'test':
-                fed_dataset = node_data.test_dataset
+                fed_dataset = self.federation_test_data
             if split == 'train':
-                fed_dataset = node_data.train_dataset
+                logger.warning(f"Global image generation on 'train' split is not supported, skipping")
+                # fed_dataset = node_data.train_dataset
 
             if fed_dataset is None or len(fed_dataset) == 0:
                 print(f"Warning: Federation {split} dataset is empty")
