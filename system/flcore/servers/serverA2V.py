@@ -3360,15 +3360,18 @@ class FedA2V(FedRewind):
         logger.info(f"[KD Training] Node classes mapping: {node_classes}")
         logger.info(f"[KD Training] Training single adapter on {len(classes_to_train)} classes")
 
-        # Training loop
-        for epoch in range(epochs):
+        # Training loop with progress bar
+        from tqdm import tqdm
+        pbar = tqdm(range(epochs), desc="[KD Training Server Adapter]", unit="epoch")
+
+        for epoch in pbar:
             epoch_total_loss = 0.0
             epoch_class_losses = {}
+            epoch_adapter_losses = {}  # Track loss per adapter type
             total_batches = 0
 
             # Iterate over all classes
             for node_id, node_active_classes in node_classes.items():
-                logger.info(f"[KD Training] Node {node_id} has classes: {node_classes}")
                 for class_name in node_active_classes:
                     if class_name not in self.prompt_generators:
                         logger.warning(f"[KD Training] No generator for class '{class_name}', skipping")
@@ -3448,13 +3451,21 @@ class FedA2V(FedRewind):
                                     adapter_output = adapter_module(batch_samples)
                                     batch_target = targets[adapter_name][start_idx:end_idx]
                                     batch_loss[adapter_name] += mse_loss(adapter_output, batch_target)
-                          
+
                                     if batch_loss[adapter_name] > 0:
                                         batch_loss[adapter_name].backward()
                                         for optimizer_name, optimizer in self.global_optimizers.items():
                                             optimizer.step()
-                                        class_loss += batch_loss.item()
-                                        epoch_total_loss += batch_loss.item()
+
+                                        loss_value = batch_loss[adapter_name].item()
+                                        class_loss += loss_value
+                                        epoch_total_loss += loss_value
+
+                                        # Track per-adapter loss
+                                        if adapter_name not in epoch_adapter_losses:
+                                            epoch_adapter_losses[adapter_name] = 0.0
+                                        epoch_adapter_losses[adapter_name] += loss_value
+
                                         total_batches += 1
                         except Exception as e:
                             logger.error(f"[KD Training] Error during training for class '{class_name}', batch {batch_idx}: {e}")
@@ -3466,18 +3477,26 @@ class FedA2V(FedRewind):
 
                 self.nodes_adapters[node_id] = {k: v.to('cpu') for k, v in self.nodes_adapters[node_id].items()}
 
-                # Log epoch progress
-                avg_epoch_loss = epoch_total_loss / total_batches if total_batches > 0 else 0.0
+            # Calculate average losses for this epoch
+            avg_epoch_loss = epoch_total_loss / total_batches if total_batches > 0 else 0.0
+            avg_adapter_losses = {name: loss / total_batches for name, loss in epoch_adapter_losses.items()} if total_batches > 0 else {}
 
-                if epoch % max(1, epochs // 5) == 0 or epoch == epochs - 1:
-                    loss_str = ", ".join([f"{cls}: {loss:.6f}" for cls, loss in epoch_class_losses.items()])
-                    logger.info(f"[KD Training] Epoch {epoch+1}/{epochs} - Total Loss: {avg_epoch_loss:.6f}")
-                    logger.info(f"[KD Training] Epoch {epoch+1}/{epochs} - Per-class Losses: {loss_str}")
+            # Update progress bar with losses
+            postfix_dict = {'total_loss': f'{avg_epoch_loss:.6f}'}
+            for adapter_name, loss in avg_adapter_losses.items():
+                postfix_dict[f'{adapter_name}_loss'] = f'{loss:.6f}'
+            pbar.set_postfix(postfix_dict)
 
-                    # Memory tracking
-                    if torch.cuda.is_available():
-                        mem_allocated = torch.cuda.memory_allocated() / 1024**2
-                        logger.debug(f"[KD Training] GPU Memory: {mem_allocated:.2f} MB")
+            # Log epoch progress periodically
+            if epoch % max(1, epochs // 5) == 0 or epoch == epochs - 1:
+                loss_str = ", ".join([f"{cls}: {loss:.6f}" for cls, loss in epoch_class_losses.items()])
+                logger.info(f"[KD Training] Epoch {epoch+1}/{epochs} - Total Loss: {avg_epoch_loss:.6f}")
+                logger.info(f"[KD Training] Epoch {epoch+1}/{epochs} - Per-class Losses: {loss_str}")
+
+            # Memory tracking
+            if torch.cuda.is_available():
+                mem_allocated = torch.cuda.memory_allocated() / 1024**2
+                logger.debug(f"[KD Training] GPU Memory: {mem_allocated:.2f} MB")
 
         logger.info(f"[KD Training] Completed training single adapter over {epochs} epochs")
 

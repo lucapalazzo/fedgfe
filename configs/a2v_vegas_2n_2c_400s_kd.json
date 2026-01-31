@@ -9,8 +9,8 @@
     "algorithm": "FedA2V",
     "diffusion_type": "flux",
     "num_clients": 2,
-    "global_rounds": 10,
-    "local_epochs": 20,
+    "global_rounds": 20,
+    "local_epochs": 10,
     "eval_gap": 1,
     "model_aggregation": "none",
     "use_saved_audio_embeddings": false
