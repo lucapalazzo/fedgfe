@@ -18,7 +18,7 @@ conda activate flvit
 echo "=========================================="
 echo "Step 1/1: Training Generators"
 echo "=========================================="
-python -u system/main.py --config configs/a2v_vegas_2n_2c_400s_kd.json
+python -u system/main.py --config configs/a2v_vegas_2n_2c_400s_kd_embonly.json
 date
 
 echo "=========================================="

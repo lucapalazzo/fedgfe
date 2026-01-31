@@ -5169,8 +5169,8 @@ class clientA2V(Client):
                     image_path = os.path.join(self.server.images_output_dir if self.server else 'output_images', image_filename)
 
                     # Extract embeddings for this sample
-                    t5_emb = text_embeddings['t5_text_embeddings'][i].cpu() if 't5_text_embeddings' in text_embeddings else None
-                    clip_emb = text_embeddings['clip_text_embeddings'][i].cpu() if 'clip_text_embeddings' in text_embeddings else None
+                    t5_emb = text_embeddings['t5'][i].cpu() if 't5' in text_embeddings else None
+                    clip_emb = text_embeddings['clip'][i].cpu() if 'clip' in text_embeddings else None
 
                     # Store embedding data
                     embedding_entry = {
